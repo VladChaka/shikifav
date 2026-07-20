@@ -1,0 +1,8 @@
+dist/
+coverage/
+pnpm-lock.yaml
+.wxt/
+.output/
+docs/
+CLAUDE.md
+.claude/

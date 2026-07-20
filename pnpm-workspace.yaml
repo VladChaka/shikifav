@@ -1,0 +1,4 @@
+allowBuilds:
+    # sass CLI watch-mode helper; build script not needed for Vite builds
+    '@parcel/watcher': false
+    esbuild: true
