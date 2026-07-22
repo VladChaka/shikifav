@@ -18,11 +18,11 @@ describe('storage', () => {
     });
 
     describe('DEFAULT_SETTINGS', () => {
-        // Pins the documented defaults (docs/02-architecture.md, task 6):
+        // Pins the documented defaults (docs/02-architecture.md, task 11):
         // breaking either value must fail this test.
         it('matches the documented defaults', () => {
             expect(DEFAULT_SETTINGS).toEqual({
-                origin: 'https://shikimori.one',
+                origin: 'https://shikimori.io',
                 titleLang: 'ru',
             });
         });

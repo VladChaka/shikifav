@@ -41,7 +41,7 @@ docs/               # проектная документация — ЧИТАТ
 1. **Все сетевые запросы — только из background** через `src/lib/api/http.ts`. Popup/options/search не вызывают fetch к Shikimori напрямую — только сообщения в background. Причина: единый rate limiter и единая точка refresh токена (docs/02-architecture.md, ADR-1).
 2. **Лимиты API: 5 rps / 90 rpm.** Клиент держит запас: очередь не более 4 rps и 80 rpm. На 429 — backoff. Запросы в цикле без очереди запрещены.
 3. **User-Agent** каждого запроса к API = имя OAuth-приложения из config (требование Shikimori, иначе бан IP). Проверить, что заголовок реально уходит; если Chrome не даёт — fallback через declarativeNetRequest (docs/03-shikimori-api.md).
-4. **Origin только из `src/lib/config.ts`** (по умолчанию shikimori.one, переключается в настройках на shikimori.io). Домены сайта исторически менялись — никаких захардкоженных URL по коду.
+4. **Origin только из `src/lib/config.ts`** (по умолчанию shikimori.io, переключается в настройках на shikimori.one). Домены сайта исторически менялись — никаких захардкоженных URL по коду.
 5. **Чтение — GraphQL, запись — REST v2** (`/api/v2/user_rates`). HTML сайта не парсить.
 6. **Секреты:** client_id/client_secret — только из `.env` (в .gitignore), токены — только в `chrome.storage.local`. Токены и secret никогда не попадают в логи и сообщения об ошибках.
 7. **Permissions по минимуму:** `identity`, `storage`, host_permissions на оба домена; `contextMenus` добавить только в фазе 5; `declarativeNetRequest` — только если понадобился fallback для User-Agent.

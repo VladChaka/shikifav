@@ -6,12 +6,14 @@
 ```ts
 // src/lib/config.ts
 export const ORIGINS = ['https://shikimori.one', 'https://shikimori.io'] as const;
-export const DEFAULT_ORIGIN = ORIGINS[0];
+// Дефолтный origin — 'https://shikimori.io' (DEFAULT_SETTINGS в src/lib/storage.ts)
 export const APP_NAME = import.meta.env.WXT_SHIKI_APP_NAME as string; // = имя OAuth-приложения (docs/04)
 export const CLIENT_ID = import.meta.env.WXT_SHIKI_CLIENT_ID as string;
 export const CLIENT_SECRET = import.meta.env.WXT_SHIKI_CLIENT_SECRET as string;
 ```
 Домены сайта менялись (org → one → me → io), поэтому origin хранится в настройках и оба присутствуют в host_permissions.
+
+**301 на shikimori.one (проверка владельца 2026-07-22).** `POST https://shikimori.one/oauth/token` отвечает 301 на shikimori.io; при следовании редиректу браузер превращает POST в GET → 404 (плюс браузеры срезают Authorization на cross-origin редиректах). Поэтому .one сейчас непригоден как API-origin и дефолт переключён на shikimori.io; .one остаётся в настройках на случай очередной смены доменов.
 
 ## Обязательные заголовки каждого запроса
 ```
@@ -20,7 +22,7 @@ Authorization: Bearer <token>   # для персональных данных �
 Content-Type: application/json  # (или x-www-form-urlencoded для /oauth/token)
 ```
 
-**Нюанс с User-Agent в браузере.** `fetch()` из service worker в Chrome обычно позволяет переопределить User-Agent, но это надо проверить в первый же день фазы 1 (сделать запрос и посмотреть заголовки в DevTools background-воркера или через эхо-сервис). Если заголовок не подменяется — включить fallback: permission `declarativeNetRequest` + правило:
+**Нюанс с User-Agent в браузере.** Проверено (Chrome 150, 2026-07-22): `fetch()` из MV3 service worker НЕ позволяет переопределить User-Agent — браузер подменяет его на стандартный `Mozilla/5.0 ...`. Включён fallback: permission `declarativeNetRequestWithHostAccess` (не `declarativeNetRequest`: modifyHeaders в любом случае требует host permissions на целевой URL, а этот вариант не даёт прав сверх уже имеющихся host_permissions) + динамическое правило, которое регистрируется в background на каждом старте SW (`src/lib/api/user-agent-rule.ts`, id=1, идемпотентно):
 ```json
 {
   "id": 1,
@@ -169,8 +171,11 @@ GET {origin}/api/users/whoami
 - [ ] Синтаксис множественного `kind` для ранобэ (`"light_novel,novel"`)
 - [ ] Существует ли аргумент `mylist` у `animes`/`mangas` (для варианта А списков)
 - [ ] `increment` для манги: главы или что-то другое
-- [ ] Уходит ли кастомный User-Agent через fetch в текущем Chrome (иначе включить DNR-fallback)
-  - Как проверить (дев-код уже в `entrypoints/background.ts`, помечен `TEMP UA-check (task 6)`): `pnpm dev` → `chrome://extensions` → на карточке расширения ссылка «service worker» → в открывшемся DevTools вкладка Network → найти запрос к shikimori (`/oauth/token` без входа или `/api/users/whoami` после входа; в Console будет `UA-check request fired`) → Headers → Request Headers → `User-Agent`. Значение `ShikiFav` — заголовок уходит, отметить чекбокс и удалить временный код; стандартный UA Chrome (`Mozilla/5.0 ...`) — включаем DNR-fallback (правило выше). Если запрос не виден — переоткрыть DevTools ДО перезапуска SW (кнопка Update на карточке) и смотреть снова.
+- [x] Уходит ли кастомный User-Agent через fetch в текущем Chrome (иначе включить DNR-fallback)
+  - НЕТ (Chrome 150, проверка владельца 2026-07-22): кастомный UA из fetch в MV3 SW подменяется на браузерный `Mozilla/5.0 ...` → включён DNR-fallback (permission `declarativeNetRequestWithHostAccess`, правило id=1 в `src/lib/api/user-agent-rule.ts`).
+  - Как проверялось: временный дев-код в `entrypoints/background.ts` (`TEMP UA-check (task 6)`, удалён 2026-07-22 после подтверждения) отправлял один запрос, заголовки смотрелись в DevTools service worker'а → Network → Request Headers → `User-Agent`.
+- [x] DNR-правило реально подменяет UA на APP_NAME
+  - ДА (Chrome 150, проверка владельца 2026-07-22): в Request Headers боевого запроса к shikimori.io виден `User-Agent: ShikiFav`. TEMP UA-check из `entrypoints/background.ts` удалён.
 - [ ] Отвечает ли API на shikimori.io идентично shikimori.one, включая Bearer-авторизацию (иначе оставить в настройках только .one)
 - [ ] Поддержка PKCE сервером (детали в docs/04 §5)
-- [ ] Форма ответа whoami: поле `avatar` (маппинг в `avatarUrl`, src/lib/api/auth.ts) — подтвердить при первом живом входе
+- [x] Форма ответа whoami: поле `avatar` (маппинг в `avatarUrl`, src/lib/api/auth.ts) — подтверждено при первом живом входе 2026-07-22: ник и аватар корректно отображаются в popup

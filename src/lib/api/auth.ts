@@ -27,6 +27,46 @@ interface WhoamiResponse {
 const OAUTH_SCOPE = 'user_rates';
 const EXPIRES_AT_MARGIN_SECONDS = 60;
 
+// PKCE layer on top of the confidential-client flow (docs/04 §5). Live probe
+// verdict (2026-07-22): Shikimori's Doorkeeper rejects token requests without
+// client authentication (401 invalid_client), so client_secret is always sent;
+// PKCE (S256 challenge + code_verifier) stays as an extra code-interception
+// guard. ROLLBACK of the PKCE layer only: set false. The secret is not
+// flag-controlled — every token request carries it regardless.
+const PKCE_ENABLED = true;
+
+// 32 random bytes -> 43 base64url chars, within RFC 7636's 43..128 range.
+const PKCE_VERIFIER_BYTES = 32;
+
+interface PkcePair {
+    verifier: string;
+    challenge: string;
+}
+
+// Exported for tests (RFC 7636 §4.1: unreserved chars, 43..128 length).
+export function generateCodeVerifier(): string {
+    return base64UrlEncode(crypto.getRandomValues(new Uint8Array(PKCE_VERIFIER_BYTES)));
+}
+
+// Exported for tests (RFC 7636 §4.2: S256, verified against the appendix B vector).
+export async function computeCodeChallenge(verifier: string): Promise<string> {
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
+    return base64UrlEncode(new Uint8Array(digest));
+}
+
+function base64UrlEncode(bytes: Uint8Array): string {
+    let binary = '';
+    for (const byte of bytes) {
+        binary += String.fromCharCode(byte);
+    }
+    return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+async function createPkcePair(): Promise<PkcePair> {
+    const verifier = generateCodeVerifier();
+    return { verifier, challenge: await computeCodeChallenge(verifier) };
+}
+
 // Pure on purpose: unit-tested without timers (docs/02 "Тестирование").
 export function computeExpiresAt(
     expiresInSeconds: number,
@@ -37,9 +77,9 @@ export function computeExpiresAt(
     return (issuedAtSeconds + expiresInSeconds - EXPIRES_AT_MARGIN_SECONDS) * 1000;
 }
 
-// PKCE migration point (docs/04 §5): replace this with
-// { client_id: CLIENT_ID, code_verifier } and drop CLIENT_SECRET from the
-// bundle — no other token-request code changes needed.
+// The only place that touches CLIENT_SECRET. The server requires client
+// authentication on every token request (exchange and refresh): the PKCE-only
+// probe got 401 invalid_client (docs/04 §5).
 function clientAuthParams(): Record<string, string> {
     return { client_id: CLIENT_ID, client_secret: CLIENT_SECRET };
 }
@@ -58,12 +98,17 @@ export function login(): Promise<User> {
 async function doLogin(): Promise<User> {
     const settings = (await getLocal('settings')) ?? DEFAULT_SETTINGS;
     const redirectUri = browser.identity.getRedirectURL();
+    const pkce = PKCE_ENABLED ? await createPkcePair() : undefined;
     const authorizeParams = new URLSearchParams({
         client_id: CLIENT_ID,
         redirect_uri: redirectUri,
         response_type: 'code',
         scope: OAUTH_SCOPE,
     });
+    if (pkce) {
+        authorizeParams.set('code_challenge', pkce.challenge);
+        authorizeParams.set('code_challenge_method', 'S256');
+    }
 
     let resultUrl: string | undefined;
     try {
@@ -89,7 +134,7 @@ async function doLogin(): Promise<User> {
         throw internalError('No authorization code in redirect');
     }
 
-    const tokens = await exchangeCode(code, redirectUri);
+    const tokens = await exchangeCode(code, redirectUri, pkce?.verifier);
     if (!tokens.refresh_token) {
         throw internalError('No refresh token in OAuth response');
     }
@@ -105,9 +150,14 @@ async function doLogin(): Promise<User> {
     return user;
 }
 
-async function exchangeCode(code: string, redirectUri: string): Promise<TokenResponse> {
+async function exchangeCode(
+    code: string,
+    redirectUri: string,
+    codeVerifier: string | undefined,
+): Promise<TokenResponse> {
     const result = await oauthRequest<TokenResponse>('/oauth/token', {
         ...clientAuthParams(),
+        ...(codeVerifier === undefined ? {} : { code_verifier: codeVerifier }),
         grant_type: 'authorization_code',
         code,
         redirect_uri: redirectUri,

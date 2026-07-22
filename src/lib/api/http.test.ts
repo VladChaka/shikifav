@@ -216,17 +216,17 @@ describe('http', () => {
         it('uses the default origin when settings are absent', async () => {
             fetchMock.mockResolvedValueOnce(jsonResponse(200, {}));
             await apiRequest('/api/users/whoami');
-            expect(lastRequest().url).toBe('https://shikimori.one/api/users/whoami');
+            expect(lastRequest().url).toBe('https://shikimori.io/api/users/whoami');
         });
 
         it('re-reads the origin from storage on every request', async () => {
             fetchMock.mockResolvedValue(jsonResponse(200, {}));
             await apiRequest('/api/users/whoami');
-            expect(lastRequest().url).toBe('https://shikimori.one/api/users/whoami');
-
-            await setLocal('settings', { origin: 'https://shikimori.io', titleLang: 'ru' });
-            await apiRequest('/api/users/whoami');
             expect(lastRequest().url).toBe('https://shikimori.io/api/users/whoami');
+
+            await setLocal('settings', { origin: 'https://shikimori.one', titleLang: 'ru' });
+            await apiRequest('/api/users/whoami');
+            expect(lastRequest().url).toBe('https://shikimori.one/api/users/whoami');
         });
     });
 

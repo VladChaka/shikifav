@@ -4,9 +4,11 @@ import { getLocal, getSession, setLocal, setSession } from '../storage';
 import type { LocalState } from '../storage';
 import {
     authorizedRequest,
+    computeCodeChallenge,
     computeExpiresAt,
     ensureToken,
     forceRefresh,
+    generateCodeVerifier,
     getAuthState,
     login,
     logout,
@@ -121,6 +123,24 @@ describe('auth', () => {
         });
     });
 
+    describe('pkce', () => {
+        it('computes the S256 challenge of the RFC 7636 appendix B vector', async () => {
+            await expect(
+                computeCodeChallenge('dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk'),
+            ).resolves.toBe('E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM');
+        });
+
+        it('generates unreserved-only verifiers within the 43..128 length range', () => {
+            const first = generateCodeVerifier();
+            const second = generateCodeVerifier();
+            for (const verifier of [first, second]) {
+                // RFC 7636 §4.1 charset; base64url output is its subset.
+                expect(verifier).toMatch(/^[A-Za-z0-9\-._~]{43,128}$/);
+            }
+            expect(first).not.toBe(second);
+        });
+    });
+
     describe('ensureToken', () => {
         it('throws unauthorized without touching the network when there is no auth', async () => {
             const error = await expectApiErrorThrow(ensureToken());
@@ -149,11 +169,13 @@ describe('auth', () => {
             expect(fetchMock).toHaveBeenCalledTimes(1);
 
             const request = capturedRequests()[0];
-            expect(request.url).toBe('https://shikimori.one/oauth/token');
+            expect(request.url).toBe('https://shikimori.io/oauth/token');
             const form = new URLSearchParams(request.body);
             expect(form.get('grant_type')).toBe('refresh_token');
             expect(form.get('refresh_token')).toBe('stored-refresh');
             expect(form.get('client_id')).not.toBeNull();
+            // Confidential client: the secret authenticates refresh requests
+            // too (docs/04 §5, PKCE-only got 401 invalid_client).
             expect(form.get('client_secret')).not.toBeNull();
 
             await expect(getLocal('auth')).resolves.toEqual({
@@ -342,9 +364,9 @@ describe('auth', () => {
 
             const requests = capturedRequests();
             expect(requests.map((r) => r.url)).toEqual([
-                'https://shikimori.one/api/users/whoami',
-                'https://shikimori.one/oauth/token',
-                'https://shikimori.one/api/users/whoami',
+                'https://shikimori.io/api/users/whoami',
+                'https://shikimori.io/oauth/token',
+                'https://shikimori.io/api/users/whoami',
             ]);
             expect(requests[2].headers['Authorization']).toBe('Bearer new-access');
         });
@@ -419,13 +441,13 @@ describe('auth', () => {
             });
 
             const [exchange, whoami] = capturedRequests();
-            expect(exchange.url).toBe('https://shikimori.one/oauth/token');
+            expect(exchange.url).toBe('https://shikimori.io/oauth/token');
             const form = new URLSearchParams(exchange.body);
             expect(form.get('grant_type')).toBe('authorization_code');
             expect(form.get('code')).toBe('auth-code');
             expect(form.get('redirect_uri')).toBe(REDIRECT_URI);
             // whoami runs with the fresh token before auth reaches storage.
-            expect(whoami.url).toBe('https://shikimori.one/api/users/whoami');
+            expect(whoami.url).toBe('https://shikimori.io/api/users/whoami');
             expect(whoami.headers['Authorization']).toBe('Bearer fresh-access');
         });
 
@@ -442,11 +464,39 @@ describe('auth', () => {
             await login();
 
             const parsed = new URL(authorizeUrl);
-            expect(parsed.origin).toBe('https://shikimori.one');
+            expect(parsed.origin).toBe('https://shikimori.io');
             expect(parsed.pathname).toBe('/oauth/authorize');
             expect(parsed.searchParams.get('response_type')).toBe('code');
             expect(parsed.searchParams.get('scope')).toBe('user_rates');
             expect(parsed.searchParams.get('redirect_uri')).toBe(REDIRECT_URI);
+        });
+
+        // PKCE layer (PKCE_ENABLED in auth.ts) on top of the confidential
+        // client: verifier AND secret must both reach the token endpoint.
+        it('sends a matching S256 challenge/verifier pair alongside client_secret', async () => {
+            let authorizeUrl = '';
+            fakeBrowser.identity.getRedirectURL = (() =>
+                REDIRECT_URI) as typeof fakeBrowser.identity.getRedirectURL;
+            fakeBrowser.identity.launchWebAuthFlow = (async (details: { url: string }) => {
+                authorizeUrl = details.url;
+                return `${REDIRECT_URI}?code=auth-code`;
+            }) as typeof fakeBrowser.identity.launchWebAuthFlow;
+            mockLoginNetwork();
+
+            await login();
+
+            const authorizeQuery = new URL(authorizeUrl).searchParams;
+            expect(authorizeQuery.get('code_challenge_method')).toBe('S256');
+
+            const form = new URLSearchParams(capturedRequests()[0].body);
+            expect(form.get('client_secret')).not.toBeNull();
+            const verifier = form.get('code_verifier');
+            expect(verifier).toMatch(/^[A-Za-z0-9\-._~]{43,128}$/);
+            // The challenge shown to the server must derive from the verifier
+            // sent in the token request — otherwise the exchange is rejected.
+            await expect(computeCodeChallenge(verifier ?? '')).resolves.toBe(
+                authorizeQuery.get('code_challenge'),
+            );
         });
 
         it('maps a closed authorization window to an internal error without token words', async () => {
@@ -496,10 +546,11 @@ describe('auth', () => {
             mockLoginNetwork();
 
             const calls = [login(), login()];
-            // Drain microtasks (bounded, no real timers) until the auth window
-            // is actually opened and can be released.
+            // Drain the event loop (bounded) until the auth window is actually
+            // opened and can be released. Macrotasks, not just microtasks: the
+            // PKCE crypto.subtle.digest before launchWebAuthFlow settles on one.
             for (let i = 0; i < 100 && flowCalls === 0; i++) {
-                await Promise.resolve();
+                await new Promise((resolve) => setTimeout(resolve, 0));
             }
             releaseFlow(`${REDIRECT_URI}?code=auth-code`);
 
@@ -507,8 +558,8 @@ describe('auth', () => {
             expect(flowCalls).toBe(1);
             // Exactly one code exchange + one whoami on the wire.
             expect(capturedRequests().map((r) => r.url)).toEqual([
-                'https://shikimori.one/oauth/token',
-                'https://shikimori.one/api/users/whoami',
+                'https://shikimori.io/oauth/token',
+                'https://shikimori.io/api/users/whoami',
             ]);
         });
 

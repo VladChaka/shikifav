@@ -88,7 +88,8 @@ grant_type=refresh_token&client_id=...&client_secret=...&refresh_token=...
 
 ## 5. client_secret в бандле — осознанный компромисс
 Секрет неизбежно попадает в собранный код расширения. Для личного некоммерческого проекта риск приемлем: максимум — кто-то сможет представляться нашим приложением; токены пользователя при этом не утекают. Смягчение:
-- [ ] **Проверить PKCE в фазе 1:** добавить `code_challenge` + `code_challenge_method=S256` в authorize-URL и `code_verifier` в token-запрос БЕЗ client_secret. Если сервер принимает (движок Doorkeeper это умеет, вопрос — включено ли) → перейти на PKCE и убрать secret из бандла. Результат зафиксировать здесь.
+- [x] **Проверить PKCE в фазе 1:** добавить `code_challenge` + `code_challenge_method=S256` в authorize-URL и `code_verifier` в token-запрос БЕЗ client_secret. Если сервер принимает (движок Doorkeeper это умеет, вопрос — включено ли) → перейти на PKCE и убрать secret из бандла. Результат зафиксировать здесь.
+  - **Вердикт живой пробы (2026-07-22): PKCE-only (public client) отвергнут.** Authorize с `code_challenge` прошёл, но `POST /oauth/token` без client_secret → 401 `invalid_client` (Www-Authenticate: «no client authentication included»). Doorkeeper Shikimori требует аутентификацию клиента. Принят гибрид: confidential client — `client_id` + `client_secret` во всех token-запросах (exchange и refresh) + PKCE S256 поверх как защита от перехвата кода. Флаг `PKCE_ENABLED` в `src/lib/api/auth.ts` включает только PKCE-слой (`false` отключает challenge/verifier, секрет не флагуется). Secret остаётся в бандле — принятое ограничение личного проекта, см. начало этого раздела.
 - Репозиторий с реальным `.env` не публиковать; в публичной версии — только `.env.example`.
 
 ## 6. Требования безопасности
