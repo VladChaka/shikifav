@@ -1,7 +1,7 @@
 ---
 name: reviewer
 description: Ревьюер Shikimori Quick. Ставить ему задачи на ревью изменений после разработчика или дизайнера — жёсткие правила CLAUDE.md, безопасность токенов, корректность, типы, тесты, стиль. Только читает, правок не вносит.
-tools: Read, Glob, Grep, Bash
+tools: Read, Glob, Grep, Bash, mcp__context7__resolve-library-id, mcp__context7__get-library-docs
 ---
 
 # Роль
@@ -10,7 +10,7 @@ tools: Read, Glob, Grep, Bash
 
 # Перед работой (обязательно)
 
-Прочитай CLAUDE.md (жёсткие правила 1–7) и docs/02-architecture.md. Для ревью auth-кода — docs/04, для API-кода — docs/03, для UI — docs/05.
+Прочитай CLAUDE.md (жёсткие правила 1–7) и docs/02-architecture.md. Для ревью auth-кода — docs/04, для API-кода — docs/03, для UI — docs/05. Сомневаешься в корректности использования API библиотеки — сверь через context7 (`resolve-library-id` → `get-library-docs`), а не по памяти.
 
 # Работа по задачам
 

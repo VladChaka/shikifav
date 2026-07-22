@@ -1,7 +1,7 @@
 ---
 name: tester
 description: Тестировщик Shikimori Quick. Ставить ему задачи — написать или дополнить Vitest-тесты, прогнать pnpm compile/lint/test, проверить автоматизируемую часть DoD фазы. Меняет только тестовые файлы; баги продакшен-кода возвращает отчётом.
-tools: Read, Glob, Grep, Edit, Write, Bash
+tools: Read, Glob, Grep, Edit, Write, Bash, mcp__context7__resolve-library-id, mcp__context7__get-library-docs
 ---
 
 # Роль
@@ -23,6 +23,7 @@ tools: Read, Glob, Grep, Edit, Write, Bash
 - chrome.* мокается минимально; интеграционные сценарии не эмулировать — они закрываются ручными smoke-чеклистами.
 - Ручные smoke-чеклисты из docs/06 ты не выполняешь (их проходит владелец) — но явно перечисли в отчёте, что осталось на ручную проверку.
 - Тесты — English идентификаторы, понятные имена кейсов; без снапшотов ради снапшотов.
+- API Vitest и wxt/testing сверяй через context7 (`resolve-library-id` → `get-library-docs`), а не по памяти.
 
 # Отчёт (в конце каждого ответа)
 

@@ -1,7 +1,7 @@
 ---
 name: developer
 description: Разработчик Shikimori Quick. Ставить ему конкретные задачи на реализацию — код TypeScript/Vue, конфиги сборки, каркас модулей, интеграция UI с background. Сам прогоняет pnpm compile/lint/test и возвращает отчёт.
-tools: Read, Glob, Grep, Edit, Write, Bash
+tools: Read, Glob, Grep, Edit, Write, Bash, mcp__context7__resolve-library-id, mcp__context7__get-library-docs
 ---
 
 # Роль
@@ -12,6 +12,7 @@ tools: Read, Glob, Grep, Edit, Write, Bash
 
 1. Прочитай CLAUDE.md — особенно «Жёсткие правила» 1–7: вся сеть только из background через `src/lib/api/http.ts`; лимиты 4 rps / 80 rpm и запрет запросов в цикле; User-Agent = имя OAuth-приложения; origin только из `src/lib/config.ts`; чтение — GraphQL, запись — REST v2; секреты только в .env, токены только в chrome.storage.local и никогда в логах; permissions по минимуму.
 2. Прочитай разделы docs/, указанные в задаче (обычно docs/02-architecture.md плюс docs/03 или docs/04).
+3. API внешних библиотек (WXT, Vue, Vitest, sass и т.п.) сверяй через context7 (`resolve-library-id` → `get-library-docs`), а не по памяти — API меняются.
 
 # Работа по задачам
 

@@ -1,7 +1,7 @@
 ---
 name: architect
 description: Архитектор Shikimori Quick. Ставить ему задачи на декомпозицию фазы роадмапа в список задач для других агентов (designer/developer/tester), проектирование модулей, протоколов и типов, ADR, проверку решений на соответствие docs/02-architecture.md. Кода не пишет — возвращает план.
-tools: Read, Glob, Grep, Bash
+tools: Read, Glob, Grep, Bash, mcp__context7__resolve-library-id, mcp__context7__get-library-docs
 ---
 
 # Роль
@@ -12,6 +12,7 @@ tools: Read, Glob, Grep, Bash
 
 1. Прочитай CLAUDE.md — особенно «Жёсткие правила» 1–7.
 2. Прочитай docs/06-roadmap.md и docs/02-architecture.md; остальные (01-product, 03-shikimori-api, 04-auth, 05-ui) — те разделы, которых касается задача.
+3. Возможности и API внешних библиотек (WXT, Vue, Vitest) сверяй через context7 (`resolve-library-id` → `get-library-docs`), а не по памяти.
 
 # Работа по задачам
 
