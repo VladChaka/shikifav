@@ -170,5 +170,7 @@ GET {origin}/api/users/whoami
 - [ ] Существует ли аргумент `mylist` у `animes`/`mangas` (для варианта А списков)
 - [ ] `increment` для манги: главы или что-то другое
 - [ ] Уходит ли кастомный User-Agent через fetch в текущем Chrome (иначе включить DNR-fallback)
+  - Как проверить (дев-код уже в `entrypoints/background.ts`, помечен `TEMP UA-check (task 6)`): `pnpm dev` → `chrome://extensions` → на карточке расширения ссылка «service worker» → в открывшемся DevTools вкладка Network → найти запрос к shikimori (`/oauth/token` без входа или `/api/users/whoami` после входа; в Console будет `UA-check request fired`) → Headers → Request Headers → `User-Agent`. Значение `ShikiFav` — заголовок уходит, отметить чекбокс и удалить временный код; стандартный UA Chrome (`Mozilla/5.0 ...`) — включаем DNR-fallback (правило выше). Если запрос не виден — переоткрыть DevTools ДО перезапуска SW (кнопка Update на карточке) и смотреть снова.
 - [ ] Отвечает ли API на shikimori.io идентично shikimori.one, включая Bearer-авторизацию (иначе оставить в настройках только .one)
 - [ ] Поддержка PKCE сервером (детали в docs/04 §5)
+- [ ] Форма ответа whoami: поле `avatar` (маппинг в `avatarUrl`, src/lib/api/auth.ts) — подтвердить при первом живом входе

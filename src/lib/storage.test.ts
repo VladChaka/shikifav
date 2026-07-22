@@ -1,6 +1,14 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { fakeBrowser } from 'wxt/testing';
-import { DEFAULT_SETTINGS, getLocal, getSession, setLocal, setSession } from './storage';
+import {
+    clearSession,
+    DEFAULT_SETTINGS,
+    getLocal,
+    getSession,
+    removeLocal,
+    setLocal,
+    setSession,
+} from './storage';
 import type { LocalState, SessionState } from './storage';
 import { ORIGINS } from './config';
 
@@ -52,6 +60,21 @@ describe('storage', () => {
             await expect(getLocal('auth')).resolves.toEqual(auth);
         });
 
+        it('removeLocal deletes only the given key', async () => {
+            await setLocal('auth', {
+                accessToken: 'a',
+                refreshToken: 'r',
+                expiresAt: 0,
+                user: { id: 1, nickname: 'n', avatarUrl: '' },
+            });
+            await setLocal('settings', DEFAULT_SETTINGS);
+
+            await removeLocal('auth');
+
+            await expect(getLocal('auth')).resolves.toBeUndefined();
+            await expect(getLocal('settings')).resolves.toEqual(DEFAULT_SETTINGS);
+        });
+
         it('keeps keys independent: writing auth does not affect settings', async () => {
             await setLocal('auth', {
                 accessToken: 'a',
@@ -72,6 +95,16 @@ describe('storage', () => {
             const lastTab: SessionState['lastTab'] = 'lists';
             await setSession('lastTab', lastTab);
             await expect(getSession('lastTab')).resolves.toBe('lists');
+        });
+
+        it('clearSession wipes the session area but not local', async () => {
+            await setSession('lastTab', 'search');
+            await setLocal('settings', DEFAULT_SETTINGS);
+
+            await clearSession();
+
+            await expect(getSession('lastTab')).resolves.toBeUndefined();
+            await expect(getLocal('settings')).resolves.toEqual(DEFAULT_SETTINGS);
         });
     });
 

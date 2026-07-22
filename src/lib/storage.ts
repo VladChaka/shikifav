@@ -1,4 +1,5 @@
 import { browser } from 'wxt/browser';
+import type { User } from './api/types';
 import type { Origin } from './config';
 
 // All chrome.storage access goes ONLY through this module (docs/02-architecture.md).
@@ -8,7 +9,7 @@ export interface LocalState {
         accessToken: string;
         refreshToken: string;
         expiresAt: number; // ms epoch, already with a -60s margin
-        user: { id: number; nickname: string; avatarUrl: string };
+        user: User;
     };
     settings: {
         origin: Origin;
@@ -42,6 +43,10 @@ export async function setLocal<K extends keyof LocalState>(
     await browser.storage.local.set({ [key]: value });
 }
 
+export async function removeLocal<K extends keyof LocalState>(key: K): Promise<void> {
+    await browser.storage.local.remove(key);
+}
+
 export async function getSession<K extends keyof SessionState>(
     key: K,
 ): Promise<SessionState[K] | undefined> {
@@ -54,4 +59,10 @@ export async function setSession<K extends keyof SessionState>(
     value: SessionState[K],
 ): Promise<void> {
     await browser.storage.session.set({ [key]: value });
+}
+
+// The session cache may hold personal data (lists, search with userRate), so it
+// is wiped together with auth on logout (docs/04-auth.md §4).
+export async function clearSession(): Promise<void> {
+    await browser.storage.session.clear();
 }

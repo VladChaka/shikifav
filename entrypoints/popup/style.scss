@@ -6,7 +6,11 @@
     --color-fg: #1f1f24;
     --color-fg-muted: #6b6f76;
     --color-border: #e3e5e8;
+    --color-surface: #f1f2f4;
     --color-accent: #3b6ea5;
+    --color-accent-hover: #33608f;
+    --color-accent-fg: #ffffff;
+    --color-danger: #b3382e;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -15,7 +19,11 @@
         --color-fg: #e6e6e6;
         --color-fg-muted: #9aa0a6;
         --color-border: #3a3d42;
+        --color-surface: #2a2d32;
         --color-accent: #7aa2d8;
+        --color-accent-hover: #8fb2e0;
+        --color-accent-fg: #16181c;
+        --color-danger: #e5756c;
     }
 }
 

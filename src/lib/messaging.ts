@@ -1,20 +1,17 @@
 import { browser } from 'wxt/browser';
+import { isApiError } from './api/types';
+import type { ApiError, AuthState, User } from './api/types';
 
 // Typed popup/options <-> background protocol (docs/02-architecture.md).
 // Raw browser.runtime.sendMessage calls outside this module are forbidden.
 
-// Phase 0: declared here; moves to src/lib/api/types.ts in phase 1.
-export type ApiError =
-    | { kind: 'network' } // fetch failed / timeout
-    | { kind: 'unauthorized' } // 401 after a refresh attempt
-    | { kind: 'rate_limited'; retryAfterMs?: number }
-    | { kind: 'api'; status: number; message: string } // 4xx/5xx, including 422
-    | { kind: 'internal'; message: string };
-
-// Single registry of all message types. Phase 0 has only the service `ping`;
-// auth.*, search.*, rates.* are added in later phases.
+// Single registry of all message types; search.* and rates.* are added in later
+// phases. auth.* data carries only { status, user } — never tokens (docs/04 §6).
 export interface MessageMap {
     ping: { payload: undefined; data: { pong: true } };
+    'auth.getState': { payload: undefined; data: AuthState };
+    'auth.login': { payload: undefined; data: { user: User } };
+    'auth.logout': { payload: undefined; data: Record<string, never> };
 }
 
 export type MessageType = keyof MessageMap;
@@ -61,6 +58,13 @@ async function dispatch(
     try {
         return { ok: true, data: await handler(rawMessage.payload) };
     } catch (e) {
+        // An ApiError thrown by a handler keeps its kind on the wire:
+        // 'unauthorized' must not degrade to 'internal' (docs/02 error model).
+        // Only kind reaches the log — never the full error object.
+        if (isApiError(e)) {
+            console.debug('[messaging] handler error:', rawMessage.type, e.kind);
+            return { ok: false, error: e };
+        }
         console.debug('[messaging] handler failed:', rawMessage.type, e);
         return {
             ok: false,
