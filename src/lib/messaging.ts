@@ -65,7 +65,11 @@ async function dispatch(
             console.debug('[messaging] handler error:', rawMessage.type, e.kind);
             return { ok: false, error: e };
         }
-        console.debug('[messaging] handler failed:', rawMessage.type, e);
+        console.debug(
+            '[messaging] handler failed:',
+            rawMessage.type,
+            e instanceof Error ? e.message : typeof e,
+        );
         return {
             ok: false,
             error: { kind: 'internal', message: `Handler failed: ${rawMessage.type}` },

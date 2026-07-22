@@ -6,7 +6,7 @@
 ```ts
 // src/lib/config.ts
 export const ORIGINS = ['https://shikimori.one', 'https://shikimori.io'] as const;
-// Дефолтный origin — 'https://shikimori.io' (DEFAULT_SETTINGS в src/lib/storage.ts)
+// Дефолтный origin — 'https://shikimori.io' (DEFAULT_ORIGIN в src/lib/config.ts)
 export const APP_NAME = import.meta.env.WXT_SHIKI_APP_NAME as string; // = имя OAuth-приложения (docs/04)
 export const CLIENT_ID = import.meta.env.WXT_SHIKI_CLIENT_ID as string;
 export const CLIENT_SECRET = import.meta.env.WXT_SHIKI_CLIENT_SECRET as string;
@@ -49,7 +49,7 @@ Endpoint: `POST {origin}/api/graphql`, тело `{ "query": "...", "variables": 
 
 ### Интроспекция — выполнить в начале фазы 2, ДО написания запросов
 ```bash
-curl -s -X POST https://shikimori.one/api/graphql \
+curl -s -X POST https://shikimori.io/api/graphql \
   -H 'Content-Type: application/json' -H 'User-Agent: <APP_NAME>' \
   -d '{"query":"{ __type(name: \"Anime\") { fields { name type { name kind ofType { name } } } } }"}'
 ```
@@ -177,5 +177,7 @@ GET {origin}/api/users/whoami
 - [x] DNR-правило реально подменяет UA на APP_NAME
   - ДА (Chrome 150, проверка владельца 2026-07-22): в Request Headers боевого запроса к shikimori.io виден `User-Agent: ShikiFav`. TEMP UA-check из `entrypoints/background.ts` удалён.
 - [ ] Отвечает ли API на shikimori.io идентично shikimori.one, включая Bearer-авторизацию (иначе оставить в настройках только .one)
-- [ ] Поддержка PKCE сервером (детали в docs/04 §5)
+  - Bearer на .io подтверждён живым входом 2026-07-22 (token + whoami на .io, это дефолтный origin); полная идентичность (GraphQL) — проверить в фазе 2 при интроспекции.
+- [x] Поддержка PKCE сервером (детали в docs/04 §5)
+  - См. docs/04 §5 — PKCE-only отвергнут (401 invalid_client), рабочая схема: confidential client + PKCE S256 поверх (2026-07-22).
 - [x] Форма ответа whoami: поле `avatar` (маппинг в `avatarUrl`, src/lib/api/auth.ts) — подтверждено при первом живом входе 2026-07-22: ник и аватар корректно отображаются в popup

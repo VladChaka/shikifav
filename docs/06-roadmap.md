@@ -12,11 +12,11 @@
 **DoD:** `pnpm dev` поднимает Chrome с расширением; `pnpm compile && pnpm lint && pnpm test` зелёные.
 
 ## Фаза 1 — Авторизация (docs/04, US-1)
-- [ ] Ручной шаг владельца: регистрация приложения на Shikimori, redirect URI из `chrome.identity.getRedirectURL()`, заполнение `.env`
-- [ ] `http.ts`: базовый fetch с origin из настроек и User-Agent; **проверка, что заголовок реально уходит** (иначе DNR-fallback из docs/03) — результат зафиксировать
-- [ ] `auth.ts`: login (launchWebAuthFlow → exchange → whoami), ensureToken + refresh single-flight, logout
-- [ ] Проверка PKCE (docs/04 §5) — результат зафиксировать
-- [ ] Popup: экран входа ↔ шапка с ником и аватаром; messaging `auth.*`
+- [x] Ручной шаг владельца: регистрация приложения на Shikimori, redirect URI из `chrome.identity.getRedirectURL()`, заполнение `.env`
+- [x] `http.ts`: базовый fetch с origin из настроек и User-Agent; **проверка, что заголовок реально уходит** (иначе DNR-fallback из docs/03) — результат зафиксировать
+- [x] `auth.ts`: login (launchWebAuthFlow → exchange → whoami), ensureToken + refresh single-flight, logout
+- [x] Проверка PKCE (docs/04 §5) — результат зафиксировать
+- [x] Popup: экран входа ↔ шапка с ником и аватаром; messaging `auth.*`
 
 **DoD:** вход и выход работают; сессия переживает перезапуск браузера; при протухшем access-токене whoami сам делает refresh и отвечает без ошибки.
 **Smoke:** войти → полностью закрыть Chrome → открыть → popup показывает профиль без повторного логина. Отозвать доступ на сайте → любое действие в расширении приводит к экрану входа без зацикливания.

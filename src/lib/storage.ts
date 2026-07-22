@@ -1,5 +1,6 @@
 import { browser } from 'wxt/browser';
 import type { User } from './api/types';
+import { DEFAULT_ORIGIN } from './config';
 import type { Origin } from './config';
 
 // All chrome.storage access goes ONLY through this module (docs/02-architecture.md).
@@ -24,10 +25,8 @@ export interface SessionState {
     lastTab?: 'search' | 'lists';
 }
 
-// Default is .io: .one 301-redirects POST /oauth/token to .io, which turns the
-// POST into a GET (verified 2026-07-22, docs/03).
 export const DEFAULT_SETTINGS: LocalState['settings'] = {
-    origin: 'https://shikimori.io',
+    origin: DEFAULT_ORIGIN,
     titleLang: 'ru',
 };
 

@@ -13,6 +13,10 @@ declare global {
 export const ORIGINS = ['https://shikimori.one', 'https://shikimori.io'] as const;
 export type Origin = (typeof ORIGINS)[number];
 
+// Default is .io: .one 301-redirects POST /oauth/token to .io, which turns the
+// POST into a GET (verified 2026-07-22, docs/03).
+export const DEFAULT_ORIGIN: Origin = 'https://shikimori.io';
+
 export const APP_NAME: string = import.meta.env.WXT_SHIKI_APP_NAME ?? '';
 export const CLIENT_ID: string = import.meta.env.WXT_SHIKI_CLIENT_ID ?? '';
 // Secret: never log it and never include it in error messages (CLAUDE.md rule 6).
