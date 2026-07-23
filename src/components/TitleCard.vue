@@ -117,7 +117,7 @@
                     :current="card.userRate?.status ?? null"
                     @select="onSelect"
                     @remove="onRemove"
-                    @close="menuOpen = false"
+                    @close="emit('update:menuOpen', false)"
                 />
             </div>
 
@@ -134,13 +134,14 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed } from 'vue';
 import StatusMenu from '@/src/components/StatusMenu.vue';
 import type { TitleCard, UserRateStatus } from '@/src/lib/api/types';
 import { i18n, kindLabel, statusLabel, titleStatusLabel } from '@/src/lib/i18n';
 
 // Search result card (US-2/US-3). Presentational only: mutations are emitted
-// upwards, `busy` and `warning` are controlled by the owner of the data.
+// upwards, `busy`, `warning` and `menuOpen` are controlled by the owner of the
+// data — the list keeps at most one status menu open across all cards.
 const props = withDefaults(
     defineProps<{
         card: TitleCard;
@@ -148,8 +149,11 @@ const props = withDefaults(
         busy?: boolean;
         // Inline non-blocking warning under the card (e.g. edit access revoked).
         warning?: string | null;
+        // Whether this card's status menu is open (single-open coordination
+        // lives in the list owner via update:menuOpen).
+        menuOpen?: boolean;
     }>(),
-    { busy: false, warning: null },
+    { busy: false, warning: null, menuOpen: false },
 );
 
 const emit = defineEmits<{
@@ -159,6 +163,7 @@ const emit = defineEmits<{
     // "create with that status", for a card with userRate — "update".
     'set-status': [status: UserRateStatus];
     remove: [];
+    'update:menuOpen': [open: boolean];
 }>();
 
 const title = computed(() => props.card.russian || props.card.name);
@@ -209,19 +214,17 @@ function episodesText(): string | null {
     return null;
 }
 
-const menuOpen = ref(false);
-
 function toggleMenu(): void {
-    menuOpen.value = !menuOpen.value;
+    emit('update:menuOpen', !props.menuOpen);
 }
 
 function onSelect(status: UserRateStatus): void {
-    menuOpen.value = false;
+    emit('update:menuOpen', false);
     emit('set-status', status);
 }
 
 function onRemove(): void {
-    menuOpen.value = false;
+    emit('update:menuOpen', false);
     emit('remove');
 }
 </script>

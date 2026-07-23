@@ -29,56 +29,34 @@
                 {{ apiErrorMessage(error) }}
             </p>
 
-            <!-- TEMPORARY (Ф2-5): dev-only switcher to reach every screen state
-                 visually. REMOVE in Ф2-6 together with search-stubs.ts. -->
-            <div
-                v-if="isDev"
-                class="app__demo"
+            <SearchTab
+                :model-value="searchQuery"
+                @update:model-value="setQuery"
             >
-                <button
-                    v-for="view in DEMO_VIEWS"
-                    :key="view.id"
-                    class="app__demo-button"
-                    :class="{ 'app__demo-button--active': demoView === view.id }"
-                    type="button"
-                    @click="demoView = view.id"
-                >
-                    {{ view.label }}
-                </button>
-                <button
-                    class="app__demo-button"
-                    type="button"
-                    @click="toastText = i18n.errors.api"
-                >
-                    {{ DEMO_TOAST_LABEL }}
-                </button>
-            </div>
-
-            <SearchTab v-model="query">
-                <SkeletonList v-if="demoView === 'loading'" />
+                <SkeletonList v-if="searchStatus === 'loading'" />
                 <EmptyState
-                    v-else-if="demoView === 'empty-hint'"
+                    v-else-if="searchStatus === 'idle'"
                     :text="i18n.search.emptyHint"
                 />
                 <EmptyState
-                    v-else-if="demoView === 'no-results'"
+                    v-else-if="searchStatus === 'empty'"
                     :text="i18n.search.noResults"
                 />
                 <ErrorState
-                    v-else-if="demoView === 'error'"
-                    :text="i18n.errors.network"
-                    @retry="onDemoAction"
+                    v-else-if="searchStatus === 'error'"
+                    :text="searchError ? apiErrorMessage(searchError) : i18n.errors.internal"
+                    @retry="retry"
                 />
                 <template v-else>
                     <TitleCard
-                        v-for="card in STUB_CARDS"
+                        v-for="card in searchItems"
                         :key="card.id"
                         :card="card"
-                        :busy="card.id === STUB_BUSY_ID"
-                        :warning="card.id === STUB_WARNING_ID ? i18n.errors.editForbidden : null"
-                        @add="onDemoAction"
-                        @set-status="onDemoAction"
-                        @remove="onDemoAction"
+                        :menu-open="openMenuCardId === card.id"
+                        @update:menu-open="openMenuCardId = $event ? card.id : null"
+                        @add="onCardAction"
+                        @set-status="onCardAction"
+                        @remove="onCardAction"
                     />
                 </template>
             </SearchTab>
@@ -105,33 +83,30 @@ import TitleCard from '@/src/components/TitleCard.vue';
 import Toast from '@/src/components/Toast.vue';
 import UserHeader from '@/src/components/UserHeader.vue';
 import { useAuth } from '@/src/composables/use-auth';
+import { useSearch } from '@/src/composables/use-search';
 import { apiErrorMessage, i18n } from '@/src/lib/i18n';
-// TEMPORARY (Ф2-5): stubs feed the static layout, delete in Ф2-6.
-import {
-    DEMO_TOAST_LABEL,
-    DEMO_VIEWS,
-    STUB_BUSY_ID,
-    STUB_CARDS,
-    STUB_WARNING_ID,
-    type DemoView,
-} from './search-stubs';
 
 const { status, user, error } = useAuth();
 
-// Search query is owned here; useSearch (Ф2-6) will take it over.
-const query = ref('');
+const {
+    query: searchQuery,
+    status: searchStatus,
+    items: searchItems,
+    error: searchError,
+    setQuery,
+    retry,
+} = useSearch();
 
+// Toast is shown by rates.* failures (Ф2-7); stays hidden until then.
 const toastText = ref<string | null>(null);
 
-// TEMPORARY (Ф2-5): demo screen state + dev flag, remove in Ф2-6.
-const isDev = import.meta.env.DEV;
-const demoView = ref<DemoView>('results');
+// At most one open StatusMenu across the list: the id of the card that owns it.
+const openMenuCardId = ref<string | null>(null);
 
-// Integration point for Ф2-6/Ф2-7: TitleCard events (add / set-status /
-// remove) and ErrorState retry will call rates.* via messaging with
-// optimistic updates. No-op while the screen is static.
-function onDemoAction(): void {
-    // wired in Ф2-6
+// TODO(Ф2-7): TitleCard actions (add / set-status / remove) call rates.* via
+// messaging with optimistic updates + rollback toast. No-op until then.
+function onCardAction(): void {
+    // wired in Ф2-7
 }
 </script>
 
@@ -148,32 +123,6 @@ function onDemoAction(): void {
     border-bottom: 1px solid var(--color-border);
     font-size: 13px;
     color: var(--color-danger);
-}
-
-/* TEMPORARY (Ф2-5): dev-only demo switcher, remove in Ф2-6. */
-.app__demo {
-    display: flex;
-    flex-shrink: 0;
-    flex-wrap: wrap;
-    gap: 4px;
-    padding: 4px 12px;
-    border-bottom: 1px dashed var(--color-border);
-}
-
-.app__demo-button {
-    padding: 1px 6px;
-    border: 1px solid var(--color-border);
-    border-radius: 4px;
-    background: transparent;
-    color: var(--color-fg-muted);
-    font: inherit;
-    font-size: 11px;
-    cursor: pointer;
-}
-
-.app__demo-button--active {
-    border-color: var(--color-accent);
-    color: var(--color-accent);
 }
 
 /* --- Loading skeleton: mirrors the header + a few content rows --- */

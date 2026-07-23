@@ -9,7 +9,7 @@
 </template>
 
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted } from 'vue';
+import { onBeforeUnmount, onMounted, watch } from 'vue';
 
 // Bottom toast for non-blocking errors (optimistic update rollback, Ф2-7).
 // The parent owns visibility: renders with v-if and removes it on `closed`.
@@ -32,9 +32,18 @@ function close(): void {
     emit('closed');
 }
 
-onMounted(() => {
+function armTimer(): void {
+    if (timer !== undefined) {
+        clearTimeout(timer);
+    }
     timer = setTimeout(close, props.duration);
-});
+}
+
+onMounted(armTimer);
+
+// A new message may replace the text while the toast is visible (Ф2-7):
+// restart the countdown so the fresh message gets the full duration.
+watch(() => props.text, armTimer);
 
 onBeforeUnmount(() => {
     if (timer !== undefined) {
