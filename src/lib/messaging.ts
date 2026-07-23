@@ -5,17 +5,20 @@ import type {
     AuthState,
     RateCreateParams,
     RatePatch,
+    RateRow,
+    RateState,
     SearchType,
     TitleCard,
     User,
     UserRateRef,
+    UserRateStatus,
 } from './api/types';
 
 // Typed popup/options <-> background protocol (docs/02-architecture.md).
 // Raw browser.runtime.sendMessage calls outside this module are forbidden.
 
-// Single registry of all message types; rates.list / rates.increment are added
-// in phase 3. Messages never carry tokens (docs/04 §6) or user_id (docs/02).
+// Single registry of all message types. Messages never carry tokens (docs/04 §6)
+// or user_id (docs/02).
 export interface MessageMap {
     ping: { payload: undefined; data: { pong: true } };
     'auth.getState': { payload: undefined; data: AuthState };
@@ -25,12 +28,20 @@ export interface MessageMap {
         payload: { query: string; type: SearchType; page?: number };
         data: { items: TitleCard[] };
     };
+    'rates.list': {
+        payload: { type: SearchType; status: UserRateStatus; page: number };
+        data: { items: RateRow[]; hasMore: boolean };
+    };
     'rates.create': { payload: RateCreateParams; data: { rate: UserRateRef } };
     'rates.update': {
         payload: { rateId: string; patch: RatePatch };
-        data: { rate: UserRateRef };
+        data: { rate: RateState };
     };
     'rates.delete': { payload: { rateId: string }; data: Record<string, never> };
+    'rates.increment': {
+        payload: { rateId: string };
+        data: { rate: RateState };
+    };
 }
 
 export type MessageType = keyof MessageMap;

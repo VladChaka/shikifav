@@ -89,9 +89,15 @@ function setup(initial: TitleCard[], overrides: Partial<MessageHandlers> = {}): 
         }),
         'auth.logout': async () => ({}),
         'search.titles': async () => ({ items: [] }),
+        'rates.list': async () => ({ items: [], hasMore: false }),
         'rates.create': async () => ({ rate: { id: '100', status: 'planned' } }),
-        'rates.update': async () => ({ rate: { id: '100', status: 'watching' } }),
+        'rates.update': async () => ({
+            rate: { id: '100', status: 'watching', score: 0, episodes: 0, chapters: 0, volumes: 0 },
+        }),
         'rates.delete': async () => ({}),
+        'rates.increment': async () => ({
+            rate: { id: '100', status: 'watching', score: 0, episodes: 0, chapters: 0, volumes: 0 },
+        }),
         ...overrides,
     });
     const items = ref(initial);
@@ -272,7 +278,16 @@ describe('use-rates', () => {
             {
                 'rates.update': async () => {
                     calls += 1;
-                    return { rate: { id: '1', status: 'watching' } };
+                    return {
+                        rate: {
+                            id: '1',
+                            status: 'watching',
+                            score: 0,
+                            episodes: 0,
+                            chapters: 0,
+                            volumes: 0,
+                        },
+                    };
                 },
                 'rates.delete': async () => {
                     calls += 1;

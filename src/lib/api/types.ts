@@ -62,6 +62,33 @@ export interface UserRateRef {
     status: UserRateStatus;
 }
 
+// Server snapshot after a write (update/increment). Media-agnostic mirror of the
+// REST user_rate; the UI picks the relevant progress field by targetType.
+export interface RateState {
+    id: string;
+    status: UserRateStatus;
+    score: number; // 0 = no score
+    episodes: number; // anime progress
+    chapters: number; // manga/ranobe progress (phase 4)
+    volumes: number; // manga/ranobe (phase 4)
+}
+
+// A row of "My lists" (US-4): a title joined with my user_rate, read via
+// animes(mylist:) (variant A). total = title episodes (0 = unknown/ongoing).
+export interface RateRow {
+    rateId: string; // user_rate id — PATCH/increment target
+    targetId: string; // title id (Number() for REST)
+    targetType: RateTargetType; // 'Anime' in phase 3
+    name: string;
+    russian: string | null;
+    posterUrl: string | null;
+    posterUrl2x: string | null;
+    status: UserRateStatus;
+    score: number; // 0 = no score
+    progress: number; // my episodes (anime)
+    total: number; // total episodes, 0 = unknown
+}
+
 // Search result card (US-2). Nullability mirrors the GraphQL schema per the
 // docs/03 introspection results (2026-07-23).
 export interface TitleCard {

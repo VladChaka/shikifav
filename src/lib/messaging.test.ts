@@ -19,9 +19,15 @@ function makeHandlers(overrides: Partial<MessageHandlers> = {}): MessageHandlers
         'auth.login': async () => ({ user: testUser }),
         'auth.logout': async () => ({}),
         'search.titles': async () => ({ items: [] }),
+        'rates.list': async () => ({ items: [], hasMore: false }),
         'rates.create': async () => ({ rate: { id: '1', status: 'planned' } }),
-        'rates.update': async () => ({ rate: { id: '1', status: 'watching' } }),
+        'rates.update': async () => ({
+            rate: { id: '1', status: 'watching', score: 0, episodes: 0, chapters: 0, volumes: 0 },
+        }),
         'rates.delete': async () => ({}),
+        'rates.increment': async () => ({
+            rate: { id: '1', status: 'watching', score: 0, episodes: 0, chapters: 0, volumes: 0 },
+        }),
         ...overrides,
     };
 }

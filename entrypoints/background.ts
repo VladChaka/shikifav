@@ -1,7 +1,7 @@
 import { ensureToken, getAuthState, login, logout } from '@/src/lib/api/auth';
-import { searchTitles } from '@/src/lib/api/graphql';
+import { listAnimeRates, searchTitles } from '@/src/lib/api/graphql';
 import { setTokenProvider } from '@/src/lib/api/http';
-import { createRate, deleteRate, updateRate } from '@/src/lib/api/rates';
+import { createRate, deleteRate, incrementRate, updateRate } from '@/src/lib/api/rates';
 import { registerUserAgentRule } from '@/src/lib/api/user-agent-rule';
 import { onMessage } from '@/src/lib/messaging';
 
@@ -27,6 +27,12 @@ export default defineBackground(() => {
         'search.titles': async ({ query, type, page }) => ({
             items: await searchTitles(query, type, page),
         }),
+        'rates.list': async ({ type, status, page }) => {
+            // hasMore is computed in the read layer from the raw page length, so
+            // a dropped userRate==null row cannot cut paging short (docs/06).
+            const { items, hasMore } = await listAnimeRates(type, status, page);
+            return { items, hasMore };
+        },
         'rates.create': async ({ targetId, targetType, status }) => ({
             rate: await createRate(targetId, targetType, status),
         }),
@@ -37,5 +43,8 @@ export default defineBackground(() => {
             await deleteRate(rateId);
             return {};
         },
+        'rates.increment': async ({ rateId }) => ({
+            rate: await incrementRate(rateId),
+        }),
     });
 });

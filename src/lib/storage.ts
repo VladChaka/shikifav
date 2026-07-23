@@ -1,5 +1,5 @@
 import { browser } from 'wxt/browser';
-import type { SearchType, TitleCard, User } from './api/types';
+import type { RateRow, SearchType, TitleCard, User, UserRateStatus } from './api/types';
 import { DEFAULT_ORIGIN } from './config';
 import type { Origin } from './config';
 
@@ -19,13 +19,21 @@ export interface LocalState {
 }
 
 // chrome.storage.session — live cache, safe to lose (docs/02-architecture.md).
-// Lists cache keys are added in phase 3.
 export interface SessionState {
     // Last opened popup tab: «Поиск» / «Мои списки» (docs/05-ui.md).
     lastTab?: 'search' | 'lists';
     // Last search results for the instant first render of the popup (docs/05-ui.md).
     // type keeps the Аниме/Манга/Ранобэ selector in sync with restored items.
     lastSearch?: { query: string; type: SearchType; items: TitleCard[] };
+    // Last opened "My lists" filter+page for the instant first render (docs/05).
+    // Only the last-viewed (type,status) combo is cached — mirrors lastSearch.
+    lastList?: {
+        type: SearchType;
+        status: UserRateStatus;
+        items: RateRow[];
+        page: number;
+        hasMore: boolean;
+    };
 }
 
 export const DEFAULT_SETTINGS: LocalState['settings'] = {

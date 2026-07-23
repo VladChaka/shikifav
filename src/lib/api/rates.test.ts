@@ -124,15 +124,26 @@ describe('rates', () => {
     });
 
     describe('updateRate', () => {
-        it('PATCHes only the given fields and maps the response to UserRateRef', async () => {
+        it('PATCHes only the given fields and maps the response to RateState', async () => {
             await setLocal('auth', storedAuth());
             fetchMock.mockResolvedValueOnce(
-                jsonResponse(200, { id: 42, status: 'watching', episodes: 5, score: 0 }),
+                jsonResponse(200, {
+                    id: 42,
+                    status: 'watching',
+                    score: 0,
+                    episodes: 5,
+                    chapters: 0,
+                    volumes: 0,
+                }),
             );
 
             await expect(updateRate('42', { status: 'watching' })).resolves.toEqual({
                 id: '42',
                 status: 'watching',
+                score: 0,
+                episodes: 5,
+                chapters: 0,
+                volumes: 0,
             });
 
             const request = capturedRequests()[0];
