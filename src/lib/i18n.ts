@@ -16,12 +16,38 @@ export const i18n = {
         logout: 'Выйти',
         settings: 'Настройки',
     },
-    home: {
-        placeholder: 'Поиск и списки появятся в следующих фазах',
+    tabs: {
+        search: 'Поиск',
+        myLists: 'Мои списки',
+        inDevelopment: 'В разработке',
     },
     search: {
+        placeholder: 'Название аниме…',
         emptyHint: 'Введите название аниме, манги или ранобэ',
         noResults: 'Ничего не найдено',
+    },
+    card: {
+        episodesShort: 'эп.',
+    },
+    // AnimeKindEnum values (docs/03); unknown kinds fall back to the raw value.
+    kinds: {
+        tv: 'TV',
+        movie: 'Фильм',
+        ova: 'OVA',
+        ona: 'ONA',
+        special: 'Спешл',
+        tv_special: 'TV-спешл',
+        music: 'Клип',
+        pv: 'PV',
+        cm: 'CM',
+    },
+    // AnimeStatusEnum / MangaStatusEnum values (docs/03).
+    titleStatuses: {
+        anons: 'Анонс',
+        ongoing: 'Онгоинг',
+        released: 'Вышло',
+        paused: 'Приостановлено',
+        discontinued: 'Прекращено',
     },
     // Anime-variant labels (docs/03 status table); manga variants come in phase 4.
     // Keys = UserRateStatus values, exhaustiveness is checked by statusLabel below.
@@ -35,6 +61,7 @@ export const i18n = {
     },
     actions: {
         addPlanned: '+ Запланировано',
+        chooseStatus: 'Выбрать статус',
         removeFromList: 'Удалить из списка',
         retry: 'Повторить',
     },
@@ -54,6 +81,22 @@ export const i18n = {
 // a status without a label fails here.
 export function statusLabel(status: UserRateStatus): string {
     return i18n.statuses[status];
+}
+
+// Kind/status of a title come from GraphQL as plain strings (not unions),
+// so these lookups fall back to the raw value for unmapped ones.
+export function kindLabel(kind: string | null): string | null {
+    if (!kind) {
+        return null;
+    }
+    return (i18n.kinds as Record<string, string>)[kind] ?? kind;
+}
+
+export function titleStatusLabel(status: string | null): string | null {
+    if (!status) {
+        return null;
+    }
+    return (i18n.titleStatuses as Record<string, string>)[status] ?? status;
 }
 
 // Maps a transport-level ApiError to a human-readable Russian message.

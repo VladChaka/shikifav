@@ -28,9 +28,66 @@
             >
                 {{ apiErrorMessage(error) }}
             </p>
-            <main class="app__content">
-                <p class="app__placeholder">{{ i18n.home.placeholder }}</p>
-            </main>
+
+            <!-- TEMPORARY (Ф2-5): dev-only switcher to reach every screen state
+                 visually. REMOVE in Ф2-6 together with search-stubs.ts. -->
+            <div
+                v-if="isDev"
+                class="app__demo"
+            >
+                <button
+                    v-for="view in DEMO_VIEWS"
+                    :key="view.id"
+                    class="app__demo-button"
+                    :class="{ 'app__demo-button--active': demoView === view.id }"
+                    type="button"
+                    @click="demoView = view.id"
+                >
+                    {{ view.label }}
+                </button>
+                <button
+                    class="app__demo-button"
+                    type="button"
+                    @click="toastText = i18n.errors.api"
+                >
+                    {{ DEMO_TOAST_LABEL }}
+                </button>
+            </div>
+
+            <SearchTab v-model="query">
+                <SkeletonList v-if="demoView === 'loading'" />
+                <EmptyState
+                    v-else-if="demoView === 'empty-hint'"
+                    :text="i18n.search.emptyHint"
+                />
+                <EmptyState
+                    v-else-if="demoView === 'no-results'"
+                    :text="i18n.search.noResults"
+                />
+                <ErrorState
+                    v-else-if="demoView === 'error'"
+                    :text="i18n.errors.network"
+                    @retry="onDemoAction"
+                />
+                <template v-else>
+                    <TitleCard
+                        v-for="card in STUB_CARDS"
+                        :key="card.id"
+                        :card="card"
+                        :busy="card.id === STUB_BUSY_ID"
+                        :warning="card.id === STUB_WARNING_ID ? i18n.errors.editForbidden : null"
+                        @add="onDemoAction"
+                        @set-status="onDemoAction"
+                        @remove="onDemoAction"
+                    />
+                </template>
+            </SearchTab>
+
+            <Toast
+                v-if="toastText"
+                :text="toastText"
+                @closed="toastText = null"
+            />
         </template>
 
         <LoginScreen v-else />
@@ -38,12 +95,44 @@
 </template>
 
 <script setup lang="ts">
+import { ref } from 'vue';
+import EmptyState from '@/src/components/EmptyState.vue';
+import ErrorState from '@/src/components/ErrorState.vue';
 import LoginScreen from '@/src/components/LoginScreen.vue';
+import SearchTab from '@/src/components/SearchTab.vue';
+import SkeletonList from '@/src/components/SkeletonList.vue';
+import TitleCard from '@/src/components/TitleCard.vue';
+import Toast from '@/src/components/Toast.vue';
 import UserHeader from '@/src/components/UserHeader.vue';
 import { useAuth } from '@/src/composables/use-auth';
 import { apiErrorMessage, i18n } from '@/src/lib/i18n';
+// TEMPORARY (Ф2-5): stubs feed the static layout, delete in Ф2-6.
+import {
+    DEMO_TOAST_LABEL,
+    DEMO_VIEWS,
+    STUB_BUSY_ID,
+    STUB_CARDS,
+    STUB_WARNING_ID,
+    type DemoView,
+} from './search-stubs';
 
 const { status, user, error } = useAuth();
+
+// Search query is owned here; useSearch (Ф2-6) will take it over.
+const query = ref('');
+
+const toastText = ref<string | null>(null);
+
+// TEMPORARY (Ф2-5): demo screen state + dev flag, remove in Ф2-6.
+const isDev = import.meta.env.DEV;
+const demoView = ref<DemoView>('results');
+
+// Integration point for Ф2-6/Ф2-7: TitleCard events (add / set-status /
+// remove) and ErrorState retry will call rates.* via messaging with
+// optimistic updates. No-op while the screen is static.
+function onDemoAction(): void {
+    // wired in Ф2-6
+}
 </script>
 
 <style scoped lang="scss">
@@ -61,19 +150,30 @@ const { status, user, error } = useAuth();
     color: var(--color-danger);
 }
 
-.app__content {
+/* TEMPORARY (Ф2-5): dev-only demo switcher, remove in Ф2-6. */
+.app__demo {
     display: flex;
-    flex: 1;
-    align-items: center;
-    justify-content: center;
-    min-height: 0;
-    padding: 16px;
+    flex-shrink: 0;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 4px 12px;
+    border-bottom: 1px dashed var(--color-border);
 }
 
-.app__placeholder {
-    margin: 0;
+.app__demo-button {
+    padding: 1px 6px;
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    background: transparent;
     color: var(--color-fg-muted);
-    text-align: center;
+    font: inherit;
+    font-size: 11px;
+    cursor: pointer;
+}
+
+.app__demo-button--active {
+    border-color: var(--color-accent);
+    color: var(--color-accent);
 }
 
 /* --- Loading skeleton: mirrors the header + a few content rows --- */
