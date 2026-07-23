@@ -79,11 +79,13 @@ type ActionResult = { ok: true; rate: UserRateRef | null } | { ok: false; error:
 // A token revoke returns 401 (confirmed by the owner 2026-07-23, docs/03), so
 // the 'unauthorized' branch drives the lazy inline warning. The 403 branch is
 // dead but kept as a defensive guard for a possible scope-only rejection.
-function isEditForbidden(error: ApiError): boolean {
+// Exported: use-lists applies the same policy to list rows.
+export function isEditForbidden(error: ApiError): boolean {
     return error.kind === 'unauthorized' || (error.kind === 'api' && error.status === 403);
 }
 
-function failureToast(error: ApiError): string {
+// Exported: shared with use-lists.
+export function failureToast(error: ApiError): string {
     // 422 carries a validation message extracted by http.ts — more useful than
     // the generic "api" text.
     if (error.kind === 'api' && error.status === 422 && error.message) {

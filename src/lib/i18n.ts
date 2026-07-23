@@ -19,12 +19,33 @@ export const i18n = {
     tabs: {
         search: 'Поиск',
         myLists: 'Мои списки',
-        inDevelopment: 'В разработке',
     },
     search: {
         placeholder: 'Название аниме…',
         emptyHint: 'Введите название аниме, манги или ранобэ',
         noResults: 'Ничего не найдено',
+    },
+    // "Мои списки" tab: type/status filters, pagination, empty state (docs/05).
+    lists: {
+        typeFilterLabel: 'Тип',
+        statusFilterLabel: 'Статус',
+        types: {
+            anime: 'Аниме',
+            manga: 'Манга',
+            ranobe: 'Ранобэ',
+        },
+        loadMore: 'Ещё',
+        loadingMore: 'Загрузка…',
+        empty: 'Ничего не найдено',
+    },
+    // Score picker (US-5): 0 removes the score, 1–10 set it.
+    score: {
+        label: 'Оценка',
+        remove: 'Снять оценку',
+    },
+    common: {
+        yes: 'Да',
+        later: 'Позже',
     },
     card: {
         episodesShort: 'эп.',
@@ -68,6 +89,10 @@ export const i18n = {
     rates: {
         // 404 on update/delete: the record is gone on the site (Ф2-7).
         alreadyRemoved: 'Запись уже удалена',
+        // aria/title of the "+1 episode" button in a list row (US-6).
+        increment: '+1 эпизод',
+        // Inline suggestion after progress reaches the total (US-6, not automatic).
+        markCompletedQuestion: 'Перевести в «Просмотрено»?',
     },
     errors: {
         network: 'Нет соединения с Shikimori. Проверьте интернет и повторите.',

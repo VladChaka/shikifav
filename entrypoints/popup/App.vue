@@ -29,7 +29,13 @@
                 {{ apiErrorMessage(error) }}
             </p>
 
+            <TabBar
+                :active="activeTab"
+                @update:active="selectTab"
+            />
+
             <SearchTab
+                v-show="activeTab === 'search'"
                 :model-value="searchQuery"
                 @update:model-value="setQuery"
             >
@@ -63,6 +69,28 @@
                 </template>
             </SearchTab>
 
+            <MyListsTab
+                v-show="activeTab === 'lists'"
+                :items="listItems"
+                :list-status="listStatus"
+                :error-text="listErrorText"
+                :has-more="listHasMore"
+                :loading-more="listLoadingMore"
+                :filter-type="listFilterType"
+                :filter-status="listFilterStatus"
+                :busy-ids="listBusyIds"
+                :suggest-ids="listSuggestIds"
+                :warnings="listWarnings"
+                @update:filter-type="setListType"
+                @update:filter-status="setListStatus"
+                @load-more="loadMoreList"
+                @retry="retryList"
+                @increment="incrementRate"
+                @set-score="setRateScore"
+                @mark-completed="markRateCompleted"
+                @dismiss-suggest="dismissRateSuggest"
+            />
+
             <!-- :key re-mounts the toast, restarting its auto-close timer even
                  when the same text is shown twice in a row. -->
             <Toast
@@ -78,19 +106,24 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
+import { onMounted, ref, watch } from 'vue';
 import EmptyState from '@/src/components/EmptyState.vue';
 import ErrorState from '@/src/components/ErrorState.vue';
 import LoginScreen from '@/src/components/LoginScreen.vue';
+import MyListsTab from '@/src/components/MyListsTab.vue';
 import SearchTab from '@/src/components/SearchTab.vue';
 import SkeletonList from '@/src/components/SkeletonList.vue';
+import TabBar from '@/src/components/TabBar.vue';
+import type { TabId } from '@/src/components/TabBar.vue';
 import TitleCard from '@/src/components/TitleCard.vue';
 import Toast from '@/src/components/Toast.vue';
 import UserHeader from '@/src/components/UserHeader.vue';
 import { useAuth } from '@/src/composables/use-auth';
+import { useLists } from '@/src/composables/use-lists';
 import { useRates } from '@/src/composables/use-rates';
 import { useSearch } from '@/src/composables/use-search';
 import type { TitleCard as TitleCardData, UserRateStatus } from '@/src/lib/api/types';
+import { getSession, setSession } from '@/src/lib/storage';
 import { apiErrorMessage, i18n } from '@/src/lib/i18n';
 
 const { status, user, error } = useAuth();
@@ -113,6 +146,60 @@ function showToast(text: string): void {
 }
 
 const { busyIds, warnings, performAction } = useRates(searchItems, showToast);
+
+const {
+    items: listItems,
+    listStatus,
+    errorText: listErrorText,
+    hasMore: listHasMore,
+    loadingMore: listLoadingMore,
+    filterType: listFilterType,
+    filterStatus: listFilterStatus,
+    busyIds: listBusyIds,
+    suggestIds: listSuggestIds,
+    warnings: listWarnings,
+    activate: activateLists,
+    loadMore: loadMoreList,
+    retry: retryList,
+    setFilterType: setListType,
+    setFilterStatus: setListStatus,
+    increment: incrementRate,
+    setScore: setRateScore,
+    markCompleted: markRateCompleted,
+    dismissSuggest: dismissRateSuggest,
+} = useLists(showToast);
+
+// Active top-level tab (docs/05). Restored from session on open and persisted on
+// every switch, so the popup reopens on the last used tab.
+const activeTab = ref<TabId>('search');
+// The async lastTab restore must not override a tab the user already picked.
+let tabTouched = false;
+
+onMounted(async () => {
+    const lastTab = await getSession('lastTab');
+    if (lastTab && !tabTouched) {
+        activeTab.value = lastTab;
+    }
+});
+
+function selectTab(tab: TabId): void {
+    tabTouched = true;
+    activeTab.value = tab;
+    void setSession('lastTab', tab);
+}
+
+// Lazy first-page load: only once the user is authorized AND the "Мои списки"
+// tab is actually shown (docs/05 — no blocking requests at popup open).
+// activate() is idempotent, so re-firing on later switches is a no-op.
+watch(
+    [status, activeTab],
+    ([authStatus, tab]) => {
+        if (authStatus === 'authorized' && tab === 'lists') {
+            activateLists();
+        }
+    },
+    { immediate: true },
+);
 
 // At most one open StatusMenu across the list: the id of the card that owns it.
 const openMenuCardId = ref<string | null>(null);
