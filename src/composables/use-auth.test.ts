@@ -15,6 +15,7 @@ async function setup(overrides: Partial<MessageHandlers> = {}): Promise<UseAuth>
     messaging.onMessage({
         ping: async () => ({ pong: true }),
         'auth.getState': async () => ({ status: 'anonymous' }),
+        'auth.validate': async () => ({ status: 'anonymous' }),
         'auth.login': async () => ({ user: testUser }),
         'auth.logout': async () => ({}),
         ...overrides,
@@ -31,11 +32,63 @@ describe('use-auth', () => {
     it('starts in loading and auto-refreshes to the background state', async () => {
         const auth = await setup({
             'auth.getState': async () => ({ status: 'authorized', user: testUser }),
+            'auth.validate': async () => ({ status: 'authorized', user: testUser }),
         });
         await vi.waitFor(() => {
             expect(auth.status.value).toBe('authorized');
         });
         expect(auth.user.value).toEqual(testUser);
+    });
+
+    it('validates the session after the cached state and applies an anonymous verdict', async () => {
+        const calls: string[] = [];
+        const auth = await setup({
+            'auth.getState': async () => {
+                calls.push('getState');
+                return { status: 'authorized', user: testUser };
+            },
+            'auth.validate': async () => {
+                calls.push('validate');
+                return { status: 'anonymous' };
+            },
+        });
+        await vi.waitFor(() => {
+            expect(auth.status.value).toBe('anonymous');
+        });
+        // Exactly one getState then one validate per popup open — no loops.
+        expect(calls).toEqual(['getState', 'validate']);
+        expect(auth.user.value).toBeUndefined();
+        // The background check never surfaces an error to the UI.
+        expect(auth.error.value).toBeUndefined();
+    });
+
+    it('updates the user when validate returns fresher profile data', async () => {
+        const renamed: User = { ...testUser, nickname: 'renamed' };
+        const auth = await setup({
+            'auth.getState': async () => ({ status: 'authorized', user: testUser }),
+            'auth.validate': async () => ({ status: 'authorized', user: renamed }),
+        });
+        await vi.waitFor(() => {
+            expect(auth.user.value).toEqual(renamed);
+        });
+        expect(auth.status.value).toBe('authorized');
+    });
+
+    it('keeps the cached state and stays silent when validate fails', async () => {
+        const auth = await setup({
+            'auth.getState': async () => ({ status: 'authorized', user: testUser }),
+            'auth.validate': async () => {
+                throw { kind: 'network' } satisfies ApiError;
+            },
+        });
+        await vi.waitFor(() => {
+            expect(auth.status.value).toBe('authorized');
+        });
+        // Let the failed validation settle before asserting nothing changed.
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(auth.status.value).toBe('authorized');
+        expect(auth.user.value).toEqual(testUser);
+        expect(auth.error.value).toBeUndefined();
     });
 
     it('login success sets authorized state with the user', async () => {
@@ -63,6 +116,7 @@ describe('use-auth', () => {
     it('logout returns to anonymous and drops the user', async () => {
         const auth = await setup({
             'auth.getState': async () => ({ status: 'authorized', user: testUser }),
+            'auth.validate': async () => ({ status: 'authorized', user: testUser }),
         });
         await auth.refreshState();
         expect(auth.status.value).toBe('authorized');

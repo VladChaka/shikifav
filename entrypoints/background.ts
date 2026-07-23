@@ -1,4 +1,4 @@
-import { ensureToken, getAuthState, login, logout } from '@/src/lib/api/auth';
+import { ensureToken, getAuthState, login, logout, validateSession } from '@/src/lib/api/auth';
 import { setTokenProvider } from '@/src/lib/api/http';
 import { registerUserAgentRule } from '@/src/lib/api/user-agent-rule';
 import { onMessage } from '@/src/lib/messaging';
@@ -17,6 +17,7 @@ export default defineBackground(() => {
     onMessage({
         ping: async () => ({ pong: true }),
         'auth.getState': () => getAuthState(),
+        'auth.validate': () => validateSession(),
         'auth.login': async () => ({ user: await login() }),
         'auth.logout': async () => {
             await logout();
