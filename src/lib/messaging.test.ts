@@ -16,7 +16,6 @@ function makeHandlers(overrides: Partial<MessageHandlers> = {}): MessageHandlers
     return {
         ping: async () => ({ pong: true }),
         'auth.getState': async () => ({ status: 'anonymous' }),
-        'auth.validate': async () => ({ status: 'anonymous' }),
         'auth.login': async () => ({ user: testUser }),
         'auth.logout': async () => ({}),
         ...overrides,

@@ -40,28 +40,6 @@ async function refreshState(): Promise<void> {
     }
 }
 
-// One-shot background check per popup open: the cached state renders first,
-// then the server verdict silently reconciles it (an app revoked on the site
-// must not keep showing the profile). Failures never reach the UI.
-async function validateSession(): Promise<void> {
-    const response = await sendMessage('auth.validate');
-    if (!response.ok) {
-        console.debug('[use-auth] validate failed:', response.error.kind);
-        return;
-    }
-    status.value = response.data.status;
-    if (!sameUser(user.value, response.data.user)) {
-        user.value = response.data.user;
-    }
-}
-
-function sameUser(a: User | undefined, b: User | undefined): boolean {
-    if (a === undefined || b === undefined) {
-        return a === b;
-    }
-    return a.id === b.id && a.nickname === b.nickname && a.avatarUrl === b.avatarUrl;
-}
-
 async function login(): Promise<void> {
     if (pending.value) {
         return;
@@ -103,7 +81,7 @@ async function logout(): Promise<void> {
 export function useAuth(): UseAuth {
     if (!initialized) {
         initialized = true;
-        void refreshState().then(validateSession);
+        void refreshState();
     }
     return { status, user, error, pending, refreshState, login, logout };
 }

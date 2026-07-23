@@ -37,7 +37,6 @@
 | type | payload | data |
 |---|---|---|
 | `auth.getState` | — | `{ status: 'anonymous' \| 'authorized', user? }` |
-| `auth.validate` | — | `{ status: 'anonymous' \| 'authorized', user? }` (после whoami-сверки с сервером) |
 | `auth.login` | — | `{ user }` |
 | `auth.logout` | — | `{}` |
 | `search.titles` | `{ query, type: 'anime'\|'manga'\|'ranobe', page? }` | `{ items: TitleCard[] }` |

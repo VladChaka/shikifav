@@ -10,7 +10,6 @@ import type { ApiError, AuthState, User } from './api/types';
 export interface MessageMap {
     ping: { payload: undefined; data: { pong: true } };
     'auth.getState': { payload: undefined; data: AuthState };
-    'auth.validate': { payload: undefined; data: AuthState };
     'auth.login': { payload: undefined; data: { user: User } };
     'auth.logout': { payload: undefined; data: Record<string, never> };
 }

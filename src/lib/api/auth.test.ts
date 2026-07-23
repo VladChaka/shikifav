@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing';
-import { getLocal, getSession, removeLocal, setLocal, setSession } from '../storage';
+import { getLocal, getSession, setLocal, setSession } from '../storage';
 import type { LocalState } from '../storage';
 import {
     authorizedRequest,
@@ -12,7 +12,6 @@ import {
     getAuthState,
     login,
     logout,
-    validateSession,
 } from './auth';
 import { apiRequest, setTokenProvider } from './http';
 import type { ApiError, User } from './types';
@@ -603,154 +602,6 @@ describe('auth', () => {
             expect(wire).not.toContain('stored-access');
             expect(wire).not.toContain('stored-refresh');
             expect(fetchMock).not.toHaveBeenCalled();
-        });
-    });
-
-    describe('validateSession', () => {
-        it('is anonymous without touching the network when storage is empty', async () => {
-            await expect(validateSession()).resolves.toEqual({ status: 'anonymous' });
-            expect(fetchMock).not.toHaveBeenCalled();
-        });
-
-        it('refreshes the stored user from whoami on success, keeping the tokens', async () => {
-            await setLocal('auth', storedAuth());
-            fetchMock.mockResolvedValueOnce(
-                jsonResponse(200, {
-                    id: 7,
-                    nickname: 'renamed',
-                    avatar: 'https://cdn.test/new.png',
-                }),
-            );
-
-            const updatedUser: User = {
-                id: 7,
-                nickname: 'renamed',
-                avatarUrl: 'https://cdn.test/new.png',
-            };
-            await expect(validateSession()).resolves.toEqual({
-                status: 'authorized',
-                user: updatedUser,
-            });
-
-            const auth = await getLocal('auth');
-            expect(auth?.user).toEqual(updatedUser);
-            expect(auth?.accessToken).toBe('stored-access');
-            expect(auth?.refreshToken).toBe('stored-refresh');
-        });
-
-        it('keeps tokens rotated by the 401-retry path when saving the fresh user', async () => {
-            await setLocal('auth', storedAuth());
-            fetchMock
-                .mockResolvedValueOnce(new Response('', { status: 401 }))
-                .mockResolvedValueOnce(
-                    jsonResponse(200, {
-                        access_token: 'new-access',
-                        refresh_token: 'new-refresh',
-                        expires_in: 86400,
-                    }),
-                )
-                .mockResolvedValueOnce(
-                    jsonResponse(200, {
-                        id: 7,
-                        nickname: 'tester',
-                        avatar: 'https://cdn.test/x160.png',
-                    }),
-                );
-
-            await expect(validateSession()).resolves.toEqual({
-                status: 'authorized',
-                user: testUser,
-            });
-            const auth = await getLocal('auth');
-            expect(auth?.accessToken).toBe('new-access');
-            expect(auth?.refreshToken).toBe('new-refresh');
-        });
-
-        it('goes anonymous with clean storage when whoami is 401 and the refresh is rejected', async () => {
-            await setLocal('auth', storedAuth());
-            await setSession('lastTab', 'lists');
-            fetchMock
-                .mockResolvedValueOnce(new Response('', { status: 401 }))
-                .mockResolvedValueOnce(jsonResponse(401, { error: 'invalid_grant' }));
-
-            await expect(validateSession()).resolves.toEqual({ status: 'anonymous' });
-            await expect(getLocal('auth')).resolves.toBeUndefined();
-            await expect(getSession('lastTab')).resolves.toBeUndefined();
-        });
-
-        it('keeps the session on a transient network failure', async () => {
-            const auth = storedAuth();
-            await setLocal('auth', auth);
-            fetchMock.mockRejectedValueOnce(new TypeError('Failed to fetch'));
-
-            await expect(validateSession()).resolves.toEqual({
-                status: 'authorized',
-                user: testUser,
-            });
-            await expect(getLocal('auth')).resolves.toEqual(auth);
-        });
-
-        it('keeps the session on a 5xx response', async () => {
-            const auth = storedAuth();
-            await setLocal('auth', auth);
-            fetchMock.mockResolvedValueOnce(new Response('', { status: 503 }));
-
-            await expect(validateSession()).resolves.toEqual({
-                status: 'authorized',
-                user: testUser,
-            });
-            await expect(getLocal('auth')).resolves.toEqual(auth);
-        });
-
-        it('does not resurrect auth removed from storage while whoami was in flight', async () => {
-            await setLocal('auth', storedAuth());
-            // Logout races the in-flight whoami: auth vanishes from storage
-            // after the request left but before its response is processed.
-            fetchMock.mockImplementationOnce(async () => {
-                await removeLocal('auth');
-                return jsonResponse(200, {
-                    id: 7,
-                    nickname: 'tester',
-                    avatar: 'https://cdn.test/x160.png',
-                });
-            });
-
-            await expect(validateSession()).resolves.toEqual({ status: 'anonymous' });
-            // The successful whoami must NOT write the auth object back.
-            await expect(getLocal('auth')).resolves.toBeUndefined();
-            expect(fetchMock).toHaveBeenCalledTimes(1);
-        });
-
-        it('sweeps the surviving auth when the forced refresh dies on a storage write', async () => {
-            await setLocal('auth', storedAuth());
-            await setSession('lastTab', 'lists');
-            fetchMock
-                .mockResolvedValueOnce(new Response('', { status: 401 }))
-                .mockResolvedValueOnce(
-                    jsonResponse(200, {
-                        access_token: 'new-access',
-                        refresh_token: 'new-refresh',
-                        expires_in: 86400,
-                    }),
-                );
-            // The reachable non-ApiError inside forceRefresh: the network
-            // refresh succeeds, but persisting the fresh tokens fails (e.g.
-            // storage quota). authorizedRequest maps the raw Error to
-            // 'unauthorized' WITHOUT clearing auth, so the stale tokens
-            // survive in storage — validateSession must sweep them itself.
-            const setSpy = vi
-                .spyOn(fakeBrowser.storage.local, 'set')
-                .mockRejectedValueOnce(new Error('QUOTA_BYTES quota exceeded'));
-            try {
-                await expect(validateSession()).resolves.toEqual({ status: 'anonymous' });
-            } finally {
-                setSpy.mockRestore();
-            }
-
-            await expect(getLocal('auth')).resolves.toBeUndefined();
-            await expect(getSession('lastTab')).resolves.toBeUndefined();
-            // Exactly whoami + refresh on the wire: no retry after the failure.
-            expect(fetchMock).toHaveBeenCalledTimes(2);
         });
     });
 

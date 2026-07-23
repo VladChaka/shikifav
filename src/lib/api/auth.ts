@@ -184,14 +184,10 @@ async function whoami(): Promise<User> {
     if (!result.ok) {
         throw result.error;
     }
-    return mapWhoami(result.data);
-}
-
-function mapWhoami(data: WhoamiResponse): User {
     return {
-        id: data.id,
-        nickname: data.nickname,
-        avatarUrl: data.avatar ?? '',
+        id: result.data.id,
+        nickname: result.data.nickname,
+        avatarUrl: result.data.avatar ?? '',
     };
 }
 
@@ -302,39 +298,6 @@ export async function authorizedRequest<T>(
         await clearAuth();
     }
     return second;
-}
-
-// Non-blocking session check for popup open: whoami through the 401 policy of
-// authorizedRequest, so an app revoked on the site is finally noticed. Only a
-// definite 'unauthorized' verdict ends the session — transient failures
-// (network/429/5xx/internal) keep the cached state: offline is not revocation.
-export async function validateSession(): Promise<AuthState> {
-    const auth = await getLocal('auth');
-    if (!auth) {
-        return { status: 'anonymous' };
-    }
-    const result = await authorizedRequest<WhoamiResponse>('/api/users/whoami');
-    if (result.ok) {
-        const user = mapWhoami(result.data);
-        // Re-read instead of reusing `auth`: the 401 path inside
-        // authorizedRequest may have rotated the tokens meanwhile.
-        const current = await getLocal('auth');
-        if (!current) {
-            // Logged out while whoami was in flight — do not resurrect it.
-            return { status: 'anonymous' };
-        }
-        await setLocal('auth', { ...current, user });
-        return { status: 'authorized', user };
-    }
-    if (result.error.kind === 'unauthorized') {
-        // authorizedRequest/doRefresh clear auth on their unauthorized paths,
-        // except when the forced refresh throws a non-ApiError — sweep then.
-        if (await getLocal('auth')) {
-            await clearAuth();
-        }
-        return { status: 'anonymous' };
-    }
-    return getAuthState();
 }
 
 // Storage-only by design: opening the popup must never trigger network
