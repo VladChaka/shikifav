@@ -27,12 +27,18 @@ function card(id: string, userRate: UserRateRef | null = null): TitleCard {
     };
 }
 
-function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+function deferred<T>(): {
+    promise: Promise<T>;
+    resolve: (value: T) => void;
+    reject: (error: unknown) => void;
+} {
     let resolve!: (value: T) => void;
-    const promise = new Promise<T>((r) => {
-        resolve = r;
+    let reject!: (error: unknown) => void;
+    const promise = new Promise<T>((res, rej) => {
+        resolve = res;
+        reject = rej;
     });
-    return { promise, resolve };
+    return { promise, resolve, reject };
 }
 
 describe('rate action reducer', () => {
@@ -202,6 +208,83 @@ describe('use-rates', () => {
         await rates.performAction(items.value[0], { type: 'create', status: 'planned' });
         expect(items.value[0].userRate).toBeNull();
         expect(toasts).toEqual(['Target must exist']);
+    });
+
+    it('rate_limited on a write: rollback + toast, no automatic retry', async () => {
+        // Policy from docs/02: writes are never auto-retried on 429 — the error
+        // must surface after exactly one request.
+        let calls = 0;
+        const { items, toasts, rates } = setup([card('1', { id: '9', status: 'planned' })], {
+            'rates.update': async () => {
+                calls += 1;
+                throw { kind: 'rate_limited', retryAfterMs: 3000 } satisfies ApiError;
+            },
+        });
+
+        await rates.performAction(items.value[0], { type: 'update', status: 'watching' });
+        expect(items.value[0].userRate).toEqual({ id: '9', status: 'planned' }); // rolled back
+        expect(toasts).toEqual([i18n.errors.rateLimited]);
+        expect(calls).toBe(1);
+        expect(rates.warnings.value.size).toBe(0);
+    });
+
+    it('late success for a card removed from items is a no-op without a crash', async () => {
+        const server = deferred<{ rate: UserRateRef }>();
+        const { items, rates } = setup([card('1')], {
+            'rates.create': async () => server.promise,
+        });
+
+        const action = rates.performAction(items.value[0], { type: 'create', status: 'planned' });
+        items.value = [card('2')]; // a new search replaced the results mid-flight
+        await nextTick();
+
+        server.resolve({ rate: { id: '55', status: 'planned' } });
+        await expect(action).resolves.toBeUndefined();
+        expect(items.value).toEqual([card('2')]); // the late patch has nowhere to land
+        expect(rates.busyIds.value.size).toBe(0);
+        expect(rates.warnings.value.size).toBe(0);
+    });
+
+    it('late failure for a removed card: no rollback patch, the toast still reports it', async () => {
+        const server = deferred<{ rate: UserRateRef }>();
+        const { items, toasts, rates } = setup([card('1')], {
+            'rates.create': async () => server.promise,
+        });
+
+        const action = rates.performAction(items.value[0], { type: 'create', status: 'planned' });
+        items.value = [card('2')];
+        await nextTick();
+
+        server.reject({ kind: 'network' } satisfies ApiError);
+        await expect(action).resolves.toBeUndefined();
+        expect(items.value).toEqual([card('2')]);
+        expect(toasts).toEqual([i18n.errors.network]); // the user still learns the write failed
+        expect(rates.busyIds.value.size).toBe(0);
+    });
+
+    it('update/delete with only an optimistic rate id never reaches the server', async () => {
+        // OPTIMISTIC_RATE_ID is a local placeholder: sending it to the API is
+        // forbidden (use-rates.ts invariant). Normally unreachable via the busy
+        // lock; this covers the defensive guard directly.
+        let calls = 0;
+        const { items, rates } = setup(
+            [card('1', { id: OPTIMISTIC_RATE_ID, status: 'planned' })],
+            {
+                'rates.update': async () => {
+                    calls += 1;
+                    return { rate: { id: '1', status: 'watching' } };
+                },
+                'rates.delete': async () => {
+                    calls += 1;
+                    return {};
+                },
+            },
+        );
+
+        await rates.performAction(items.value[0], { type: 'update', status: 'watching' });
+        await rates.performAction(items.value[0], { type: 'delete' });
+        expect(calls).toBe(0);
+        expect(items.value[0].userRate).toEqual({ id: OPTIMISTIC_RATE_ID, status: 'planned' });
     });
 
     it('busy card ignores a second action while the first is in flight', async () => {

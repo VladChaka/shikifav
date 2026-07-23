@@ -293,6 +293,27 @@ describe('http', () => {
             await expect(promise).resolves.toEqual({ ok: true, data: { id: 1 } });
         });
 
+        it('prefers Retry-After over the exponential step on every retry', async () => {
+            fetchMock
+                .mockResolvedValueOnce(rateLimitedResponse()) // no header -> exponential 2s
+                .mockResolvedValueOnce(rateLimitedResponse(1)) // 1s hint beats the 4s step
+                .mockResolvedValueOnce(jsonResponse(200, { id: 1 }));
+
+            const promise = apiRequest<{ id: number }>('/api/users/whoami');
+            await vi.advanceTimersByTimeAsync(0);
+            expect(fetchMock).toHaveBeenCalledTimes(1);
+
+            await vi.advanceTimersByTimeAsync(2000);
+            expect(fetchMock).toHaveBeenCalledTimes(2);
+
+            // Second retry: due 1s after the hint, not 4s after the exponent.
+            await vi.advanceTimersByTimeAsync(999);
+            expect(fetchMock).toHaveBeenCalledTimes(2);
+            await vi.advanceTimersByTimeAsync(1);
+            expect(fetchMock).toHaveBeenCalledTimes(3);
+            await expect(promise).resolves.toEqual({ ok: true, data: { id: 1 } });
+        });
+
         it('backs off 2s -> 4s -> 8s without Retry-After and fails after 3 retries', async () => {
             fetchMock.mockImplementation(async () => rateLimitedResponse());
 

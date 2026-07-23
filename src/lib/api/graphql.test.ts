@@ -198,6 +198,31 @@ describe('graphql', () => {
             });
         });
 
+        it('treats an empty errors[] alongside data as success', async () => {
+            await setLocal('auth', storedAuth());
+            fetchMock.mockResolvedValueOnce(
+                jsonResponse(200, { data: { animes: [fullRawAnime] }, errors: [] }),
+            );
+
+            await expect(searchTitles('frieren', 'anime')).resolves.toEqual([fullTitleCard]);
+        });
+
+        it('falls back to a generic message when the first error has none', async () => {
+            await setLocal('auth', storedAuth());
+            fetchMock.mockResolvedValueOnce(jsonResponse(200, { errors: [{}] }));
+
+            const error = await expectApiErrorThrow(searchTitles('frieren', 'anime'));
+            expect(error).toEqual({ kind: 'api', status: 200, message: 'GraphQL error' });
+        });
+
+        it('maps an explicit data: null to an internal error', async () => {
+            await setLocal('auth', storedAuth());
+            fetchMock.mockResolvedValueOnce(jsonResponse(200, { data: null }));
+
+            const error = await expectApiErrorThrow(searchTitles('frieren', 'anime'));
+            expect(error).toEqual({ kind: 'internal', message: 'GraphQL response has no data' });
+        });
+
         it('maps a 200 without data or errors to an internal error', async () => {
             await setLocal('auth', storedAuth());
             fetchMock.mockResolvedValueOnce(jsonResponse(200, {}));
