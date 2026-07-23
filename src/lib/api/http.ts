@@ -135,6 +135,13 @@ async function executeRequest<T>(spec: RequestSpec): Promise<HttpResult<T>> {
             // User-Agent = OAuth app name on every request (CLAUDE.md rule 3).
             headers: { 'User-Agent': APP_NAME, ...spec.headers },
             body: spec.body,
+            // Auth is OAuth-token-only (ADR-1). host_permissions cover the
+            // Shikimori domain, so without omit the browser attaches the site
+            // session cookie; the server then authenticates by that cookie and
+            // ignores the Bearer, masking a revoked token. omit forces every
+            // request to stand on its Bearer alone (oauth/token needs no cookie
+            // either — it authenticates via client_id/secret in the body).
+            credentials: 'omit',
         });
     } catch {
         return fail({ kind: 'network' });

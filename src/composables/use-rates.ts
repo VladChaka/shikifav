@@ -76,8 +76,9 @@ const RATE_TARGET_TYPE: RateTargetType = 'Anime';
 
 type ActionResult = { ok: true; rate: UserRateRef | null } | { ok: false; error: ApiError };
 
-// The exact status code after a token revoke (401 vs 403) is not confirmed by
-// the owner yet (docs/04 §3), so both map to the lazy inline warning.
+// A token revoke returns 401 (confirmed by the owner 2026-07-23, docs/03), so
+// the 'unauthorized' branch drives the lazy inline warning. The 403 branch is
+// dead but kept as a defensive guard for a possible scope-only rejection.
 function isEditForbidden(error: ApiError): boolean {
     return error.kind === 'unauthorized' || (error.kind === 'api' && error.status === 403);
 }

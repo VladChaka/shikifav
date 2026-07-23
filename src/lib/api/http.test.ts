@@ -202,6 +202,8 @@ describe('http', () => {
             expect(init.headers['Authorization']).toBe('Bearer test-token');
             expect(init.headers['Content-Type']).toBe('application/json');
             expect(init.body).toBe(JSON.stringify({ user_rate: { target_id: 1 } }));
+            // Bearer-only auth: never send the site session cookie (ADR-1).
+            expect(init.credentials).toBe('omit');
         });
 
         it('apiRequest defaults to GET without Content-Type when there is no body', async () => {
@@ -222,6 +224,9 @@ describe('http', () => {
             expect(init.headers['Authorization']).toBeUndefined();
             expect(init.headers['Content-Type']).toBe('application/x-www-form-urlencoded');
             expect(init.body).toBe('grant_type=authorization_code&code=abc');
+            // The token endpoint authenticates by client_id/secret in the body;
+            // omit keeps the site cookie out of the OAuth exchange too (ADR-1).
+            expect(init.credentials).toBe('omit');
         });
     });
 
