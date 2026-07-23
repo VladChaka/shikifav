@@ -4,11 +4,17 @@ import background from '@/entrypoints/background';
 import { sendMessage } from '../messaging';
 import { setLocal } from '../storage';
 import type { LocalState } from '../storage';
-import { mapAnimeToTitleCard, searchTitles } from './graphql';
-import type { RawAnime } from './graphql';
+import {
+    LIST_LIMIT,
+    listAnimeRates,
+    mapAnimeToRateRow,
+    mapAnimeToTitleCard,
+    searchTitles,
+} from './graphql';
+import type { RawAnime, RawMylistAnime } from './graphql';
 import { ensureToken } from './auth';
 import { rateLimiter, setTokenProvider } from './http';
-import type { ApiError, TitleCard, User } from './types';
+import type { ApiError, RateRow, TitleCard, User } from './types';
 
 const fetchMock = vi.fn<typeof fetch>();
 
@@ -87,6 +93,37 @@ const fullTitleCard: TitleCard = {
     userRate: { id: '311', status: 'watching' },
 };
 
+// The same title as read by MYLIST_ANIMES_QUERY: userRate carries progress + score.
+const fullRawMylistAnime: RawMylistAnime = {
+    ...fullRawAnime,
+    userRate: { id: '311', status: 'watching', episodes: 27, score: 9 },
+};
+
+const fullRateRow: RateRow = {
+    rateId: '311',
+    targetId: '52991',
+    targetType: 'Anime',
+    name: 'Sousou no Frieren',
+    russian: 'Провожающая в последний путь Фрирен',
+    posterUrl: 'https://desu.shikimori.one/uploads/poster/animes/52991/mini.webp',
+    posterUrl2x: 'https://desu.shikimori.one/uploads/poster/animes/52991/mini@2x.webp',
+    status: 'watching',
+    score: 9,
+    progress: 27,
+    total: 28,
+};
+
+// Compact mylist item generator for page-size fixtures (hasMore cases).
+function mylistAnime(id: number, overrides: Partial<RawMylistAnime> = {}): RawMylistAnime {
+    return {
+        ...fullRawMylistAnime,
+        id: String(id),
+        name: `Anime ${id}`,
+        userRate: { id: String(1000 + id), status: 'watching', episodes: 3, score: 7 },
+        ...overrides,
+    };
+}
+
 describe('graphql', () => {
     beforeEach(() => {
         fakeBrowser.reset();
@@ -141,6 +178,98 @@ describe('graphql', () => {
 
         it('maps a missing airedOn object to year: null', () => {
             expect(mapAnimeToTitleCard({ ...fullRawAnime, airedOn: null }).year).toBeNull();
+        });
+    });
+
+    describe('mapAnimeToRateRow', () => {
+        it('maps a full mylist item to a RateRow with userRate progress and title total', () => {
+            expect(mapAnimeToRateRow(fullRawMylistAnime)).toEqual(fullRateRow);
+        });
+
+        it('returns null for an item without userRate (dropped by the caller)', () => {
+            expect(mapAnimeToRateRow({ ...fullRawMylistAnime, userRate: null })).toBeNull();
+        });
+
+        it('maps poster: null to null poster urls', () => {
+            const row = mapAnimeToRateRow({ ...fullRawMylistAnime, poster: null });
+            expect(row?.posterUrl).toBeNull();
+            expect(row?.posterUrl2x).toBeNull();
+        });
+
+        it('keeps total = 0 for an ongoing title with an unknown episode count', () => {
+            const row = mapAnimeToRateRow({ ...fullRawMylistAnime, episodes: 0 });
+            expect(row?.total).toBe(0);
+        });
+    });
+
+    describe('listAnimeRates', () => {
+        it('POSTs MylistAnimes with mylist/limit/page variables', async () => {
+            await setLocal('auth', storedAuth());
+            fetchMock.mockResolvedValueOnce(
+                jsonResponse(200, { data: { animes: [fullRawMylistAnime] } }),
+            );
+
+            await expect(listAnimeRates('anime', 'watching', 2)).resolves.toEqual({
+                items: [fullRateRow],
+                hasMore: false,
+            });
+
+            const request = capturedRequests()[0];
+            expect(request.url).toBe('https://shikimori.io/api/graphql');
+            expect(request.method).toBe('POST');
+
+            const body = request.body as { query: string; variables: Record<string, unknown> };
+            expect(body.variables).toEqual({ mylist: 'watching', limit: LIST_LIMIT, page: 2 });
+            expect(body.query).toContain('query MylistAnimes');
+            expect(body.query).toContain('$mylist: MylistString');
+            // PositiveInt, not Int: the server rejects Int variables (docs/03).
+            expect(body.query).toContain('$limit: PositiveInt');
+            expect(body.query).toContain('$page: PositiveInt');
+            // The expanded userRate drives RateRow progress/score.
+            expect(body.query).toContain('userRate { id status episodes score }');
+        });
+
+        it('derives hasMore from the RAW page length, before the userRate filter', async () => {
+            await setLocal('auth', storedAuth());
+            // A full page of LIST_LIMIT raw items where one lost its userRate:
+            // 29 rows survive, but paging must continue (docs/06).
+            const rawPage = Array.from({ length: LIST_LIMIT }, (_, i) => mylistAnime(i + 1));
+            rawPage[4] = mylistAnime(5, { userRate: null });
+            fetchMock.mockResolvedValueOnce(jsonResponse(200, { data: { animes: rawPage } }));
+
+            const { items, hasMore } = await listAnimeRates('anime', 'watching', 1);
+            expect(items).toHaveLength(LIST_LIMIT - 1);
+            expect(items.some((row) => row.targetId === '5')).toBe(false);
+            expect(hasMore).toBe(true);
+        });
+
+        it('reports hasMore: false for a page shorter than LIST_LIMIT', async () => {
+            await setLocal('auth', storedAuth());
+            const rawPage = Array.from({ length: LIST_LIMIT - 1 }, (_, i) => mylistAnime(i + 1));
+            fetchMock.mockResolvedValueOnce(jsonResponse(200, { data: { animes: rawPage } }));
+
+            const { items, hasMore } = await listAnimeRates('anime', 'watching', 1);
+            expect(items).toHaveLength(LIST_LIMIT - 1);
+            expect(hasMore).toBe(false);
+        });
+
+        it('reports an empty page as no items and no more pages', async () => {
+            await setLocal('auth', storedAuth());
+            fetchMock.mockResolvedValueOnce(jsonResponse(200, { data: { animes: [] } }));
+
+            await expect(listAnimeRates('anime', 'watching', 3)).resolves.toEqual({
+                items: [],
+                hasMore: false,
+            });
+        });
+
+        it('throws internal "not implemented" for manga and ranobe without network', async () => {
+            for (const type of ['manga', 'ranobe'] as const) {
+                const error = await expectApiErrorThrow(listAnimeRates(type, 'watching', 1));
+                expect(error).toMatchObject({ kind: 'internal' });
+                expect((error as { message: string }).message).toContain('not implemented');
+            }
+            expect(fetchMock).not.toHaveBeenCalled();
         });
     });
 
@@ -290,6 +419,45 @@ describe('graphql', () => {
             expect(response).toEqual({
                 ok: false,
                 error: { kind: 'api', status: 200, message: 'Field is missing' },
+            });
+        });
+    });
+
+    describe('background rates.list handler', () => {
+        it('responds with the mapped items and hasMore over messaging', async () => {
+            background.main();
+            await setLocal('auth', storedAuth());
+            const rawPage = Array.from({ length: LIST_LIMIT }, (_, i) => mylistAnime(i + 1));
+            fetchMock.mockResolvedValueOnce(jsonResponse(200, { data: { animes: rawPage } }));
+
+            const response = await sendMessage('rates.list', {
+                type: 'anime',
+                status: 'watching',
+                page: 1,
+            });
+            expect(response.ok).toBe(true);
+            if (response.ok) {
+                expect(response.data.items).toHaveLength(LIST_LIMIT);
+                expect(response.data.items[0]).toEqual(mapAnimeToRateRow(rawPage[0]));
+                expect(response.data.hasMore).toBe(true);
+            }
+        });
+
+        it('keeps the ApiError kind of a list failure on the wire', async () => {
+            background.main();
+            await setLocal('auth', storedAuth());
+            fetchMock.mockResolvedValueOnce(
+                jsonResponse(200, { errors: [{ message: 'mylist is invalid' }] }),
+            );
+
+            const response = await sendMessage('rates.list', {
+                type: 'anime',
+                status: 'watching',
+                page: 1,
+            });
+            expect(response).toEqual({
+                ok: false,
+                error: { kind: 'api', status: 200, message: 'mylist is invalid' },
             });
         });
     });

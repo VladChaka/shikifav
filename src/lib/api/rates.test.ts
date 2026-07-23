@@ -4,7 +4,7 @@ import background from '@/entrypoints/background';
 import { sendMessage } from '../messaging';
 import { setLocal } from '../storage';
 import type { LocalState } from '../storage';
-import { createRate, deleteRate, updateRate } from './rates';
+import { createRate, deleteRate, incrementRate, updateRate } from './rates';
 import { ensureToken } from './auth';
 import { rateLimiter, setTokenProvider } from './http';
 import type { ApiError, User } from './types';
@@ -153,11 +153,98 @@ describe('rates', () => {
             expect(request.body).toEqual({ user_rate: { status: 'watching' } });
         });
 
+        it('PATCHes a score with {user_rate: {score: N}} on the wire', async () => {
+            await setLocal('auth', storedAuth());
+            fetchMock.mockResolvedValueOnce(
+                jsonResponse(200, {
+                    id: 42,
+                    status: 'watching',
+                    score: 8,
+                    episodes: 5,
+                    chapters: 0,
+                    volumes: 0,
+                }),
+            );
+
+            const state = await updateRate('42', { score: 8 });
+            expect(state.score).toBe(8);
+            expect(capturedRequests()[0].body).toEqual({ user_rate: { score: 8 } });
+        });
+
+        it('keeps score: 0 (remove the score) in the PATCH body', async () => {
+            await setLocal('auth', storedAuth());
+            fetchMock.mockResolvedValueOnce(
+                jsonResponse(200, {
+                    id: 42,
+                    status: 'watching',
+                    score: 0,
+                    episodes: 5,
+                    chapters: 0,
+                    volumes: 0,
+                }),
+            );
+
+            const state = await updateRate('42', { score: 0 });
+            expect(state.score).toBe(0);
+            // 0 is falsy but must reach the wire — it is the "remove score" value.
+            expect(capturedRequests()[0].body).toEqual({ user_rate: { score: 0 } });
+        });
+
         it('passes a 404 through as is (record deleted on the site)', async () => {
             await setLocal('auth', storedAuth());
             fetchMock.mockResolvedValueOnce(jsonResponse(404, { message: 'Not Found' }));
 
             const error = await expectApiErrorThrow(updateRate('42', { score: 8 }));
+            expect(error).toEqual({ kind: 'api', status: 404, message: 'Not Found' });
+        });
+    });
+
+    describe('incrementRate', () => {
+        it('POSTs to /increment without a body and maps the response to RateState', async () => {
+            await setLocal('auth', storedAuth());
+            fetchMock.mockResolvedValueOnce(
+                jsonResponse(201, {
+                    id: 42,
+                    status: 'watching',
+                    score: 7,
+                    episodes: 6,
+                    chapters: 0,
+                    volumes: 0,
+                }),
+            );
+
+            await expect(incrementRate('42')).resolves.toEqual({
+                id: '42',
+                status: 'watching',
+                score: 7,
+                episodes: 6,
+                chapters: 0,
+                volumes: 0,
+            });
+
+            const request = capturedRequests()[0];
+            expect(request.url).toBe('https://shikimori.io/api/v2/user_rates/42/increment');
+            expect(request.method).toBe('POST');
+            expect(request.headers['Authorization']).toBe('Bearer stored-access');
+            expect(request.body).toBeUndefined();
+        });
+
+        it('does not auto-retry on 429: a duplicate increment would corrupt progress', async () => {
+            await setLocal('auth', storedAuth());
+            fetchMock.mockResolvedValueOnce(
+                new Response('', { status: 429, headers: { 'Retry-After': '0' } }),
+            );
+
+            const error = await expectApiErrorThrow(incrementRate('42'));
+            expect(error).toEqual({ kind: 'rate_limited', retryAfterMs: 0 });
+            expect(fetchMock).toHaveBeenCalledTimes(1);
+        });
+
+        it('passes a 404 through as is (record deleted on the site)', async () => {
+            await setLocal('auth', storedAuth());
+            fetchMock.mockResolvedValueOnce(jsonResponse(404, { message: 'Not Found' }));
+
+            const error = await expectApiErrorThrow(incrementRate('42'));
             expect(error).toEqual({ kind: 'api', status: 404, message: 'Not Found' });
         });
     });
@@ -240,6 +327,48 @@ describe('rates', () => {
 
             const response = await sendMessage('rates.delete', { rateId: '42' });
             expect(response).toEqual({ ok: true, data: {} });
+        });
+
+        it('rates.increment responds with the full RateState over messaging', async () => {
+            background.main();
+            await setLocal('auth', storedAuth());
+            fetchMock.mockResolvedValueOnce(
+                jsonResponse(201, {
+                    id: 42,
+                    status: 'watching',
+                    score: 7,
+                    episodes: 6,
+                    chapters: 0,
+                    volumes: 0,
+                }),
+            );
+
+            const response = await sendMessage('rates.increment', { rateId: '42' });
+            expect(response).toEqual({
+                ok: true,
+                data: {
+                    rate: {
+                        id: '42',
+                        status: 'watching',
+                        score: 7,
+                        episodes: 6,
+                        chapters: 0,
+                        volumes: 0,
+                    },
+                },
+            });
+        });
+
+        it('rates.increment keeps the ApiError kind on the wire on a 404', async () => {
+            background.main();
+            await setLocal('auth', storedAuth());
+            fetchMock.mockResolvedValueOnce(jsonResponse(404, { message: 'Not Found' }));
+
+            const response = await sendMessage('rates.increment', { rateId: '42' });
+            expect(response).toEqual({
+                ok: false,
+                error: { kind: 'api', status: 404, message: 'Not Found' },
+            });
         });
     });
 });
