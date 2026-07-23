@@ -17,6 +17,8 @@ WXT_SHIKI_CLIENT_SECRET="..."
 ### Стабильный EXTENSION_ID
 У unpacked-расширения ID детерминирован от абсолютного пути папки — на одной машине стабилен, пока проект не переносили. Порядок в фазе 1: собрать → загрузить → в консоли background выполнить `chrome.identity.getRedirectURL()` → вписать результат в настройки приложения на сайте. Опционально (фаза 6): добавить `key` в manifest, чтобы ID был стабилен всегда и везде.
 
+**Результат (2026-07-23):** `key` добавлен в манифест production-сборок (`pnpm build`/`pnpm zip`, см. wxt.config.ts; приватный ключ — `.keys/shikifav-key.pem`, в git не попадает). Prod extension ID = `ilcnkoocagmcjikbelobkiflaplolbak`, redirect URI = `https://ilcnkoocagmcjikbelobkiflaplolbak.chromiumapp.org/`. Dev-сборка (`pnpm dev`) ключ не получает — её ID `gakfmcmfpajejjdpdckpgeihgpneajpj` без изменений, обе версии могут стоять в Chrome одновременно. Прежний path-derived prod-ID `bmndfomfgheoloklpjlldgmicdlmgmda` больше не актуален.
+
 ## 2. Поток входа (выполняется в background)
 ```ts
 // src/lib/api/auth.ts — референсная реализация

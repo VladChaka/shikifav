@@ -13,6 +13,8 @@ node_modules
 # Secrets (client_id/client_secret) — never commit
 .env*
 !.env.example
+# Extension signing key pair (private key must never be committed)
+.keys/
 stats.html
 stats-*.json
 .wxt
