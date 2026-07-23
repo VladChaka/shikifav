@@ -47,60 +47,71 @@ Content-Type: application/json  # (или x-www-form-urlencoded для /oauth/to
 
 Endpoint: `POST {origin}/api/graphql`, тело `{ "query": "...", "variables": {...} }`. С Bearer-токеном поле `userRate` возвращает мой статус по тайтлу (иначе null).
 
-### Интроспекция — выполнить в начале фазы 2, ДО написания запросов
+### Интроспекция (выполнена 2026-07-23 на shikimori.io, результаты ниже)
+Сервер ограничивает глубину GraphQL-запроса: **max depth 5** (`Query has depth of 7, which exceeds max depth of 5`) — интроспекцию держать плоской:
 ```bash
 curl -s -X POST https://shikimori.io/api/graphql \
   -H 'Content-Type: application/json' -H 'User-Agent: <APP_NAME>' \
-  -d '{"query":"{ __type(name: \"Anime\") { fields { name type { name kind ofType { name } } } } }"}'
+  -d '{"query":"{ __type(name: \"Anime\") { fields { name type { kind name ofType { kind name } } } } }"}'
 ```
-Повторить для типов `Manga`, `Poster`, `UserRate` и для аргументов запросов:
+Аргументы запросов — через `__type(name: "Query")` (вариант `__schema { queryType }` на уровень глубже и не влезает в лимит):
 ```bash
--d '{"query":"{ __schema { queryType { fields { name args { name type { name kind ofType { name } } } } } } }"}'
+-d '{"query":"{ __type(name: \"Query\") { fields { name args { name type { kind name } } } } }"}'
 ```
-Результаты (точные имена полей) зафиксировать прямо в этом файле, обновив запросы ниже.
 
-### Поиск аниме (эталон; поля сверить интроспекцией)
+### Результаты интроспекции (2026-07-23)
+- **Anime:** `id: ID!`, `malId: ID`, `name: String!`, `russian: String`, `kind: AnimeKindEnum`, `score: Float`, `status: AnimeStatusEnum`, `episodes: Int!`, `episodesAired: Int!`, `airedOn: IncompleteDate` (подполе `year` подтверждено живым запросом), `poster: Poster`, `userRate: UserRate`.
+- **`id: ID!` сериализуется строкой** (например `"52991"`), значение числовое → для REST `target_id` конвертировать `Number(id)`.
+- **Poster** — все поля `String!`: `id`, `miniUrl`, `mini2xUrl`, `miniAltUrl`, `miniAlt2xUrl`, `mainUrl`, `main2xUrl`, `mainAltUrl`, `mainAlt2xUrl`, `previewUrl`, `preview2xUrl`, `previewAltUrl`, `previewAlt2xUrl`, `originalUrl`. Для карточки ~48px — **`miniUrl`** (фактически 60×94 px webp) + `mini2xUrl` для retina.
+- **UserRate:** `id: ID!`, `status: UserRateStatusEnum!`, `episodes: Int!`, `chapters: Int!`, `volumes: Int!`, `score: Int!`, `rewatches: Int!`, `text: String`, `anime: Anime`, `manga: Manga`, `createdAt`/`updatedAt: ISO8601DateTime!`.
+- **UserRateStatusEnum** = `planned | watching | rewatching | completed | on_hold | dropped` — 1:1 с REST-статусами.
+- **Аргументы `animes`:** `search: String`, `limit: PositiveInt`, `page: PositiveInt`, `kind: AnimeKindString`, `status: AnimeStatusString`, `season: SeasonString`, `score: Int`, `duration: DurationString`, `rating: RatingString`, `origin: OriginString`, `genre/studio/franchise: String`, `censored: Boolean`, `mylist: MylistString`, `ids/excludeIds: String`, `order: OrderEnum`.
+- **Аргументы `mangas`:** как у `animes` минус `duration/rating/origin/studio`, плюс `publisher: String`; `kind: MangaKindString`.
+- **`limit`/`page` — скаляр `PositiveInt`, НЕ `Int`:** переменные в запросах объявлять `$limit: PositiveInt` (с `Int` сервер отклонит переменную по несовместимости типов).
+- **`AnimeKindString`/`MangaKindString`/`MylistString`** — скаляры вида «List of values separated by comma», `!` перед значением — негативный фильтр. `MangaKindString`: `manga, manhwa, manhua, light_novel, novel, one_shot, doujin`. `MylistString`: те же 6 статусов, что и `UserRateStatusEnum`.
+
+### Поиск аниме (эталон; поля подтверждены интроспекцией и живым публичным запросом 2026-07-23)
 ```graphql
-query SearchAnimes($search: String, $limit: Int, $page: Int) {
+query SearchAnimes($search: String, $limit: PositiveInt, $page: PositiveInt) {
   animes(search: $search, limit: $limit, page: $page) {
-    id
-    malId
-    name          # ромадзи
-    russian
-    kind          # tv, movie, ova, ona, special, music, ...
-    score
-    status        # anons, ongoing, released
-    episodes
-    episodesAired
+    id            # ID! (строка с числом; для REST target_id — Number(id))
+    malId         # ID, nullable
+    name          # ромадзи, String!
+    russian       # String, nullable
+    kind          # AnimeKindEnum: tv, movie, ova, ona, special, tv_special, music, pv, cm
+    score         # Float, nullable; 0.0 = оценки нет (анонсы)
+    status        # AnimeStatusEnum: anons, ongoing, released
+    episodes      # Int!
+    episodesAired # Int!
     airedOn { year }
-    poster { mainUrl originalUrl }     # TODO(verify): поле маленького превью
-    userRate { id status episodes score }
+    poster { miniUrl mini2xUrl }            # 60×94 webp — превью для карточки ~48px
+    userRate { id status episodes score }   # null без Bearer или если тайтла нет в списке
   }
 }
 ```
 
-### Поиск манги / ранобэ
+### Поиск манги / ранобэ (поля подтверждены живым запросом 2026-07-23)
 ```graphql
-query SearchMangas($search: String, $limit: Int, $page: Int, $kind: MangaKindString) {
+query SearchMangas($search: String, $limit: PositiveInt, $page: PositiveInt, $kind: MangaKindString) {
   mangas(search: $search, limit: $limit, page: $page, kind: $kind) {
     id
     name
     russian
-    kind          # manga, manhwa, manhua, light_novel, novel, one_shot, doujin
+    kind          # MangaKindEnum: manga, manhwa, manhua, light_novel, novel, one_shot, doujin
     score
     status
     volumes
     chapters
     airedOn { year }
-    poster { mainUrl originalUrl }
+    poster { miniUrl mini2xUrl }
     userRate { id status chapters volumes score }
   }
 }
 ```
-Ранобэ = `kind: "light_novel,novel"` (значения через запятую — TODO(verify) точный синтаксис и имя scalar-типа аргумента).
+Ранобэ = `kind: "light_novel,novel"` — подтверждено живым запросом 2026-07-23: вернул light_novel-тайтлы; синтаксис «значения через запятую» явно описан в description скаляра `MangaKindString`.
 
 ### Мои списки — два варианта, выбрать в фазе 3
-- **Вариант А (предпочтительный, если работает):** те же `animes` / `mangas` с аргументом `mylist: "watching"` — сразу возвращает карточки с userRate.
+- **Вариант А (предпочтительный):** те же `animes` / `mangas` с аргументом `mylist: "watching"` — сразу возвращает карточки с userRate. Аргумент `mylist: MylistString` подтверждён интроспекцией 2026-07-23 (значения = 6 статусов, можно списком через запятую); поведение под Bearer проверить в фазе 3.
 - **Вариант Б:** REST `GET /api/v2/user_rates?user_id=<id>&target_type=Anime&status=watching&limit=30&page=1`, затем дозапросить карточки одним GraphQL-запросом по `ids`.
 
 ## REST v2 — запись списков
@@ -166,19 +177,25 @@ GET {origin}/api/users/whoami
 | 5xx | тост «Shikimori недоступен», retry только для GET |
 
 ## Проверить при реализации (результат фиксировать здесь же: чекбокс + заметка)
-- [ ] Точные поля типа `Poster` — нужен URL маленького превью для списков (интроспекция)
+- [x] Точные поля типа `Poster` — нужен URL маленького превью для списков (интроспекция)
+  - Интроспекция 2026-07-23: 14 полей, все `String!` (список в «Результатах интроспекции» выше). Для карточки ~48px — `miniUrl` (скачан живой файл: 60×94 px webp) + `mini2xUrl` для retina.
 - [ ] Поведение `userRate` в GraphQL с токеном и без
-- [ ] Синтаксис множественного `kind` для ранобэ (`"light_novel,novel"`)
-- [ ] Существует ли аргумент `mylist` у `animes`/`mangas` (для варианта А списков)
+  - Частично: БЕЗ токена `userRate: null` подтверждено живым публичным запросом 2026-07-23. Под Bearer (ненулевой userRate для тайтла из списка) — ожидает ручной проверки владельца, команды в отчёте задачи Ф2-1.
+- [x] Синтаксис множественного `kind` для ранобэ (`"light_novel,novel"`)
+  - Подтверждено живым запросом 2026-07-23: `mangas(search: "overlord", kind: "light_novel,novel")` вернул light_novel-тайтлы; description скаляра `MangaKindString` явно описывает «List of values separated by comma» и `!` для негативного фильтра.
+- [x] Существует ли аргумент `mylist` у `animes`/`mangas` (для варианта А списков)
+  - ДА (интроспекция 2026-07-23): `mylist: MylistString` у обоих запросов; значения = 6 статусов user_rate, тоже списком через запятую. Поведение под Bearer — проверить в фазе 3.
 - [ ] `increment` для манги: главы или что-то другое
+  - Ожидает: живой Bearer + фаза 4 («+1» для манги/ранобэ).
 - [ ] Что возвращает API после отзыва доступа в профиле (фаза 2): 401 (токен инвалидирован целиком) или 403 (только scope user_rates), и работает ли whoami — от результата зависит текст/поведение предупреждения при отказе записи (ленивое обнаружение, docs/04 §3)
+  - Ожидает ручной проверки владельца (нужен живой Bearer-токен), команды в отчёте задачи Ф2-1.
 - [x] Уходит ли кастомный User-Agent через fetch в текущем Chrome (иначе включить DNR-fallback)
   - НЕТ (Chrome 150, проверка владельца 2026-07-22): кастомный UA из fetch в MV3 SW подменяется на браузерный `Mozilla/5.0 ...` → включён DNR-fallback (permission `declarativeNetRequestWithHostAccess`, правило id=1 в `src/lib/api/user-agent-rule.ts`).
   - Как проверялось: временный дев-код в `entrypoints/background.ts` (`TEMP UA-check (task 6)`, удалён 2026-07-22 после подтверждения) отправлял один запрос, заголовки смотрелись в DevTools service worker'а → Network → Request Headers → `User-Agent`.
 - [x] DNR-правило реально подменяет UA на APP_NAME
   - ДА (Chrome 150, проверка владельца 2026-07-22): в Request Headers боевого запроса к shikimori.io виден `User-Agent: ShikiFav`. TEMP UA-check из `entrypoints/background.ts` удалён.
-- [ ] Отвечает ли API на shikimori.io идентично shikimori.one, включая Bearer-авторизацию (иначе оставить в настройках только .one)
-  - Bearer на .io подтверждён живым входом 2026-07-22 (token + whoami на .io, это дефолтный origin); полная идентичность (GraphQL) — проверить в фазе 2 при интроспекции.
+- [x] Отвечает ли API на shikimori.io идентично shikimori.one, включая Bearer-авторизацию (иначе оставить в настройках только .one)
+  - Bearer на .io подтверждён живым входом 2026-07-22 (token + whoami на .io, это дефолтный origin). GraphQL на .io подтверждён 2026-07-23 (интроспекция + публичный поиск animes/mangas). Прямое сравнение с .one не требуется: .one отдаёт 301 на .io и как API-origin непригоден (см. заметку «301 на shikimori.one» выше).
 - [x] Поддержка PKCE сервером (детали в docs/04 §5)
   - См. docs/04 §5 — PKCE-only отвергнут (401 invalid_client), рабочая схема: confidential client + PKCE S256 поверх (2026-07-22).
 - [x] Форма ответа whoami: поле `avatar` (маппинг в `avatarUrl`, src/lib/api/auth.ts) — подтверждено при первом живом входе 2026-07-22: ник и аватар корректно отображаются в popup
