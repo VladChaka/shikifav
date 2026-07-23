@@ -65,6 +65,10 @@ export const i18n = {
         removeFromList: 'Удалить из списка',
         retry: 'Повторить',
     },
+    rates: {
+        // 404 on update/delete: the record is gone on the site (Ф2-7).
+        alreadyRemoved: 'Запись уже удалена',
+    },
     errors: {
         network: 'Нет соединения с Shikimori. Проверьте интернет и повторите.',
         unauthorized: 'Сессия истекла. Войдите заново.',

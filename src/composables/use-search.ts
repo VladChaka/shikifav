@@ -54,6 +54,9 @@ function setQuery(value: string): void {
     if (trimmed.length < MIN_QUERY_LENGTH) {
         // No network for short queries; bumping the seq also invalidates any
         // in-flight response so it cannot resurrect stale results.
+        // Deliberate (Ф2-7): session.lastSearch is NOT cleared here — the last
+        // successful search keeps feeding the instant first render of the next
+        // popup open (docs/05), even after the user clears the field.
         requestSeq += 1;
         status.value = 'idle';
         items.value = [];

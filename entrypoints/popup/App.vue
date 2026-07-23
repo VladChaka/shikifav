@@ -52,19 +52,24 @@
                         v-for="card in searchItems"
                         :key="card.id"
                         :card="card"
+                        :busy="busyIds.has(card.id)"
+                        :warning="warnings.get(card.id) ?? null"
                         :menu-open="openMenuCardId === card.id"
                         @update:menu-open="openMenuCardId = $event ? card.id : null"
-                        @add="onCardAction"
-                        @set-status="onCardAction"
-                        @remove="onCardAction"
+                        @add="onSetStatus(card, 'planned')"
+                        @set-status="onSetStatus(card, $event)"
+                        @remove="onRemove(card)"
                     />
                 </template>
             </SearchTab>
 
+            <!-- :key re-mounts the toast, restarting its auto-close timer even
+                 when the same text is shown twice in a row. -->
             <Toast
-                v-if="toastText"
-                :text="toastText"
-                @closed="toastText = null"
+                v-if="toast"
+                :key="toast.nonce"
+                :text="toast.text"
+                @closed="toast = null"
             />
         </template>
 
@@ -83,7 +88,9 @@ import TitleCard from '@/src/components/TitleCard.vue';
 import Toast from '@/src/components/Toast.vue';
 import UserHeader from '@/src/components/UserHeader.vue';
 import { useAuth } from '@/src/composables/use-auth';
+import { useRates } from '@/src/composables/use-rates';
 import { useSearch } from '@/src/composables/use-search';
+import type { TitleCard as TitleCardData, UserRateStatus } from '@/src/lib/api/types';
 import { apiErrorMessage, i18n } from '@/src/lib/i18n';
 
 const { status, user, error } = useAuth();
@@ -97,16 +104,29 @@ const {
     retry,
 } = useSearch();
 
-// Toast is shown by rates.* failures (Ф2-7); stays hidden until then.
-const toastText = ref<string | null>(null);
+// The nonce feeds :key so a repeated identical message still re-mounts the
+// Toast and restarts its timer (a text-only watch would not fire).
+const toast = ref<{ text: string; nonce: number } | null>(null);
+
+function showToast(text: string): void {
+    toast.value = { text, nonce: (toast.value?.nonce ?? 0) + 1 };
+}
+
+const { busyIds, warnings, performAction } = useRates(searchItems, showToast);
 
 // At most one open StatusMenu across the list: the id of the card that owns it.
 const openMenuCardId = ref<string | null>(null);
 
-// TODO(Ф2-7): TitleCard actions (add / set-status / remove) call rates.* via
-// messaging with optimistic updates + rollback toast. No-op until then.
-function onCardAction(): void {
-    // wired in Ф2-7
+// A card outside my list creates a rate, one inside updates its status (US-3).
+function onSetStatus(card: TitleCardData, status: UserRateStatus): void {
+    void performAction(
+        card,
+        card.userRate === null ? { type: 'create', status } : { type: 'update', status },
+    );
+}
+
+function onRemove(card: TitleCardData): void {
+    void performAction(card, { type: 'delete' });
 }
 </script>
 
