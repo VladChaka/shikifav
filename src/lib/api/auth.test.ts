@@ -13,7 +13,7 @@ import {
     login,
     logout,
 } from './auth';
-import { apiRequest, setTokenProvider } from './http';
+import { apiRequest, rateLimiter, setTokenProvider } from './http';
 import type { ApiError, User } from './types';
 
 const fetchMock = vi.fn<typeof fetch>();
@@ -102,6 +102,9 @@ describe('auth', () => {
         vi.stubGlobal('fetch', fetchMock);
         // Mirrors the registration in entrypoints/background.ts.
         setTokenProvider(ensureToken);
+        // Fresh sliding window: leftover timestamps would add real-timer
+        // delays and break the microtask-draining single-flight tests.
+        rateLimiter.reset();
     });
 
     afterEach(() => {

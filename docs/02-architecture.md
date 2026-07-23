@@ -75,10 +75,10 @@ interface LocalState {
 
 `src/lib/storage.ts` экспортирует типизированные `getLocal/setLocal/getSession/setSession` и дефолты `settings`.
 
-## Rate limiter (`src/lib/api/http.ts`)
+## Rate limiter (`src/lib/api/rate-limiter.ts`; backoff и врезка в запросы — в `src/lib/api/http.ts`)
 - Очередь промисов: не более **4 запросов/сек** и **80/мин** (запас к лимитам 5/90).
 - Реализация: sliding window по массиву timestamps в памяти SW. При «засыпании» SW окно теряется — это безопасно: после пробуждения пустое окно всё равно ограничено 4 rps.
-- `429` → пауза (заголовок Retry-After, иначе 2s → 4s → 8s, максимум 3 повтора) **только для GET**. POST/PATCH/DELETE автоматически не ретраить — вернуть ошибку в UI (иначе риск дублей).
+- `429` → пауза (заголовок Retry-After, иначе 2s → 4s → 8s, максимум 3 повтора) **только для GET**. POST/PATCH/DELETE автоматически не ретраить — вернуть ошибку в UI (иначе риск дублей). Уточнение: правило «только GET» реализовано флагом `retryOn429` в опциях запроса (по умолчанию `true` для GET, `false` для остальных методов), потому что GraphQL-чтение — это HTTP POST и включает флаг явно в graphql.ts. Намерение неизменно: запись (user_rates) и oauth-запросы никогда не ретраятся автоматически; повторы проходят через ту же очередь лимитера.
 - Debounce поиска (300 мс) на стороне popup — первая линия; limiter — вторая.
 
 ## Модель ошибок
@@ -101,6 +101,7 @@ UI маппит `kind` в русские тексты и действия («П�
 ## Дерево модулей
 ```
 src/lib/api/http.ts      # fetch wrapper: origin из настроек, заголовки, limiter, маппинг ошибок
+src/lib/api/rate-limiter.ts # очередь sliding window 4 rps / 80 rpm (чистая логика, без chrome.*)
 src/lib/api/graphql.ts   # строки запросов SearchAnimes/SearchMangas/... + типы ответов
 src/lib/api/rates.ts     # REST v2 user_rates: create/update/delete/increment/list
 src/lib/api/auth.ts      # oauth: authorize url, exchange, refresh, whoami, logout

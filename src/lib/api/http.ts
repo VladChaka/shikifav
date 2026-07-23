@@ -1,5 +1,6 @@
 import { APP_NAME } from '../config';
 import { DEFAULT_SETTINGS, getLocal } from '../storage';
+import { API_RATE_LIMITS, RateLimiter } from './rate-limiter';
 import { isApiError } from './types';
 import type { ApiError } from './types';
 
@@ -7,6 +8,10 @@ import type { ApiError } from './types';
 // fetch() anywhere else in the codebase is forbidden.
 
 export type HttpResult<T> = { ok: true; data: T } | { ok: false; error: ApiError };
+
+// One shared queue for ALL requests, api and oauth alike (CLAUDE.md rule 2).
+// Exported only so tests can reset the sliding window between cases.
+export const rateLimiter = new RateLimiter(API_RATE_LIMITS);
 
 // Token is injected to avoid a circular http <-> auth import: auth.ts registers
 // the provider on background startup. Module-level state is safe here because
@@ -24,6 +29,10 @@ export function setTokenProvider(provider: TokenProvider): void {
 export interface ApiRequestOptions {
     method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
     body?: unknown; // JSON-serialized when present
+    // Retry on 429 with backoff. Defaults to true for GET only: writes must
+    // never auto-retry (duplicate risk, docs/02), while GraphQL reads are
+    // HTTP POST and opt in explicitly in graphql.ts.
+    retryOn429?: boolean;
 }
 
 // OAuth token endpoint level: form-urlencoded, no Bearer (docs/04 §2-3).
@@ -36,6 +45,8 @@ export async function oauthRequest<T>(
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: new URLSearchParams(form).toString(),
+        // Token requests are never auto-retried on 429 (docs/04 §3.5).
+        retryOn429: false,
     });
 }
 
@@ -60,7 +71,14 @@ export async function apiRequest<T>(
         headers['Content-Type'] = 'application/json';
         body = JSON.stringify(options.body);
     }
-    return performRequest<T>({ path, method: options.method ?? 'GET', headers, body });
+    const method = options.method ?? 'GET';
+    return performRequest<T>({
+        path,
+        method,
+        headers,
+        body,
+        retryOn429: options.retryOn429 ?? method === 'GET',
+    });
 }
 
 interface RequestSpec {
@@ -68,16 +86,43 @@ interface RequestSpec {
     method: string;
     headers: Record<string, string>;
     body?: string;
+    retryOn429: boolean;
 }
 
-// Single choke point for every network call: the phase 2 rate limiter
-// (4 rps / 80 rpm, backoff on 429) wraps exactly this function (docs/02).
+const MAX_RETRIES_ON_429 = 3;
+const BACKOFF_BASE_MS = 2000;
+// Cap on the server-provided Retry-After: an anomalous header must not stall
+// the request (and the service worker) for hours.
+const MAX_RETRY_AFTER_MS = 60_000;
+
+function sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Single choke point for every network call: all attempts — including 429
+// retries — go through the shared limiter queue, never past it (docs/02).
 async function performRequest<T>(spec: RequestSpec): Promise<HttpResult<T>> {
     // A request with an empty User-Agent risks an IP ban (CLAUDE.md rule 3),
     // so an unconfigured .env must fail before any fetch.
     if (!APP_NAME) {
         return fail({ kind: 'internal', message: 'APP_NAME is not configured' });
     }
+    let result = await rateLimiter.schedule(() => executeRequest<T>(spec));
+    for (let retry = 0; retry < MAX_RETRIES_ON_429; retry++) {
+        if (result.ok || result.error.kind !== 'rate_limited' || !spec.retryOn429) {
+            return result;
+        }
+        // Server hint wins; otherwise exponential 2s -> 4s -> 8s.
+        await sleep(
+            Math.min(result.error.retryAfterMs ?? BACKOFF_BASE_MS * 2 ** retry, MAX_RETRY_AFTER_MS),
+        );
+        result = await rateLimiter.schedule(() => executeRequest<T>(spec));
+    }
+    // Retries exhausted: surface the last rate_limited error as is.
+    return result;
+}
+
+async function executeRequest<T>(spec: RequestSpec): Promise<HttpResult<T>> {
     // Origin is re-read from storage on every request: the service worker
     // restarts at will, so caching it in a module variable would go stale
     // (CLAUDE.md rule 4).
@@ -126,7 +171,8 @@ async function mapErrorResponse(response: Response): Promise<ApiError> {
 }
 
 function parseRetryAfter(header: string | null): number | undefined {
-    if (header === null) {
+    // Number('') === 0, so a blank header must not turn into an instant retry.
+    if (header === null || header.trim() === '') {
         return undefined;
     }
     const seconds = Number(header);
