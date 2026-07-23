@@ -181,12 +181,24 @@ GET {origin}/api/users/whoami
   - Интроспекция 2026-07-23: 14 полей, все `String!` (список в «Результатах интроспекции» выше). Для карточки ~48px — `miniUrl` (скачан живой файл: 60×94 px webp) + `mini2xUrl` для retina.
 - [ ] Поведение `userRate` в GraphQL с токеном и без
   - Частично: БЕЗ токена `userRate: null` подтверждено живым публичным запросом 2026-07-23. Под Bearer (ненулевой userRate для тайтла из списка) — ожидает ручной проверки владельца, команды в отчёте задачи Ф2-1.
+  - Ненулевой `userRate` под Bearer закрывается тем же curl, что и аргумент `mylist` (см. чекбокс «Существует ли аргумент `mylist`…» ниже): один ответ владельца подтверждает и фильтрацию списка, и ненулевой `userRate`. Результат владельца: _(вписать)_.
 - [x] Синтаксис множественного `kind` для ранобэ (`"light_novel,novel"`)
   - Подтверждено живым запросом 2026-07-23: `mangas(search: "overlord", kind: "light_novel,novel")` вернул light_novel-тайтлы; description скаляра `MangaKindString` явно описывает «List of values separated by comma» и `!` для негативного фильтра.
 - [x] Существует ли аргумент `mylist` у `animes`/`mangas` (для варианта А списков)
   - ДА (интроспекция 2026-07-23): `mylist: MylistString` у обоих запросов; значения = 6 статусов user_rate, тоже списком через запятую. Поведение под Bearer — проверить в фазе 3.
+  - **Owner-verification фазы 3 (Bearer):** выбран вариант А (чтение списков через GraphQL `animes(mylist:)`, один запрос на страницу, без `user_id` в read-пути). Подтвердить фильтрацию по владельцу живым запросом:
+    ```
+    curl -s -X POST https://shikimori.io/api/graphql \
+      -H 'Content-Type: application/json' -H 'User-Agent: <APP_NAME>' \
+      -H 'Authorization: Bearer <живой access token>' \
+      -d '{"query":"{ animes(mylist: \"watching\", limit: 5) { id name userRate { id status episodes score } } }"}'
+    ```
+    Ожидание (вариант А подтверждён): вернутся ТОЛЬКО тайтлы из «Смотрю», у каждого `userRate` ненулевой, `status=watching`. Результат владельца: _(вписать)_.
+    Иначе (mylist под Bearer вернул чужие/все тайтлы или ошибку) → откат на вариант Б: REST `GET /api/v2/user_rates?user_id=<id>&target_type=Anime&status=watching&limit=30&page=1` + дозапрос карточек одним GraphQL по `ids`.
 - [ ] `increment` для манги: главы или что-то другое
   - Ожидает: живой Bearer + фаза 4 («+1» для манги/ранобэ).
+- [ ] Форма REST-ответа write-операций (create / update / increment): присутствуют ли и non-null поля `score`, `episodes`, `chapters`, `volumes`, из которых собирается `RateState` (`src/lib/api/rates.ts`, `toRateState`)
+  - `RestUserRate` типизирует их как non-null `number`, но проверен только GraphQL-тип `UserRate` (интроспекция 2026-07-23); форма REST v2 `user_rate` в ответе не подтверждена. Закрывается живой write-операцией владельца (PATCH/increment) — свериться, что тело ответа содержит все четыре поля числами. Результат владельца: _(вписать)_.
 - [x] Что возвращает API после отзыва доступа в профиле (фаза 2): 401 (токен инвалидирован целиком) или 403 (только scope user_rates), и работает ли whoami — от результата зависит текст/поведение предупреждения при отказе записи (ленивое обнаружение, docs/04 §3)
   - Живая проверка владельца 2026-07-23: отзыв приложения в профиле → whoami и POST `/api/v2/user_rates` возвращают **401 `invalid_token`** (токен инвалидирован целиком, 403 не наблюдается); refresh (`/oauth/token` grant_type=refresh_token) → **400 `invalid_grant`**.
   - ВНИМАНИЕ: этот 401 виден только при `credentials: 'omit'` в fetch (http.ts). Без omit браузер прикладывает сессионную куку сайта (host_permissions на домен), сервер аутентифицирует запрос по ней в обход Bearer, и отзыв токена не детектится — отозванный токен «работает», пока жива сессия сайта.
