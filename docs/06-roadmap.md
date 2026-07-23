@@ -11,7 +11,7 @@
 
 **DoD:** `pnpm dev` поднимает Chrome с расширением; `pnpm compile && pnpm lint && pnpm test` зелёные.
 
-## Фаза 1 — Авторизация (docs/04, US-1)
+## Фаза 1 — Авторизация (docs/04, US-1) — закрыта 2026-07-23 (smoke пройден владельцем)
 - [x] Ручной шаг владельца: регистрация приложения на Shikimori, redirect URI из `chrome.identity.getRedirectURL()`, заполнение `.env`
 - [x] `http.ts`: базовый fetch с origin из настроек и User-Agent; **проверка, что заголовок реально уходит** (иначе DNR-fallback из docs/03) — результат зафиксировать
 - [x] `auth.ts`: login (launchWebAuthFlow → exchange → whoami), ensureToken + refresh single-flight, logout
