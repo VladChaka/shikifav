@@ -18,6 +18,10 @@ function makeHandlers(overrides: Partial<MessageHandlers> = {}): MessageHandlers
         'auth.getState': async () => ({ status: 'anonymous' }),
         'auth.login': async () => ({ user: testUser }),
         'auth.logout': async () => ({}),
+        'search.titles': async () => ({ items: [] }),
+        'rates.create': async () => ({ rate: { id: '1', status: 'planned' } }),
+        'rates.update': async () => ({ rate: { id: '1', status: 'watching' } }),
+        'rates.delete': async () => ({}),
         ...overrides,
     };
 }

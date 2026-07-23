@@ -1,17 +1,36 @@
 import { browser } from 'wxt/browser';
 import { isApiError } from './api/types';
-import type { ApiError, AuthState, User } from './api/types';
+import type {
+    ApiError,
+    AuthState,
+    RateCreateParams,
+    RatePatch,
+    SearchType,
+    TitleCard,
+    User,
+    UserRateRef,
+} from './api/types';
 
 // Typed popup/options <-> background protocol (docs/02-architecture.md).
 // Raw browser.runtime.sendMessage calls outside this module are forbidden.
 
-// Single registry of all message types; search.* and rates.* are added in later
-// phases. auth.* data carries only { status, user } — never tokens (docs/04 §6).
+// Single registry of all message types; rates.list / rates.increment are added
+// in phase 3. Messages never carry tokens (docs/04 §6) or user_id (docs/02).
 export interface MessageMap {
     ping: { payload: undefined; data: { pong: true } };
     'auth.getState': { payload: undefined; data: AuthState };
     'auth.login': { payload: undefined; data: { user: User } };
     'auth.logout': { payload: undefined; data: Record<string, never> };
+    'search.titles': {
+        payload: { query: string; type: SearchType; page?: number };
+        data: { items: TitleCard[] };
+    };
+    'rates.create': { payload: RateCreateParams; data: { rate: UserRateRef } };
+    'rates.update': {
+        payload: { rateId: string; patch: RatePatch };
+        data: { rate: UserRateRef };
+    };
+    'rates.delete': { payload: { rateId: string }; data: Record<string, never> };
 }
 
 export type MessageType = keyof MessageMap;

@@ -39,3 +39,66 @@ export interface AuthState {
     status: 'anonymous' | 'authorized';
     user?: User;
 }
+
+// GraphQL UserRateStatusEnum = REST v2 statuses 1:1 (docs/03, introspection 2026-07-23).
+export type UserRateStatus =
+    | 'planned'
+    | 'watching'
+    | 'rewatching'
+    | 'completed'
+    | 'on_hold'
+    | 'dropped';
+
+// UI-level title kind selector (docs/02 protocol); 'ranobe' maps to the GraphQL
+// mangas query with kind: "light_novel,novel" (docs/03).
+export type SearchType = 'anime' | 'manga' | 'ranobe';
+
+export type RateTargetType = 'Anime' | 'Manga';
+
+// Minimal server rate snapshot: enough for a search card badge and as the
+// response of write operations.
+export interface UserRateRef {
+    id: string;
+    status: UserRateStatus;
+}
+
+// Search result card (US-2). Nullability mirrors the GraphQL schema per the
+// docs/03 introspection results (2026-07-23).
+export interface TitleCard {
+    id: string; // GraphQL ID! serializes as a numeric string; REST target_id = Number(id)
+    name: string; // romaji, non-null
+    russian: string | null;
+    kind: string | null; // AnimeKindEnum / MangaKindEnum value
+    score: number | null; // 0.0 = no score yet (announcements)
+    status: string | null; // AnimeStatusEnum / MangaStatusEnum value
+    // Progress totals depend on the media: the anime mapper fills episodes*,
+    // the manga/ranobe mapper (phase 4) fills chapters/volumes.
+    episodes?: number;
+    episodesAired?: number;
+    chapters?: number;
+    volumes?: number;
+    year: number | null; // airedOn.year
+    posterUrl: string | null; // poster.miniUrl, 60×94 webp
+    posterUrl2x: string | null; // poster.mini2xUrl, retina
+    userRate: UserRateRef | null; // null without Bearer or when not in my list
+}
+
+// Params of REST v2 user_rates writes (docs/03). rates.ts maps them to the
+// snake_case wire body; user_id is never part of these params — background
+// takes it from stored auth.user (docs/02).
+export interface RateCreateParams {
+    targetId: string; // TitleCard.id; converted with Number() for REST
+    targetType: RateTargetType;
+    status: UserRateStatus;
+}
+
+// PATCH /api/v2/user_rates/{id} body fields (docs/03).
+export interface RatePatch {
+    status?: UserRateStatus;
+    score?: number; // 0–10, 0 = no score
+    episodes?: number;
+    chapters?: number;
+    volumes?: number;
+    rewatches?: number;
+    text?: string;
+}
