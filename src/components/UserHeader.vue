@@ -8,13 +8,37 @@
             alt=""
         />
         <span class="header__nickname">{{ user.nickname }}</span>
-        <!-- Reserved slot for the settings button; options page arrives in a later phase. -->
-        <span
-            class="header__action-slot"
-            aria-hidden="true"
-        ></span>
+        <!-- Feather "settings"; the options page arrives in a later phase,
+             so the button is disabled until it exists (integration point). -->
         <button
-            class="header__logout"
+            class="header__btn"
+            type="button"
+            :title="i18n.header.settings"
+            :aria-label="i18n.header.settings"
+            disabled
+        >
+            <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+            >
+                <circle
+                    cx="12"
+                    cy="12"
+                    r="3"
+                />
+                <path
+                    d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 8 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H2a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 8a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H8a1.65 1.65 0 0 0 1-1.51V2a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V8a1.65 1.65 0 0 0 1.51 1H22a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"
+                />
+            </svg>
+        </button>
+        <!-- Feather "log-out". -->
+        <button
+            class="header__btn"
             type="button"
             :title="i18n.header.logout"
             :aria-label="i18n.header.logout"
@@ -22,19 +46,22 @@
             @click="logout"
         >
             <svg
-                viewBox="0 0 16 16"
-                width="16"
-                height="16"
+                viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
-                stroke-width="1.6"
+                stroke-width="2"
                 stroke-linecap="round"
                 stroke-linejoin="round"
                 aria-hidden="true"
             >
-                <path d="M6.5 3H4.2A1.2 1.2 0 0 0 3 4.2v7.6A1.2 1.2 0 0 0 4.2 13h2.3" />
-                <path d="M10 5.5 12.5 8 10 10.5" />
-                <path d="M12.5 8H6.5" />
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                <polyline points="16 17 21 12 16 7" />
+                <line
+                    x1="21"
+                    y1="12"
+                    x2="9"
+                    y2="12"
+                />
             </svg>
         </button>
     </header>
@@ -55,8 +82,8 @@ const { pending, logout } = useAuth();
     display: flex;
     align-items: center;
     flex-shrink: 0;
-    gap: 8px;
-    padding: 8px 12px;
+    gap: 10px;
+    padding: 10px 12px;
     border-bottom: 1px solid var(--color-border);
 }
 
@@ -79,25 +106,23 @@ const { pending, logout } = useAuth();
     font-weight: 600;
 }
 
-.header__action-slot {
-    flex-shrink: 0;
-    width: 28px;
-    height: 28px;
-}
-
-.header__logout {
-    display: flex;
+/* Icon button per the screens-search card (.icobtn). */
+.header__btn {
+    display: inline-flex;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
-    width: 28px;
-    height: 28px;
-    padding: 0;
+    padding: 5px;
     border: none;
     border-radius: 6px;
     background: transparent;
     color: var(--color-fg-muted);
     cursor: pointer;
+
+    svg {
+        width: 17px;
+        height: 17px;
+    }
 
     &:hover:not(:disabled) {
         background: var(--color-surface);

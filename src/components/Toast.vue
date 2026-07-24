@@ -59,13 +59,13 @@ onBeforeUnmount(() => {
     bottom: 12px;
     left: 12px;
     z-index: 20;
-    padding: 10px 14px;
+    padding: 9px 14px;
     border-radius: 8px;
-    /* Inverse colors: readable in both themes without extra variables. */
+    /* Inverse colors (components-atoms card): readable in both themes. */
     background: var(--color-fg);
     color: var(--color-bg);
     font-size: 13px;
-    box-shadow: 0 4px 16px rgb(0 0 0 / 25%);
+    box-shadow: 0 4px 14px rgb(0 0 0 / 18%);
     cursor: pointer;
     animation: toast-in 0.15s ease-out;
 }

@@ -18,13 +18,8 @@
             >
                 {{ n }}
             </button>
-        </div>
-        <template v-if="current > 0">
-            <div
-                class="picker__divider"
-                role="separator"
-            ></div>
             <button
+                v-if="current > 0"
                 class="picker__item picker__item--remove"
                 type="button"
                 role="menuitem"
@@ -32,7 +27,7 @@
             >
                 {{ i18n.score.remove }}
             </button>
-        </template>
+        </div>
     </div>
 </template>
 
@@ -88,16 +83,18 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped lang="scss">
+/* components-menus card (ScorePicker): 30x30 squares, 5 per row,
+   selected — accent fill, "Снять оценку" — danger. */
 .picker {
     position: absolute;
     top: calc(100% + 4px);
     right: 0;
     z-index: 10;
-    padding: 4px;
+    padding: 8px;
     border: 1px solid var(--color-border);
     border-radius: 8px;
     background: var(--color-bg);
-    box-shadow: 0 4px 16px rgb(0 0 0 / 20%);
+    box-shadow: 0 6px 20px rgb(0 0 0 / 14%);
 }
 
 .picker--up {
@@ -106,36 +103,43 @@ onBeforeUnmount(() => {
 }
 
 .picker__grid {
-    display: grid;
-    grid-template-columns: repeat(5, 1fr);
-    gap: 2px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    /* Exactly 5 squares per row: 5 * 30px + 4 * 6px. */
+    width: 174px;
 }
 
 .picker__item {
-    padding: 5px 8px;
-    border: none;
-    border-radius: 5px;
-    background: transparent;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    background: var(--color-bg);
     color: var(--color-fg);
     font: inherit;
-    font-size: 13px;
-    text-align: center;
     cursor: pointer;
 
     &:hover {
         background: var(--color-surface);
+        outline: 2px solid var(--color-accent);
+        outline-offset: -1px;
     }
 
     &:focus-visible {
         outline: 2px solid var(--color-accent);
-        outline-offset: -2px;
+        outline-offset: -1px;
     }
 }
 
 .picker__item--current {
-    font-weight: 600;
-    color: var(--color-accent-fg);
+    border-color: var(--color-accent);
     background: var(--color-accent);
+    color: var(--color-accent-fg);
+    font-weight: 600;
 
     &:hover {
         background: var(--color-accent-hover);
@@ -143,14 +147,8 @@ onBeforeUnmount(() => {
 }
 
 .picker__item--remove {
-    width: 100%;
+    width: auto;
+    padding: 0 10px;
     color: var(--color-danger);
-    text-align: left;
-}
-
-.picker__divider {
-    height: 1px;
-    margin: 4px 6px;
-    background: var(--color-border);
 }
 </style>

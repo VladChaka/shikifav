@@ -2,40 +2,21 @@
     <section class="lists">
         <div class="lists__filters">
             <!-- Phase 3 is anime-only: Манга/Ранобэ are disabled options (phase 4). -->
-            <select
+            <XSelect
                 class="lists__select"
-                :value="filterType"
+                :options="TYPE_OPTIONS"
+                :model-value="filterType"
                 :aria-label="i18n.lists.typeFilterLabel"
-                @change="onTypeChange"
-            >
-                <option value="anime">{{ i18n.lists.types.anime }}</option>
-                <option
-                    value="manga"
-                    disabled
-                >
-                    {{ i18n.lists.types.manga }}
-                </option>
-                <option
-                    value="ranobe"
-                    disabled
-                >
-                    {{ i18n.lists.types.ranobe }}
-                </option>
-            </select>
-            <select
+                @update:model-value="emit('update:filterType', $event)"
+            />
+            <XSelect
                 class="lists__select"
-                :value="filterStatus"
+                :options="STATUS_OPTIONS"
+                :model-value="filterStatus"
                 :aria-label="i18n.lists.statusFilterLabel"
-                @change="onStatusChange"
-            >
-                <option
-                    v-for="s in STATUSES"
-                    :key="s"
-                    :value="s"
-                >
-                    {{ statusLabel(s) }}
-                </option>
-            </select>
+                status-dots
+                @update:model-value="emit('update:filterStatus', $event)"
+            />
         </div>
 
         <div class="lists__results">
@@ -92,6 +73,8 @@ import EmptyState from '@/src/components/EmptyState.vue';
 import ErrorState from '@/src/components/ErrorState.vue';
 import RateRow from '@/src/components/RateRow.vue';
 import SkeletonList from '@/src/components/SkeletonList.vue';
+import XSelect from '@/src/components/XSelect.vue';
+import type { XSelectOption } from '@/src/components/XSelect.vue';
 import type { RateRow as RateRowData, SearchType, UserRateStatus } from '@/src/lib/api/types';
 import { i18n, statusLabel } from '@/src/lib/i18n';
 
@@ -120,7 +103,7 @@ import { i18n, statusLabel } from '@/src/lib/i18n';
 //   change-status(row, value) / remove(row) /
 //   mark-completed(row) / dismiss-suggest(row)             — row actions, tagged
 //                                                            with their RateRow
-const props = withDefaults(
+withDefaults(
     defineProps<{
         items: RateRowData[];
         listStatus: 'skeleton' | 'data' | 'empty' | 'error';
@@ -184,19 +167,16 @@ const STATUSES: readonly UserRateStatus[] = [
     'dropped',
 ];
 
-function onTypeChange(event: Event): void {
-    const value = (event.target as HTMLSelectElement).value as SearchType;
-    if (value !== props.filterType) {
-        emit('update:filterType', value);
-    }
-}
+const TYPE_OPTIONS: readonly XSelectOption<SearchType>[] = [
+    { value: 'anime', label: i18n.lists.types.anime },
+    { value: 'manga', label: i18n.lists.types.manga, disabled: true },
+    { value: 'ranobe', label: i18n.lists.types.ranobe, disabled: true },
+];
 
-function onStatusChange(event: Event): void {
-    const value = (event.target as HTMLSelectElement).value as UserRateStatus;
-    if (value !== props.filterStatus) {
-        emit('update:filterStatus', value);
-    }
-}
+const STATUS_OPTIONS: readonly XSelectOption<UserRateStatus>[] = STATUSES.map((s) => ({
+    value: s,
+    label: statusLabel(s),
+}));
 </script>
 
 <style scoped lang="scss">
@@ -211,24 +191,14 @@ function onStatusChange(event: Event): void {
     display: flex;
     flex-shrink: 0;
     gap: 8px;
-    padding: 8px 12px;
+    padding: 10px 12px;
     border-bottom: 1px solid var(--color-border);
 }
 
 .lists__select {
-    padding: 6px 8px;
-    border: 1px solid var(--color-border);
-    border-radius: 6px;
-    background: var(--color-bg);
-    color: var(--color-fg);
-    font: inherit;
-    font-size: 13px;
-    cursor: pointer;
-
-    &:focus-visible {
-        outline: none;
-        border-color: var(--color-accent);
-    }
+    /* Both filters share the row (screens-my-lists card). */
+    flex: 1;
+    min-width: 0;
 }
 
 .lists__results {

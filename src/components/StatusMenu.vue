@@ -9,28 +9,38 @@
             v-for="s in STATUSES"
             :key="s"
             class="menu__item"
-            :class="{ 'menu__item--current': s === current }"
+            :class="[`st-${s}`, { 'menu__item--current': s === current }]"
             type="button"
             role="menuitemradio"
             :aria-checked="s === current"
             @click="emit('select', s)"
         >
+            <span
+                class="menu__dot"
+                aria-hidden="true"
+            ></span>
             {{ statusLabel(s) }}
-        </button>
-        <template v-if="current !== null">
-            <div
-                class="menu__divider"
-                role="separator"
-            ></div>
-            <button
-                class="menu__item menu__item--danger"
-                type="button"
-                role="menuitem"
-                @click="emit('remove')"
+            <span
+                v-if="s === current"
+                class="menu__check"
+                aria-hidden="true"
+                >✓</span
             >
-                {{ i18n.actions.removeFromList }}
-            </button>
-        </template>
+        </button>
+        <button
+            v-if="current !== null"
+            class="menu__item menu__item--danger"
+            type="button"
+            role="menuitem"
+            @click="emit('remove')"
+        >
+            <span
+                class="menu__cross"
+                aria-hidden="true"
+                >×</span
+            >
+            {{ i18n.actions.removeFromList }}
+        </button>
     </div>
 </template>
 
@@ -98,17 +108,19 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped lang="scss">
+/* components-menus card: full-bleed items, colored status dots, danger row
+   separated by a top border. */
 .menu {
     position: absolute;
     top: calc(100% + 4px);
     left: 0;
     z-index: 10;
-    min-width: 180px;
-    padding: 4px;
+    overflow: hidden;
+    width: 200px;
     border: 1px solid var(--color-border);
     border-radius: 8px;
     background: var(--color-bg);
-    box-shadow: 0 4px 16px rgb(0 0 0 / 20%);
+    box-shadow: 0 6px 20px rgb(0 0 0 / 14%);
 }
 
 .menu--up {
@@ -117,11 +129,12 @@ onBeforeUnmount(() => {
 }
 
 .menu__item {
-    display: block;
+    display: flex;
+    align-items: center;
+    gap: 9px;
     width: 100%;
-    padding: 5px 10px;
+    padding: 8px 12px;
     border: none;
-    border-radius: 5px;
     background: transparent;
     color: var(--color-fg);
     font: inherit;
@@ -139,18 +152,32 @@ onBeforeUnmount(() => {
     }
 }
 
+.menu__dot {
+    flex: 0 0 auto;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--sc);
+}
+
 .menu__item--current {
     font-weight: 600;
+}
+
+.menu__check {
+    margin-left: auto;
     color: var(--color-accent);
+    font-size: 12px;
 }
 
 .menu__item--danger {
+    border-top: 1px solid var(--color-border);
     color: var(--color-danger);
 }
 
-.menu__divider {
-    height: 1px;
-    margin: 4px 6px;
-    background: var(--color-border);
+.menu__cross {
+    flex: 0 0 auto;
+    width: 9px;
+    text-align: center;
 }
 </style>

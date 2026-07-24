@@ -44,19 +44,18 @@ function onInput(event: Event): void {
 
 .search__field {
     flex-shrink: 0;
-    padding: 8px 12px;
+    padding: 10px 12px;
     border-bottom: 1px solid var(--color-border);
 }
 
 .search__input {
     width: 100%;
-    padding: 6px 10px;
+    padding: 7px 10px;
     border: 1px solid var(--color-border);
     border-radius: 6px;
     background: var(--color-bg);
     color: var(--color-fg);
     font: inherit;
-    font-size: 13.5px;
 
     &::placeholder {
         color: var(--color-fg-muted);

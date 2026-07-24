@@ -5,8 +5,8 @@
             class="card__poster"
             :src="card.posterUrl"
             :srcset="posterSrcset"
-            width="60"
-            height="94"
+            width="48"
+            height="66"
             loading="lazy"
             alt=""
         />
@@ -95,18 +95,24 @@
                         <span aria-hidden="true">▾</span>
                     </button>
                 </span>
-                <!-- In my list: current status badge, click opens the menu. -->
+                <!-- In my list: colored status badge pill (global .badge/.st-*),
+                     click opens the menu. -->
                 <button
                     v-else
-                    class="card__badge"
+                    class="card__badge badge"
+                    :class="`st-${card.userRate.status}`"
                     type="button"
                     :disabled="busy"
                     :title="i18n.actions.chooseStatus"
                     @click.stop="toggleMenu"
                 >
+                    <span
+                        class="dot"
+                        aria-hidden="true"
+                    ></span>
                     {{ statusLabel(card.userRate.status) }}
                     <span
-                        class="card__badge-caret"
+                        class="car"
                         aria-hidden="true"
                         >▾</span
                     >
@@ -232,17 +238,17 @@ function onRemove(): void {
 <style scoped lang="scss">
 .card {
     display: flex;
-    gap: 10px;
-    padding: 10px 12px;
+    gap: 12px;
+    padding: 11px 12px;
     border-bottom: 1px solid var(--color-border);
 }
 
 .card__poster {
-    /* Fixed 60x94 box (poster.miniUrl size): no layout shift while loading. */
+    /* Fixed 48x66 box (components-title-card): no layout shift while loading. */
     flex-shrink: 0;
-    width: 60px;
-    height: 94px;
-    border-radius: 4px;
+    width: 48px;
+    height: 66px;
+    border-radius: 5px;
     background: var(--color-surface);
     object-fit: cover;
 }
@@ -305,24 +311,25 @@ function onRemove(): void {
     padding-top: 6px;
 }
 
+/* Split button "+ Запланировано ▾" (components-title-card card). */
 .card__split {
     display: inline-flex;
 }
 
 .card__add,
 .card__caret {
-    padding: 4px 10px;
-    border: none;
+    padding: 5px 11px;
+    border: 1px solid var(--color-accent);
     background: var(--color-accent);
     color: var(--color-accent-fg);
     font: inherit;
-    font-size: 12.5px;
+    font-size: 13px;
     font-weight: 600;
-    line-height: 1.3;
     cursor: pointer;
 
     &:hover:not(:disabled) {
         background: var(--color-accent-hover);
+        border-color: var(--color-accent-hover);
     }
 
     &:disabled {
@@ -341,29 +348,19 @@ function onRemove(): void {
 }
 
 .card__caret {
-    padding: 4px 7px;
-    border-left: 1px solid var(--color-accent-fg);
+    padding: 5px 8px;
+    border-left: 1px solid rgb(255 255 255 / 35%);
     border-radius: 0 6px 6px 0;
-    opacity: 0.92;
 }
 
+/* Visual comes from the global .badge/.st-* classes; here only the button
+   reset and the interactive states of the pill. */
 .card__badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    padding: 4px 10px;
-    border: 1px solid var(--color-border);
-    border-radius: 6px;
-    background: var(--color-surface);
-    color: var(--color-fg);
-    font: inherit;
-    font-size: 12px;
-    font-weight: 600;
-    line-height: 1.3;
+    padding: 4px 10px 4px 8px;
     cursor: pointer;
 
     &:hover:not(:disabled) {
-        border-color: var(--color-accent);
+        border-color: var(--sc);
     }
 
     &:disabled {
@@ -377,13 +374,14 @@ function onRemove(): void {
     }
 }
 
-.card__badge-caret {
-    color: var(--color-fg-muted);
-}
-
+/* Inline warning per the screens-states card (.warn). */
 .card__warning {
-    margin: 6px 0 0;
-    font-size: 12px;
+    margin: 8px 0 0;
+    padding: 9px 11px;
+    border: 1px solid color-mix(in srgb, var(--color-danger) 35%, transparent);
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--color-danger) 12%, transparent);
     color: var(--color-danger);
+    font-size: 12.5px;
 }
 </style>

@@ -1,29 +1,136 @@
-/* CSS foundation (docs/05-ui.md): system font, light/dark via CSS variables,
+/* CSS foundation (docs/05-ui.md, design reference "Shikimori Quick UI"):
+   system font, light/dark via CSS variables + prefers-color-scheme,
    compact popup ~380x580. No UI frameworks. */
 
 :root {
     --color-bg: #ffffff;
-    --color-fg: #1f1f24;
-    --color-fg-muted: #6b6f76;
-    --color-border: #e3e5e8;
-    --color-surface: #f1f2f4;
-    --color-accent: #3b6ea5;
-    --color-accent-hover: #33608f;
+    --color-fg: #1f2328;
+    --color-fg-muted: #57606a;
+    --color-border: #d0d7de;
+    --color-surface: #eef0f2;
+    --color-accent: #1a7f5a;
+    --color-accent-hover: #146c4c;
     --color-accent-fg: #ffffff;
-    --color-danger: #b3382e;
+    --color-danger: #b42318;
 }
 
 @media (prefers-color-scheme: dark) {
     :root {
-        --color-bg: #1f2125;
-        --color-fg: #e6e6e6;
-        --color-fg-muted: #9aa0a6;
-        --color-border: #3a3d42;
-        --color-surface: #2a2d32;
-        --color-accent: #7aa2d8;
-        --color-accent-hover: #8fb2e0;
-        --color-accent-fg: #16181c;
-        --color-danger: #e5756c;
+        --color-bg: #1c1a18;
+        --color-fg: #e9e6e2;
+        --color-fg-muted: #a49b93;
+        --color-border: #383430;
+        --color-surface: #262320;
+        --color-accent: #43b98d;
+        --color-accent-hover: #5fcaa1;
+        --color-accent-fg: #0c2b21;
+        --color-danger: #ef8a78;
+    }
+}
+
+/* --- Status palettes (single source, foundations/components cards) ---
+   Each of the 6 user-rate statuses owns two variables:
+   --sc  — saturated status color (dots, badge text/border);
+   --sct — tint (pastel badge fill in light, dark tint in dark).
+   Components only consume var(--sc)/var(--sct); palettes never duplicate. */
+
+.st-planned {
+    --sc: #3f6fb0;
+    --sct: #c9d7ea;
+}
+
+.st-watching {
+    --sc: #1a7f5a;
+    --sct: #bfe0d2;
+}
+
+.st-rewatching {
+    --sc: #0e8a94;
+    --sct: #b7dee2;
+}
+
+.st-completed {
+    --sc: #7c4dbf;
+    --sct: #dbcdef;
+}
+
+.st-on_hold {
+    --sc: #9a7000;
+    --sct: #eddbb0;
+}
+
+.st-dropped {
+    --sc: #b42318;
+    --sct: #eec1bd;
+}
+
+@media (prefers-color-scheme: dark) {
+    .st-planned {
+        --sc: #7ea9dd;
+        --sct: #3a495f;
+    }
+
+    .st-watching {
+        --sc: #4cbf93;
+        --sct: #2b493a;
+    }
+
+    .st-rewatching {
+        --sc: #46c2cc;
+        --sct: #2a494e;
+    }
+
+    .st-completed {
+        --sc: #b18ee6;
+        --sct: #3f3756;
+    }
+
+    .st-on_hold {
+        --sc: #d4a53a;
+        --sct: #4e4123;
+    }
+
+    .st-dropped {
+        --sc: #ef8a78;
+        --sct: #56312b;
+    }
+}
+
+/* --- Status badge pill (components-atoms card) ---
+   Shared by TitleCard and RateRow (which only override sizes in scoped CSS).
+   Works on <span> and <button> alike, hence the explicit font reset. */
+
+.badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 9px 3px 8px;
+    border: 1px solid color-mix(in srgb, var(--sc) 32%, transparent);
+    border-radius: 999px;
+    background: var(--sct);
+    color: var(--sc);
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.4;
+}
+
+.badge .dot {
+    flex: 0 0 auto;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--sc);
+}
+
+.badge .car {
+    font-size: 10px;
+    opacity: 0.7;
+}
+
+@media (prefers-color-scheme: dark) {
+    .badge {
+        background: color-mix(in srgb, var(--sct) 85%, transparent);
     }
 }
 

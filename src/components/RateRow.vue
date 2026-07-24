@@ -5,8 +5,8 @@
             class="rate__poster"
             :src="rate.posterUrl"
             :srcset="posterSrcset"
-            width="60"
-            height="94"
+            width="42"
+            height="58"
             loading="lazy"
             alt=""
         />
@@ -53,14 +53,14 @@
                 <div class="rate__score">
                     <button
                         class="rate__score-btn"
-                        :class="{ 'rate__score-btn--set': rate.score > 0 }"
+                        :class="{ 'rate__score-btn--empty': rate.score === 0 }"
                         type="button"
                         :disabled="busy"
                         :aria-label="i18n.score.label"
                         :title="i18n.score.label"
                         @click.stop="toggleScore"
                     >
-                        <span aria-hidden="true">{{ rate.score > 0 ? `★ ${rate.score}` : '☆' }}</span>
+                        <span aria-hidden="true">{{ rate.score > 0 ? rate.score : '—' }}</span>
                     </button>
                     <ScorePicker
                         v-if="scoreOpen"
@@ -88,18 +88,23 @@
                 >
                     +1
                 </button>
-                <!-- Current status badge, click opens the StatusMenu
-                     (change status / remove) — same as TitleCard. -->
+                <!-- Current status badge pill (global .badge/.st-*, compact
+                     sizes), click opens the StatusMenu — same as TitleCard. -->
                 <button
-                    class="rate__badge"
+                    class="rate__badge badge"
+                    :class="`st-${rate.status}`"
                     type="button"
                     :disabled="busy"
                     :title="i18n.actions.chooseStatus"
                     @click.stop="toggleStatus"
                 >
+                    <span
+                        class="dot"
+                        aria-hidden="true"
+                    ></span>
                     {{ statusLabel(rate.status) }}
                     <span
-                        class="rate__badge-caret"
+                        class="car"
                         aria-hidden="true"
                         >▾</span
                     >
@@ -260,17 +265,17 @@ function onRemove(): void {
 <style scoped lang="scss">
 .rate {
     display: flex;
-    gap: 10px;
+    gap: 12px;
     padding: 10px 12px;
     border-bottom: 1px solid var(--color-border);
 }
 
 .rate__poster {
-    /* Fixed 60x94 box (poster.miniUrl size): no layout shift while loading. */
+    /* Fixed 42x58 box (components-rate-row): no layout shift while loading. */
     flex-shrink: 0;
-    width: 60px;
-    height: 94px;
-    border-radius: 4px;
+    width: 42px;
+    height: 58px;
+    border-radius: 5px;
     background: var(--color-surface);
     object-fit: cover;
 }
@@ -314,20 +319,20 @@ function onRemove(): void {
     flex-shrink: 0;
 }
 
+/* My score button per the components-rate-row card (.scorebtn). */
 .rate__score-btn {
-    padding: 2px 6px;
-    border: none;
+    padding: 2px 8px;
+    border: 1px solid var(--color-border);
     border-radius: 6px;
     background: transparent;
-    color: var(--color-fg-muted);
+    color: var(--color-fg);
     font: inherit;
     font-size: 13px;
     font-weight: 600;
-    line-height: 1.3;
     cursor: pointer;
 
     &:hover:not(:disabled) {
-        background: var(--color-surface);
+        border-color: var(--color-accent);
     }
 
     &:disabled {
@@ -341,8 +346,8 @@ function onRemove(): void {
     }
 }
 
-.rate__score-btn--set {
-    color: var(--color-accent);
+.rate__score-btn--empty {
+    color: var(--color-fg-muted);
 }
 
 .rate__progress-row {
@@ -361,20 +366,20 @@ function onRemove(): void {
     color: var(--color-fg-muted);
 }
 
+/* "+1" per the components-rate-row card (.plus). */
 .rate__inc {
-    padding: 3px 10px;
-    border: none;
+    padding: 2px 9px;
+    border: 1px solid var(--color-border);
     border-radius: 6px;
-    background: var(--color-accent);
-    color: var(--color-accent-fg);
+    background: var(--color-surface);
+    color: var(--color-fg);
     font: inherit;
-    font-size: 12.5px;
+    font-size: 13px;
     font-weight: 600;
-    line-height: 1.3;
     cursor: pointer;
 
     &:hover:not(:disabled) {
-        background: var(--color-accent-hover);
+        border-color: var(--color-accent);
     }
 
     &:disabled {
@@ -388,27 +393,18 @@ function onRemove(): void {
     }
 }
 
+/* Compact pill sizes on top of the global .badge (components-rate-row card). */
 .rate__badge {
-    /* Compact variant of TitleCard's status badge. */
-    display: inline-flex;
-    align-items: center;
     flex-shrink: 0;
-    gap: 4px;
+    gap: 5px;
     margin-left: auto;
-    padding: 3px 8px;
-    border: 1px solid var(--color-border);
-    border-radius: 6px;
-    background: var(--color-surface);
-    color: var(--color-fg);
-    font: inherit;
-    font-size: 11.5px;
-    font-weight: 600;
-    line-height: 1.3;
+    padding: 2px 8px 2px 7px;
+    font-size: 11px;
     white-space: nowrap;
     cursor: pointer;
 
     &:hover:not(:disabled) {
-        border-color: var(--color-accent);
+        border-color: var(--sc);
     }
 
     &:disabled {
@@ -420,39 +416,45 @@ function onRemove(): void {
         outline: 2px solid var(--color-accent);
         outline-offset: 1px;
     }
+
+    .dot {
+        width: 6px;
+        height: 6px;
+    }
+
+    .car {
+        font-size: 9px;
+    }
 }
 
-.rate__badge-caret {
-    color: var(--color-fg-muted);
-}
-
+/* Inline "перевести в «Просмотрено»?" per the components-rate-row card
+   (.askdone): muted question + accent/muted link buttons. */
 .rate__suggest {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
-    gap: 6px;
-    margin-top: 6px;
+    gap: 8px;
+    margin-top: 8px;
+    font-size: 13px;
 }
 
 .rate__suggest-text {
-    font-size: 12px;
     color: var(--color-fg-muted);
 }
 
 .rate__suggest-btn {
-    padding: 3px 10px;
-    border: 1px solid var(--color-border);
-    border-radius: 6px;
-    background: var(--color-surface);
-    color: var(--color-fg);
+    padding: 2px 4px;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--color-fg-muted);
     font: inherit;
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 600;
-    line-height: 1.3;
     cursor: pointer;
 
     &:hover:not(:disabled) {
-        border-color: var(--color-accent);
+        text-decoration: underline;
     }
 
     &:disabled {
@@ -467,19 +469,17 @@ function onRemove(): void {
 }
 
 .rate__suggest-btn--yes {
-    border-color: transparent;
-    background: var(--color-accent);
-    color: var(--color-accent-fg);
-
-    &:hover:not(:disabled) {
-        border-color: transparent;
-        background: var(--color-accent-hover);
-    }
+    color: var(--color-accent);
 }
 
+/* Inline warning per the screens-states card (.warn). */
 .rate__warning {
-    margin: 6px 0 0;
-    font-size: 12px;
+    margin: 8px 0 0;
+    padding: 9px 11px;
+    border: 1px solid color-mix(in srgb, var(--color-danger) 35%, transparent);
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--color-danger) 12%, transparent);
     color: var(--color-danger);
+    font-size: 12.5px;
 }
 </style>

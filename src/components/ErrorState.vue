@@ -1,5 +1,11 @@
 <template>
     <div class="error">
+        <div
+            class="error__icon"
+            aria-hidden="true"
+        >
+            ⚠
+        </div>
         <p
             class="error__text"
             role="alert"
@@ -19,8 +25,8 @@
 <script setup lang="ts">
 import { i18n } from '@/src/lib/i18n';
 
-// List-level error state (docs/05): message mapped from ApiError.kind by the
-// parent (apiErrorMessage) + a retry action.
+// List-level error state per the screens-states card: danger icon + message
+// mapped from ApiError.kind by the parent (apiErrorMessage) + a retry action.
 defineProps<{ text: string }>();
 
 const emit = defineEmits<{
@@ -36,23 +42,28 @@ const emit = defineEmits<{
     justify-content: center;
     height: 100%;
     min-height: 120px;
-    padding: 16px;
+    padding: 24px;
     gap: 12px;
+}
+
+.error__icon {
+    color: var(--color-danger);
+    font-size: 30px;
+    opacity: 0.8;
 }
 
 .error__text {
     margin: 0;
     max-width: 280px;
-    font-size: 13px;
     color: var(--color-danger);
     text-align: center;
 }
 
 .error__retry {
-    padding: 6px 16px;
+    padding: 8px 16px;
     border: 1px solid var(--color-border);
-    border-radius: 6px;
-    background: var(--color-surface);
+    border-radius: 8px;
+    background: transparent;
     color: var(--color-fg);
     font: inherit;
     font-size: 13px;
@@ -60,7 +71,7 @@ const emit = defineEmits<{
     cursor: pointer;
 
     &:hover {
-        border-color: var(--color-accent);
+        background: var(--color-surface);
     }
 
     &:focus-visible {

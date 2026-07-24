@@ -55,19 +55,19 @@ function select(tab: TabId): void {
 .tabs {
     display: flex;
     flex-shrink: 0;
-    gap: 4px;
-    padding: 8px 12px 0;
+    border-bottom: 1px solid var(--color-border);
 }
 
 .tabs__tab {
-    padding: 5px 12px;
+    flex: 1;
+    padding: 9px;
     border: none;
-    border-radius: 6px 6px 0 0;
     background: transparent;
     color: var(--color-fg-muted);
     font: inherit;
     font-size: 13px;
     font-weight: 600;
+    text-align: center;
     cursor: pointer;
 
     &:hover:not(.tabs__tab--active) {
@@ -81,8 +81,8 @@ function select(tab: TabId): void {
 }
 
 .tabs__tab--active {
-    background: var(--color-surface);
     color: var(--color-fg);
+    box-shadow: inset 0 -2px 0 var(--color-accent);
     cursor: default;
 }
 </style>

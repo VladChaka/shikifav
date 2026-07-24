@@ -1,12 +1,12 @@
 <template>
     <main class="login">
-        <img
-            class="login__icon"
-            src="/icon/128.png"
-            width="64"
-            height="64"
-            alt=""
-        />
+        <div
+            class="login__logo"
+            aria-hidden="true"
+        >
+            ★
+        </div>
+        <div class="login__app">{{ i18n.app.name }}</div>
         <p class="login__lead">{{ i18n.login.lead }}</p>
         <p
             v-if="error"
@@ -15,8 +15,11 @@
         >
             {{ apiErrorMessage(error) }}
         </p>
+        <!-- One button covers all cases; after a failed attempt it turns into
+             the secondary "Повторить" (screens-login card). -->
         <button
             class="login__button"
+            :class="{ 'login__button--retry': error && !pending }"
             type="button"
             :disabled="pending"
             @click="login"
@@ -44,26 +47,37 @@ const buttonLabel = computed(() => {
 </script>
 
 <style scoped lang="scss">
+/* screens-login card: logo tile, app name, lead, sign-in / retry. */
 .login {
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     height: 100%;
-    padding: 24px;
+    padding: 32px;
     gap: 16px;
     text-align: center;
 }
 
-.login__icon {
-    /* Fixed box: no layout shift while the PNG loads. */
+.login__logo {
+    display: flex;
+    align-items: center;
+    justify-content: center;
     width: 64px;
     height: 64px;
+    border-radius: 16px;
+    background: var(--color-surface);
+    font-size: 30px;
+}
+
+.login__app {
+    font-size: 18px;
+    font-weight: 700;
 }
 
 .login__lead {
     margin: 0;
-    max-width: 260px;
+    max-width: 240px;
     color: var(--color-fg-muted);
 }
 
@@ -75,9 +89,9 @@ const buttonLabel = computed(() => {
 }
 
 .login__button {
-    padding: 8px 20px;
-    border: none;
-    border-radius: 6px;
+    padding: 11px 20px;
+    border: 1px solid transparent;
+    border-radius: 8px;
     background: var(--color-accent);
     color: var(--color-accent-fg);
     font: inherit;
@@ -96,6 +110,18 @@ const buttonLabel = computed(() => {
     &:focus-visible {
         outline: 2px solid var(--color-accent);
         outline-offset: 2px;
+    }
+}
+
+/* Secondary variant after a failed attempt (screens-login, "Повторить"). */
+.login__button--retry {
+    padding: 9px 18px;
+    border-color: var(--color-border);
+    background: transparent;
+    color: var(--color-fg);
+
+    &:hover:not(:disabled) {
+        background: var(--color-surface);
     }
 }
 </style>
