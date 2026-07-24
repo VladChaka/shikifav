@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing';
+import { ref, watch } from 'vue';
 import type { MessageHandlers } from '../lib/messaging';
 import type { SessionState } from '../lib/storage';
 import { i18n } from '../lib/i18n';
@@ -107,7 +108,7 @@ describe('use-lists', () => {
     });
 
     describe('pagination', () => {
-        it('activate loads the first page exactly once and is idempotent', async () => {
+        it('activate coalesces concurrent calls into one first-page request', async () => {
             const calls: { status: string; page: number }[] = [];
             const { lists } = await setup({
                 'rates.list': async ({ status, page }) => {
@@ -117,11 +118,35 @@ describe('use-lists', () => {
             });
 
             lists.activate();
-            lists.activate(); // second activation must not fire a second request
+            lists.activate(); // a show during the in-flight load joins that load
             await vi.waitFor(() => expect(lists.listStatus.value).toBe('data'));
             expect(lists.items.value).toEqual([row('1')]);
             expect(lists.hasMore.value).toBe(false);
             expect(calls).toEqual([{ status: 'watching', page: 1 }]);
+        });
+
+        it('re-activating the tab refetches and drops a row changed on the site', async () => {
+            // Ф3-6 regression: the once-per-popup activation gate kept a row
+            // completed on the site in the «Смотрю» list until a filter change.
+            let completedOnSite = false;
+            const calls: number[] = [];
+            const { lists } = await setup({
+                'rates.list': async ({ page }) => {
+                    calls.push(page);
+                    return completedOnSite
+                        ? { items: [row('2')], hasMore: false }
+                        : { items: [row('1'), row('2')], hasMore: false };
+                },
+            });
+
+            lists.activate();
+            await vi.waitFor(() => expect(lists.items.value).toEqual([row('1'), row('2')]));
+
+            completedOnSite = true; // the site moved row 1 out of «Смотрю»
+            lists.activate(); // the tab is shown again (App re-fires on each show)
+            await vi.waitFor(() => expect(lists.items.value).toEqual([row('2')]));
+            expect(calls).toEqual([1, 1]); // two first-page loads, no paging
+            expect(lists.listStatus.value).toBe('data');
         });
 
         it('loadMore appends the next page with exactly one request', async () => {
@@ -468,7 +493,10 @@ describe('use-lists', () => {
             expect(lists.suggestIds.value.size).toBe(0);
         });
 
-        it('does not offer completion when the server already flipped the status', async () => {
+        it('drops the row without offering when the server flips the status out of the filter', async () => {
+            // The site can auto-complete on the last episode: the increment
+            // response carries status 'completed', outside the «Смотрю» filter.
+            // Same rule as changeStatus (Ф3-8) — the row leaves, no US-6 offer.
             const { lists } = await setup({
                 'rates.list': async () => ({
                     items: [row('1', { progress: 11, total: 12 })],
@@ -483,11 +511,13 @@ describe('use-lists', () => {
             await vi.waitFor(() => expect(lists.listStatus.value).toBe('data'));
 
             lists.increment(lists.items.value[0]);
-            await vi.waitFor(() => expect(lists.items.value[0].status).toBe('completed'));
+            await vi.waitFor(() => expect(lists.busyIds.value.size).toBe(0));
+            expect(lists.items.value).toEqual([]);
+            expect(lists.listStatus.value).toBe('empty');
             expect(lists.suggestIds.value.size).toBe(0);
         });
 
-        it('«Да» sends rates.update {status: completed} and hides the offer', async () => {
+        it('«Да» sends rates.update {status: completed} and the row leaves the filter', async () => {
             const updates: { rateId: string; patch: RatePatch }[] = [];
             const { lists } = await setup({
                 'rates.list': async () => ({
@@ -513,10 +543,13 @@ describe('use-lists', () => {
             expect(lists.busyIds.value.has('1')).toBe(true);
 
             // Wait for the write to finish — the optimistic patch alone must
-            // not be mistaken for completion (the offer hides on success only).
+            // not be mistaken for completion (the row leaves on success only).
             await vi.waitFor(() => expect(lists.busyIds.value.size).toBe(0));
             expect(updates).toEqual([{ rateId: '1', patch: { status: 'completed' } }]);
-            expect(lists.items.value[0].status).toBe('completed');
+            // Unified with the StatusMenu change (Ф3-8): the confirmed status
+            // no longer matches the «Смотрю» filter, so the row is removed.
+            expect(lists.items.value).toEqual([]);
+            expect(lists.listStatus.value).toBe('empty');
             expect(lists.suggestIds.value.size).toBe(0);
         });
 
@@ -617,6 +650,206 @@ describe('use-lists', () => {
         });
     });
 
+    describe('row status actions (Ф3-8)', () => {
+        it('optimistically flips the badge, locks the row, and drops it once the server confirms a status outside the filter', async () => {
+            const update = deferred<{ rate: RateState }>();
+            const updates: { rateId: string; patch: RatePatch }[] = [];
+            const { lists } = await setup({
+                'rates.list': async () => ({ items: [row('1')], hasMore: false }),
+                'rates.update': async ({ rateId, patch }) => {
+                    updates.push({ rateId, patch });
+                    return update.promise;
+                },
+            });
+
+            lists.activate();
+            await vi.waitFor(() => expect(lists.listStatus.value).toBe('data'));
+
+            lists.changeStatus(lists.items.value[0], 'dropped');
+            expect(lists.items.value[0].status).toBe('dropped'); // optimistic, synchronous
+            expect(lists.busyIds.value.has('1')).toBe(true);
+
+            await vi.waitFor(() =>
+                expect(updates).toEqual([{ rateId: '1', patch: { status: 'dropped' } }]),
+            );
+            expect(lists.items.value).toHaveLength(1); // still visible while the write is in flight
+
+            update.resolve({ rate: rateState('1', { status: 'dropped' }) });
+            await vi.waitFor(() => expect(lists.busyIds.value.size).toBe(0));
+            // 'dropped' is outside the «Смотрю» filter → the row leaves the list.
+            expect(lists.items.value).toEqual([]);
+            expect(lists.listStatus.value).toBe('empty');
+        });
+
+        it('removes only the changed row and keeps the sibling rows in the filter', async () => {
+            const { lists } = await setup({
+                'rates.list': async () => ({ items: [row('1'), row('2')], hasMore: false }),
+                'rates.update': async () => ({ rate: rateState('1', { status: 'dropped' }) }),
+            });
+
+            lists.activate();
+            await vi.waitFor(() => expect(lists.items.value).toEqual([row('1'), row('2')]));
+
+            lists.changeStatus(lists.items.value[0], 'dropped');
+            await vi.waitFor(() => expect(lists.items.value).toEqual([row('2')]));
+            expect(lists.listStatus.value).toBe('data'); // the sibling keeps the list non-empty
+            expect(lists.busyIds.value.size).toBe(0);
+        });
+
+        it('keeps and patches the row when the confirmed status still matches the filter', async () => {
+            const { lists } = await setup({
+                'rates.list': async ({ status }) =>
+                    status === 'planned'
+                        ? { items: [row('1', { status: 'planned' })], hasMore: false }
+                        : { items: [row('seed')], hasMore: false },
+                'rates.update': async () => ({ rate: rateState('1', { status: 'planned' }) }),
+            });
+
+            lists.activate();
+            await vi.waitFor(() => expect(lists.listStatus.value).toBe('data'));
+            lists.setFilterStatus('planned');
+            await vi.waitFor(() =>
+                expect(lists.items.value).toEqual([row('1', { status: 'planned' })]),
+            );
+
+            // The confirmed status equals the active filter → the row stays (patchRow),
+            // it is not removed.
+            lists.changeStatus(lists.items.value[0], 'planned');
+            await vi.waitFor(() => expect(lists.busyIds.value.size).toBe(0));
+            expect(lists.items.value).toEqual([row('1', { status: 'planned' })]);
+            expect(lists.listStatus.value).toBe('data');
+        });
+
+        it('rolls the status back to the original and toasts on a non-404 failure', async () => {
+            const { lists, toasts } = await setup({
+                'rates.list': async () => ({ items: [row('1')], hasMore: false }),
+                'rates.update': async () => {
+                    throw { kind: 'api', status: 500, message: 'Server Error' } satisfies ApiError;
+                },
+            });
+
+            lists.activate();
+            await vi.waitFor(() => expect(lists.listStatus.value).toBe('data'));
+
+            lists.changeStatus(lists.items.value[0], 'dropped');
+            expect(lists.items.value[0].status).toBe('dropped'); // optimistic
+
+            await vi.waitFor(() => expect(lists.items.value[0].status).toBe('watching')); // rolled back
+            expect(lists.items.value).toHaveLength(1); // the row stays on the list
+            expect(toasts).toEqual([i18n.errors.api]);
+            expect(lists.busyIds.value.size).toBe(0);
+            expect(lists.warnings.value.size).toBe(0);
+        });
+
+        it('a manual status change drops a pending US-6 offer on the row', async () => {
+            const { lists } = await setup({
+                'rates.list': async () => ({
+                    items: [row('1', { progress: 11, total: 12 })],
+                    hasMore: false,
+                }),
+                'rates.increment': async () => ({ rate: rateState('1', { episodes: 12 }) }),
+                'rates.update': async () => ({
+                    rate: rateState('1', { episodes: 12, status: 'dropped' }),
+                }),
+            });
+
+            lists.activate();
+            await vi.waitFor(() => expect(lists.listStatus.value).toBe('data'));
+
+            lists.increment(lists.items.value[0]); // reaches the total → the offer appears
+            await vi.waitFor(() => expect(lists.suggestIds.value.has('1')).toBe(true));
+
+            // Picking any status from the StatusMenu supersedes the offer.
+            lists.changeStatus(lists.items.value[0], 'dropped');
+            await vi.waitFor(() => expect(lists.items.value).toEqual([])); // 'dropped' leaves «Смотрю»
+            expect(lists.suggestIds.value.has('1')).toBe(false);
+        });
+
+        it('deletes server-first: no optimistic removal, row locked, gone on confirmation', async () => {
+            const del = deferred<Record<string, never>>();
+            const deletes: string[] = [];
+            const { lists } = await setup({
+                'rates.list': async () => ({ items: [row('1')], hasMore: false }),
+                'rates.delete': async ({ rateId }) => {
+                    deletes.push(rateId);
+                    return del.promise;
+                },
+            });
+
+            lists.activate();
+            await vi.waitFor(() => expect(lists.listStatus.value).toBe('data'));
+
+            lists.removeRate(lists.items.value[0]);
+            expect(lists.items.value).toHaveLength(1); // no optimistic delete
+            expect(lists.busyIds.value.has('1')).toBe(true); // but the row is locked
+
+            await vi.waitFor(() => expect(deletes).toEqual(['1']));
+            del.resolve({});
+            await vi.waitFor(() => expect(lists.items.value).toEqual([]));
+            expect(lists.listStatus.value).toBe('empty');
+            expect(lists.busyIds.value.size).toBe(0);
+        });
+
+        it('drops the row and toasts «уже удалена» when delete returns 404', async () => {
+            const { lists, toasts } = await setup({
+                'rates.list': async () => ({ items: [row('1'), row('2')], hasMore: false }),
+                'rates.delete': async () => {
+                    throw { kind: 'api', status: 404, message: 'Not Found' } satisfies ApiError;
+                },
+            });
+
+            lists.activate();
+            await vi.waitFor(() => expect(lists.listStatus.value).toBe('data'));
+
+            lists.removeRate(lists.items.value[0]);
+            await vi.waitFor(() => expect(lists.items.value).toEqual([row('2')]));
+            expect(toasts).toEqual([i18n.rates.alreadyRemoved]);
+            expect(lists.listStatus.value).toBe('data'); // the sibling remains
+            expect(lists.busyIds.value.size).toBe(0);
+        });
+
+        it('keeps the row and toasts on a non-404 delete failure', async () => {
+            const { lists, toasts } = await setup({
+                'rates.list': async () => ({ items: [row('1')], hasMore: false }),
+                'rates.delete': async () => {
+                    throw { kind: 'network' } satisfies ApiError;
+                },
+            });
+
+            lists.activate();
+            await vi.waitFor(() => expect(lists.listStatus.value).toBe('data'));
+
+            lists.removeRate(lists.items.value[0]);
+            await vi.waitFor(() => expect(lists.busyIds.value.size).toBe(0));
+            expect(lists.items.value).toEqual([row('1')]); // no optimistic removal → row stays
+            expect(toasts).toEqual([i18n.errors.network]);
+            expect(lists.listStatus.value).toBe('data');
+        });
+
+        it('drops a second removeRate while the first delete is in flight', async () => {
+            const del = deferred<Record<string, never>>();
+            let deleteCalls = 0;
+            const { lists } = await setup({
+                'rates.list': async () => ({ items: [row('1')], hasMore: false }),
+                'rates.delete': async () => {
+                    deleteCalls += 1;
+                    return del.promise;
+                },
+            });
+
+            lists.activate();
+            await vi.waitFor(() => expect(lists.listStatus.value).toBe('data'));
+
+            lists.removeRate(lists.items.value[0]);
+            lists.removeRate(lists.items.value[0]); // busy — dropped
+            await flush();
+            expect(deleteCalls).toBe(1);
+
+            del.resolve({});
+            await vi.waitFor(() => expect(lists.items.value).toEqual([]));
+        });
+    });
+
     describe('failure policies', () => {
         it('404 on an action removes the row and toasts «уже удалена»', async () => {
             const { lists, toasts } = await setup({
@@ -708,6 +941,55 @@ describe('use-lists', () => {
             firstPage.resolve({ items: [fresh], hasMore: false });
             await vi.waitFor(() => expect(lists.items.value).toEqual([fresh]));
             expect(lists.hasMore.value).toBe(false);
+        });
+
+        it('popup started directly on the lists tab (App wiring) refreshes over the cache', async () => {
+            // Ф3-6: wired exactly as App.vue — watch([authStatus, activeTab])
+            // with immediate:true calling activate(), the lastTab restore and
+            // the auth response both landing asynchronously after setup.
+            const stale = row('stale');
+            const firstPage = deferred<ListPage>();
+            const calls: { status: string; page: number }[] = [];
+            const { lists, storage } = await setup(
+                {
+                    'rates.list': async ({ status, page }) => {
+                        calls.push({ status, page });
+                        return firstPage.promise;
+                    },
+                },
+                { type: 'anime', status: 'watching', items: [stale], page: 1, hasMore: false },
+            );
+            await storage.setSession('lastTab', 'lists');
+
+            const authStatus = ref<'loading' | 'anonymous' | 'authorized'>('loading');
+            const activeTab = ref<'search' | 'lists'>('search');
+            watch(
+                [authStatus, activeTab],
+                ([auth, tab]) => {
+                    if (auth === 'authorized' && tab === 'lists') {
+                        lists.activate();
+                    }
+                },
+                { immediate: true },
+            );
+            void storage.getSession('lastTab').then((tab) => {
+                if (tab) {
+                    activeTab.value = tab;
+                }
+            });
+            authStatus.value = 'authorized'; // auth.getState resolved
+
+            // Cached rows render instantly, before the network answers.
+            await vi.waitFor(() => expect(lists.items.value).toEqual([stale]));
+            expect(lists.listStatus.value).toBe('data');
+            // Exactly one network refresh goes out for the restored filter.
+            await vi.waitFor(() => expect(calls).toEqual([{ status: 'watching', page: 1 }]));
+            expect(lists.items.value).toEqual([stale]); // still cached while in flight
+
+            firstPage.resolve({ items: [row('fresh')], hasMore: false });
+            // The response replaces the rows: the stale cached row is gone.
+            await vi.waitFor(() => expect(lists.items.value).toEqual([row('fresh')]));
+            expect(lists.listStatus.value).toBe('data');
         });
 
         it('writes the confirmed state to session.lastList after an operation', async () => {

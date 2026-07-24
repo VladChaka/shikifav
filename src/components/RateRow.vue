@@ -71,6 +71,10 @@
                 </div>
             </div>
 
+            <!-- The row itself is the anchor for the absolutely positioned
+                 StatusMenu: left-aligned under it the menu always fits the
+                 popup width (a badge-aligned menu would overflow the right
+                 edge). -->
             <div class="rate__progress-row">
                 <span class="rate__progress">{{ progressText }}</span>
                 <button
@@ -84,6 +88,29 @@
                 >
                     +1
                 </button>
+                <!-- Current status badge, click opens the StatusMenu
+                     (change status / remove) — same as TitleCard. -->
+                <button
+                    class="rate__badge"
+                    type="button"
+                    :disabled="busy"
+                    :title="i18n.actions.chooseStatus"
+                    @click.stop="toggleStatus"
+                >
+                    {{ statusLabel(rate.status) }}
+                    <span
+                        class="rate__badge-caret"
+                        aria-hidden="true"
+                        >▾</span
+                    >
+                </button>
+                <StatusMenu
+                    v-if="statusOpen"
+                    :current="rate.status"
+                    @select="onStatus"
+                    @remove="onRemove"
+                    @close="emit('update:statusOpen', false)"
+                />
             </div>
 
             <!-- Progress reached the total: offer to complete (US-6, never auto).
@@ -129,21 +156,27 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import ScorePicker from '@/src/components/ScorePicker.vue';
-import type { RateRow } from '@/src/lib/api/types';
-import { i18n } from '@/src/lib/i18n';
+import StatusMenu from '@/src/components/StatusMenu.vue';
+import type { RateRow, UserRateStatus } from '@/src/lib/api/types';
+import { i18n, statusLabel } from '@/src/lib/i18n';
 
-// "Мои списки" list row (US-4/5/6). Presentational only: progress, +1, score
-// and the "completed?" suggestion are emitted upwards; `busy` locks actions
-// while a write is in flight and `suggestCompleted` toggles the inline offer.
-// `scoreOpen` is parent-owned (single open picker across the list, same
-// discipline as TitleCard's menuOpen).
+// "Мои списки" list row (US-4/5/6 + Ф3-7 status badge). Presentational only:
+// progress, +1, score, status change/removal and the "completed?" suggestion
+// are emitted upwards; `busy` locks all actions while a write is in flight and
+// `suggestCompleted` toggles the inline offer. `scoreOpen`/`statusOpen` are
+// parent-owned (at most one popover open across the list, same discipline as
+// TitleCard's menuOpen).
 //
 // Emits:
 //   increment                — user pressed [+1]
 //   set-score(value)         — a score 0..10 was chosen (0 = remove)
+//   change-status(value)     — a different status was picked in the StatusMenu
+//                              (picking the current one only closes the menu)
+//   remove                   — «Удалить из списка» picked in the StatusMenu
 //   mark-completed           — accepted the "перевести в «Просмотрено»?" offer
 //   dismiss-suggest          — postponed that offer
 //   update:scoreOpen(open)   — toggle/close the score picker
+//   update:statusOpen(open)  — toggle/close the status menu
 const props = withDefaults(
     defineProps<{
         rate: RateRow;
@@ -154,18 +187,24 @@ const props = withDefaults(
         // Whether this row's score picker is open (single-open coordination
         // lives in the list owner via update:scoreOpen).
         scoreOpen?: boolean;
+        // Whether this row's status menu is open (same coordination via
+        // update:statusOpen; the owner keeps score/status mutually exclusive).
+        statusOpen?: boolean;
         // Inline non-blocking warning under the row (e.g. edit access revoked).
         warning?: string | null;
     }>(),
-    { scoreOpen: false, warning: null },
+    { scoreOpen: false, statusOpen: false, warning: null },
 );
 
 const emit = defineEmits<{
     increment: [];
     'set-score': [value: number];
+    'change-status': [value: UserRateStatus];
+    remove: [];
     'mark-completed': [];
     'dismiss-suggest': [];
     'update:scoreOpen': [open: boolean];
+    'update:statusOpen': [open: boolean];
 }>();
 
 const title = computed(() => props.rate.russian || props.rate.name);
@@ -198,6 +237,23 @@ function toggleScore(): void {
 function onScore(value: number): void {
     emit('update:scoreOpen', false);
     emit('set-score', value);
+}
+
+function toggleStatus(): void {
+    emit('update:statusOpen', !props.statusOpen);
+}
+
+function onStatus(value: UserRateStatus): void {
+    emit('update:statusOpen', false);
+    // Re-picking the current status is a no-op: no pointless write / rate spend.
+    if (value !== props.rate.status) {
+        emit('change-status', value);
+    }
+}
+
+function onRemove(): void {
+    emit('update:statusOpen', false);
+    emit('remove');
 }
 </script>
 
@@ -290,6 +346,9 @@ function onScore(value: number): void {
 }
 
 .rate__progress-row {
+    /* Anchor for the absolutely positioned StatusMenu (left-aligned under
+       the row so the 180px menu never overflows the popup right edge). */
+    position: relative;
     display: flex;
     align-items: center;
     gap: 8px;
@@ -327,6 +386,44 @@ function onScore(value: number): void {
         outline: 2px solid var(--color-accent);
         outline-offset: 2px;
     }
+}
+
+.rate__badge {
+    /* Compact variant of TitleCard's status badge. */
+    display: inline-flex;
+    align-items: center;
+    flex-shrink: 0;
+    gap: 4px;
+    margin-left: auto;
+    padding: 3px 8px;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    background: var(--color-surface);
+    color: var(--color-fg);
+    font: inherit;
+    font-size: 11.5px;
+    font-weight: 600;
+    line-height: 1.3;
+    white-space: nowrap;
+    cursor: pointer;
+
+    &:hover:not(:disabled) {
+        border-color: var(--color-accent);
+    }
+
+    &:disabled {
+        opacity: 0.6;
+        cursor: default;
+    }
+
+    &:focus-visible {
+        outline: 2px solid var(--color-accent);
+        outline-offset: 1px;
+    }
+}
+
+.rate__badge-caret {
+    color: var(--color-fg-muted);
 }
 
 .rate__suggest {

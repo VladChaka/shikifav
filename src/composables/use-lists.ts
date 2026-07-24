@@ -13,9 +13,12 @@ import type {
     UserRateStatus,
 } from '../lib/api/types';
 
-// "Мои списки" tab (US-4/5/6): the list for a (type, status) filter with
-// pagination, plus optimistic +1 / score / "completed?" mutations over the rows.
-// Data flows only through background messages (docs/02, ADR-1).
+// "Мои списки" tab (US-4/5/6 + Ф3-8 row actions): the list for a (type, status)
+// filter with pagination, plus optimistic +1 / score / "completed?" / status
+// change / removal mutations over the rows. A row whose server-confirmed status
+// no longer matches the filter leaves the list (docs/05); removal is confirmed
+// server-first (no optimistic delete). Data flows only through background
+// messages (docs/02, ADR-1).
 export type ListStatus = 'skeleton' | 'data' | 'empty' | 'error';
 
 export interface UseLists {
@@ -31,8 +34,9 @@ export interface UseLists {
     suggestIds: Ref<Set<string>>;
     // rateId -> inline warning text (revoked edit access, docs/05), as in use-rates.
     warnings: Ref<Map<string, string>>;
-    // Lazy first-page load: called when the "Мои списки" tab is first shown, not
-    // at popup open (docs/05). Idempotent — safe to call on every tab activation.
+    // Lazy first-page load: called on every show of the "Мои списки" tab, not
+    // at popup open (docs/05). Each call refreshes over the visible rows so
+    // site-side changes surface (docs/06); concurrent calls coalesce.
     activate: () => void;
     loadMore: () => void;
     retry: () => void;
@@ -41,6 +45,8 @@ export interface UseLists {
     increment: (row: RateRow) => void;
     setScore: (row: RateRow, value: number) => void;
     markCompleted: (row: RateRow) => void;
+    changeStatus: (row: RateRow, status: UserRateStatus) => void;
+    removeRate: (row: RateRow) => void;
     dismissSuggest: (row: RateRow) => void;
 }
 
@@ -66,7 +72,9 @@ const warnings = ref(new Map<string, string>());
 let page = 1;
 
 let initialized = false;
-let activated = false;
+// True while an activate() refresh chain is running: shows of the tab during
+// an in-flight load coalesce into that one rates.list (limiter budget).
+let refreshing = false;
 // User already changed a filter or triggered a load: the async cache restore
 // must not overwrite live state when it finally resolves (as in use-search).
 let touched = false;
@@ -265,21 +273,29 @@ function retry(): void {
 }
 
 function activate(): void {
-    if (activated) {
+    if (refreshing) {
         return;
     }
-    activated = true;
-    // Let the cache restore settle the filter+rows first, then refresh.
-    void restorePromise.then(() => loadFirstPage());
+    refreshing = true;
+    // Let the cache restore settle the filter+rows first, then refresh. Every
+    // show of the tab refetches (a once-per-popup gate would hide site-side
+    // changes in a long-lived popup until a filter change — docs/06, Ф3).
+    void restorePromise
+        .then(() => loadFirstPage())
+        .finally(() => {
+            refreshing = false;
+        });
 }
 
 // Per-row busy lock: a second action on the same row is dropped while the first
 // is in flight, so no create/update race can happen (as in use-rates).
-async function runRowAction(
+// Generic over the confirmed payload: updates carry a RateState, delete has
+// none (T = null).
+async function runRowAction<T>(
     rateId: string,
     optimistic: (row: RateRow) => Partial<RateRow>,
-    send: () => Promise<{ ok: true; rate: RateState } | { ok: false; error: ApiError }>,
-    onSuccess: (row: RateRow, rate: RateState) => void,
+    send: () => Promise<{ ok: true; rate: T } | { ok: false; error: ApiError }>,
+    onSuccess: (row: RateRow, rate: T) => void,
     rollback: (row: RateRow) => Partial<RateRow>,
 ): Promise<void> {
     if (busyIds.value.has(rateId)) {
@@ -340,6 +356,17 @@ function increment(row: RateRow): void {
             return response.ok ? { ok: true, rate: response.data.rate } : response;
         },
         (current, rate) => {
+            if (rate.status !== current.status && rate.status !== filterStatus.value) {
+                // The increment itself moved the title out of the current filter
+                // (e.g. the site auto-completes on the last episode) — drop it like
+                // a manual status change (docs/05), same rule as changeStatus. Both
+                // guards matter: a status that merely differs from the filter but
+                // did not change (a rewatching row shown under another filter) must
+                // stay and still get the US-6 offer. No offer here — status left
+                // watching/rewatching.
+                removeRow(rateId); // also clears suggest/warning for the row
+                return;
+            }
             const progress = progressOf(rate, current.targetType);
             patchRow(rateId, { progress, status: rate.status, score: rate.score });
             // US-6 offer is driven by the server-confirmed progress/status.
@@ -360,17 +387,56 @@ function setScore(row: RateRow, value: number): void {
     );
 }
 
+// US-6 «Да»: accepting the offer is a plain status change to 'completed' with
+// the same confirm semantics as the StatusMenu (Ф3-8) — under the «Смотрю»
+// filter the row leaves the list once the server confirms (docs/05).
 function markCompleted(row: RateRow): void {
+    changeStatus(row, 'completed');
+}
+
+// Ф3-8: status picked in the row's StatusMenu. Optimistic badge update; the
+// server-confirmed status decides whether the row stays — a status outside the
+// current filter removes it from the list (docs/05). The US-6 offer is dropped
+// either way: a manual status change supersedes it.
+function changeStatus(row: RateRow, status: UserRateStatus): void {
     const rateId = row.rateId;
     void runRowAction(
         rateId,
-        () => ({ status: 'completed' }),
-        () => sendUpdate(rateId, { status: 'completed' }),
+        () => ({ status }),
+        () => sendUpdate(rateId, { status }),
         (_current, rate) => {
+            if (rate.status !== filterStatus.value) {
+                removeRow(rateId); // also clears suggest/warning for the row
+                return;
+            }
             patchRow(rateId, { status: rate.status });
-            suggestIds.value.delete(rateId); // offer accepted — hide it
+            suggestIds.value.delete(rateId);
         },
         (current) => ({ status: current.status }),
+    );
+}
+
+async function sendDelete(
+    rateId: string,
+): Promise<{ ok: true; rate: null } | { ok: false; error: ApiError }> {
+    const response = await sendMessage('rates.delete', { rateId });
+    return response.ok ? { ok: true, rate: null } : response;
+}
+
+// Ф3-8 «Удалить из списка»: no optimistic removal — undoing a vanished row is
+// worse than a short busy-lock wait, so the row leaves only on server
+// confirmation. A 404 lands in runRowAction's shared path (row dropped +
+// «уже удалена» toast), which is the right outcome for delete too.
+function removeRate(row: RateRow): void {
+    const rateId = row.rateId;
+    void runRowAction(
+        rateId,
+        () => ({}),
+        () => sendDelete(rateId),
+        () => {
+            removeRow(rateId);
+        },
+        () => ({}),
     );
 }
 
@@ -404,6 +470,8 @@ export function useLists(showToast: (text: string) => void): UseLists {
         increment,
         setScore,
         markCompleted,
+        changeStatus,
+        removeRate,
         dismissSuggest,
     };
 }

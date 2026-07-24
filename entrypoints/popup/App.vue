@@ -87,6 +87,8 @@
                 @retry="retryList"
                 @increment="incrementRate"
                 @set-score="setRateScore"
+                @change-status="changeRateStatus"
+                @remove="removeRate"
                 @mark-completed="markRateCompleted"
                 @dismiss-suggest="dismissRateSuggest"
             />
@@ -166,6 +168,8 @@ const {
     increment: incrementRate,
     setScore: setRateScore,
     markCompleted: markRateCompleted,
+    changeStatus: changeRateStatus,
+    removeRate,
     dismissSuggest: dismissRateSuggest,
 } = useLists(showToast);
 
@@ -190,7 +194,8 @@ function selectTab(tab: TabId): void {
 
 // Lazy first-page load: only once the user is authorized AND the "Мои списки"
 // tab is actually shown (docs/05 — no blocking requests at popup open).
-// activate() is idempotent, so re-firing on later switches is a no-op.
+// Re-fires on every later show of the tab: activate() refreshes the list each
+// time so site-side changes surface (docs/06, дополнение фазы 3).
 watch(
     [status, activeTab],
     ([authStatus, tab]) => {
