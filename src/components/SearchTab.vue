@@ -1,14 +1,7 @@
 <template>
     <section class="search">
-        <!-- docs/05 layout: [Аниме ▾] [поле поиска…] -->
+        <!-- docs/05 layout: полноширинное поле поиска, под ним чипы типа -->
         <div class="search__field">
-            <XSelect
-                class="search__type"
-                :options="TYPE_OPTIONS"
-                :model-value="searchType"
-                :aria-label="i18n.lists.typeFilterLabel"
-                @update:model-value="emit('update:searchType', $event)"
-            />
             <div class="search__box">
                 <input
                     ref="inputEl"
@@ -51,6 +44,12 @@
                     </svg>
                 </button>
             </div>
+            <ChipGroup
+                :options="TYPE_OPTIONS"
+                :model-value="searchType"
+                :aria-label="i18n.lists.typeFilterLabel"
+                @update:model-value="emit('update:searchType', $event)"
+            />
         </div>
 
         <div class="search__results">
@@ -61,12 +60,12 @@
 
 <script setup lang="ts">
 import { ref } from 'vue';
-import XSelect from '@/src/components/XSelect.vue';
-import type { XSelectOption } from '@/src/components/XSelect.vue';
+import ChipGroup from '@/src/components/ChipGroup.vue';
+import type { ChipOption } from '@/src/components/ChipGroup.vue';
 import type { SearchType } from '@/src/lib/api/types';
 import { i18n } from '@/src/lib/i18n';
 
-// Search screen frame: type selector + query field + scrollable results area.
+// Search screen frame: query field + type chip row + scrollable results area.
 // Both the query and the type are owned by the parent (v-model pair) — they
 // plug into use-search's setQuery/setType.
 defineProps<{
@@ -80,7 +79,7 @@ const emit = defineEmits<{
 }>();
 
 // Same labels as the "Мои списки" type filter (US-7).
-const TYPE_OPTIONS: readonly XSelectOption<SearchType>[] = [
+const TYPE_OPTIONS: readonly ChipOption<SearchType>[] = [
     { value: 'anime', label: i18n.lists.types.anime },
     { value: 'manga', label: i18n.lists.types.manga },
     { value: 'ranobe', label: i18n.lists.types.ranobe },
@@ -110,15 +109,11 @@ function clearQuery(): void {
 
 .search__field {
     display: flex;
+    flex-direction: column;
     flex-shrink: 0;
     gap: 8px;
     padding: 10px 12px;
     border-bottom: 1px solid var(--color-border);
-}
-
-.search__type {
-    /* Sized by its widest label; the input takes the rest of the row. */
-    flex-shrink: 0;
 }
 
 .search__box {

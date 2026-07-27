@@ -1,25 +1,29 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { h } from 'vue';
 import type { Component } from 'vue';
 import SearchTab from './SearchTab.vue';
+import type { SearchType } from '@/src/lib/api/types';
 import { i18n } from '@/src/lib/i18n';
-import { clickOn, createApp, createFakeElement, find, findAll } from './fake-renderer';
+import { clickOn, createApp, createFakeElement, find, findAll, textOf } from './fake-renderer';
 import type { FakeElement } from './fake-renderer';
 
 // UX-1: a custom clear button replaces the hidden native webkit cancel button.
 // It renders only while the query is non-empty; clicking it emits an empty
-// query and returns focus to the input. Mounted through the shared fake
-// renderer.
+// query and returns focus to the input. The type filter under the field is a
+// ChipGroup row (the chip contract itself lives in ChipGroup.test.ts). Mounted
+// through the shared fake renderer.
 
 interface Mounted {
     container: FakeElement;
     emitted: string[];
+    emittedTypes: SearchType[];
 }
 
 let cleanups: Array<() => void> = [];
 
-function mountSearch(modelValue: string): Mounted {
+function mountSearch(modelValue: string, searchType: SearchType = 'anime'): Mounted {
     const emitted: string[] = [];
+    const emittedTypes: SearchType[] = [];
     const container = createFakeElement('#container');
     const app = createApp({
         render: () =>
@@ -27,32 +31,25 @@ function mountSearch(modelValue: string): Mounted {
             // are the exact SearchTab contract.
             h(SearchTab as unknown as Component, {
                 modelValue,
-                searchType: 'anime',
+                searchType,
                 'onUpdate:modelValue': (value: string) => {
                     emitted.push(value);
+                },
+                'onUpdate:searchType': (value: SearchType) => {
+                    emittedTypes.push(value);
                 },
             }),
     });
     app.mount(container);
     cleanups.push(() => app.unmount());
-    return { container, emitted };
+    return { container, emitted, emittedTypes };
 }
-
-beforeEach(() => {
-    // No DOM in this environment; the closed type XSelect and its unmount
-    // hooks only need the listener API surface of document.
-    vi.stubGlobal('document', {
-        addEventListener: () => {},
-        removeEventListener: () => {},
-    });
-});
 
 afterEach(() => {
     for (const cleanup of cleanups) {
         cleanup();
     }
     cleanups = [];
-    vi.unstubAllGlobals();
 });
 
 describe('SearchTab clear button (UX-1)', () => {
@@ -79,5 +76,25 @@ describe('SearchTab clear button (UX-1)', () => {
         clickOn(find(container, 'search__clear'));
         expect(emitted).toEqual(['']);
         expect(focus).toHaveBeenCalledOnce();
+    });
+});
+
+describe('SearchTab type filter (UX-1)', () => {
+    it('renders the three types in a labelled chip row, checking the selected one', () => {
+        const { container } = mountSearch('', 'ranobe');
+        expect(find(container, 'chips').props['aria-label']).toBe(i18n.lists.typeFilterLabel);
+
+        const chips = findAll(container, 'chip');
+        expect(chips.map((chip) => textOf(chip).trim())).toEqual(['Аниме', 'Манга', 'Ранобэ']);
+        expect(chips.map((chip) => chip.props['aria-checked'])).toEqual([false, false, true]);
+    });
+
+    it('emits update:searchType with the value of the clicked chip', () => {
+        const { container, emittedTypes } = mountSearch('berserk');
+        // Two different inactive chips: a mutation that emits any constant
+        // cannot satisfy both expected values.
+        clickOn(findAll(container, 'chip')[1]!);
+        clickOn(findAll(container, 'chip')[2]!);
+        expect(emittedTypes).toEqual(['manga', 'ranobe']);
     });
 });

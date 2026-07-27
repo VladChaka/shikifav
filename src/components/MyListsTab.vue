@@ -1,35 +1,19 @@
 <template>
     <section class="lists">
         <div class="lists__filters">
-            <XSelect
-                class="lists__select"
+            <ChipGroup
                 :options="TYPE_OPTIONS"
                 :model-value="filterType"
                 :aria-label="i18n.lists.typeFilterLabel"
                 @update:model-value="emit('update:filterType', $event)"
             />
-            <div
-                class="lists__chips"
-                role="radiogroup"
+            <ChipGroup
+                :options="statusOptions"
+                :model-value="filterStatus"
+                status-dots
                 :aria-label="i18n.lists.statusFilterLabel"
-            >
-                <button
-                    v-for="opt in statusOptions"
-                    :key="opt.value"
-                    class="lists__chip"
-                    :class="[`st-${opt.value}`, { 'lists__chip--active': opt.value === filterStatus }]"
-                    type="button"
-                    role="radio"
-                    :aria-checked="opt.value === filterStatus"
-                    @click="emit('update:filterStatus', opt.value)"
-                >
-                    <span
-                        class="lists__chip-dot"
-                        aria-hidden="true"
-                    ></span>
-                    {{ opt.label }}
-                </button>
-            </div>
+                @update:model-value="emit('update:filterStatus', $event)"
+            />
         </div>
 
         <div class="lists__results">
@@ -82,18 +66,18 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue';
+import ChipGroup from '@/src/components/ChipGroup.vue';
+import type { ChipOption } from '@/src/components/ChipGroup.vue';
 import EmptyState from '@/src/components/EmptyState.vue';
 import ErrorState from '@/src/components/ErrorState.vue';
 import RateRow from '@/src/components/RateRow.vue';
 import SkeletonList from '@/src/components/SkeletonList.vue';
-import XSelect from '@/src/components/XSelect.vue';
-import type { XSelectOption } from '@/src/components/XSelect.vue';
 import type { RateRow as RateRowData, SearchType, UserRateStatus } from '@/src/lib/api/types';
 import { i18n, statusLabel } from '@/src/lib/i18n';
 import type { MediaKind } from '@/src/lib/i18n';
 
-// "Мои списки" tab frame (US-4/5/6 + Ф3-7 status badge, docs/05): type select
-// + status chip row, the row list with its data states, and "Ещё" pagination.
+// "Мои списки" tab frame (US-4/5/6 + Ф3-7 status badge, docs/05): two chip
+// rows (type + status), the row list with its data states, and "Ещё" pagination.
 // Presentational only — data and mutations come from use-lists (Ф3-4) through
 // props/emits. The only local state is which row's popover (score picker or
 // status menu) is open (transient view state, at most one across the list).
@@ -181,7 +165,7 @@ const STATUSES: readonly UserRateStatus[] = [
     'dropped',
 ];
 
-const TYPE_OPTIONS: readonly XSelectOption<SearchType>[] = [
+const TYPE_OPTIONS: readonly ChipOption<SearchType>[] = [
     { value: 'anime', label: i18n.lists.types.anime },
     { value: 'manga', label: i18n.lists.types.manga },
     { value: 'ranobe', label: i18n.lists.types.ranobe },
@@ -191,7 +175,7 @@ const TYPE_OPTIONS: readonly XSelectOption<SearchType>[] = [
 // manga/ranobe «Читаю…» (both are books wording-wise).
 const filterMedia = computed<MediaKind>(() => (props.filterType === 'anime' ? 'anime' : 'book'));
 
-const statusOptions = computed<readonly XSelectOption<UserRateStatus>[]>(() =>
+const statusOptions = computed<readonly ChipOption<UserRateStatus>[]>(() =>
     STATUSES.map((s) => ({
         value: s,
         label: statusLabel(s, filterMedia.value),
@@ -214,62 +198,6 @@ const statusOptions = computed<readonly XSelectOption<UserRateStatus>[]>(() =>
     gap: 8px;
     padding: 10px 12px;
     border-bottom: 1px solid var(--color-border);
-}
-
-.lists__select {
-    /* Half the row: keeps the trigger compact, no stretched full-width select. */
-    width: 50%;
-}
-
-/* Quick status filter: one tap per status instead of a dropdown (UX-1).
-   Six chips wrap into two rows within the ~356px content width. */
-.lists__chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-}
-
-.lists__chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 3px 10px;
-    border: 1px solid var(--color-border);
-    border-radius: 999px;
-    background: transparent;
-    color: var(--color-fg-muted);
-    font-family: inherit;
-    font-size: 12px;
-
-    /* Constant weight: a bold active chip would shift the wrap point. */
-    font-weight: 500;
-    line-height: 1.4;
-    cursor: pointer;
-
-    &:hover {
-        border-color: color-mix(in srgb, var(--sc) 45%, transparent);
-        color: var(--color-fg);
-    }
-
-    &:focus-visible {
-        outline: 2px solid var(--color-accent);
-        outline-offset: 1px;
-    }
-}
-
-.lists__chip-dot {
-    flex: 0 0 auto;
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: var(--sc);
-}
-
-/* Active chip mirrors the .badge look: status tint fill, status-colored text. */
-.lists__chip--active {
-    border-color: color-mix(in srgb, var(--sc) 32%, transparent);
-    background: var(--sct);
-    color: var(--sc);
 }
 
 .lists__results {
