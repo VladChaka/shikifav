@@ -36,6 +36,7 @@
 
 | type | payload | data |
 |---|---|---|
+| `ping` | — | `{ pong: true }` (проверка живости background) |
 | `auth.getState` | — | `{ status: 'anonymous' \| 'authorized', user? }` |
 | `auth.login` | — | `{ user }` |
 | `auth.logout` | — | `{}` |
@@ -45,11 +46,14 @@
 | `rates.update` | `{ rateId, patch }` | `{ rate }` |
 | `rates.delete` | `{ rateId }` | `{}` |
 | `rates.increment` | `{ rateId }` | `{ rate }` |
+| `settings.setOrigin` | `{ origin }` | `{}` (смена домена API: завершает сессию, затем пишет origin) |
 
 Правила:
 - Все типы сообщений — в одном `MessageMap` в `src/lib/messaging.ts`; хелперы `sendMessage(type, payload)` (типобезопасный) и `onMessage(handlers)` для background.
 - «Сырые» `chrome.runtime.sendMessage` по коду запрещены.
 - `rates.create` не содержит `user_id` — background берёт его из сохранённого `auth.user`.
+- `settings.setOrigin` — единственное сообщение про настройки. Смена домена завершает сессию по построению: токен выдан приложением на одном домене, кросс-доменная валидность не проверялась, а `.one` отвечает 301 на `POST /oauth/token` и там его даже нельзя обновить (docs/03, docs/04). Порядок в обработчике строгий: сначала `logout()`, только потом запись `origin` — обратный порядок открыл бы окно, где новый origin уже в storage, а старый токен ещё там, и любой запрос в этот момент ушёл бы на новый домен с чужим Bearer. Страница настроек после ответа перечитывает состояние авторизации.
+- Остальные настройки UI пишет прямо в storage через `setSettings` (правило 1 CLAUDE.md ограничивает сеть, а не storage): лишнее сообщение будило бы service worker впустую, против бюджета открытия popup (docs/05).
 
 ## Хранилище
 
@@ -63,8 +67,8 @@ interface LocalState {
     user: { id: number; nickname: string; avatarUrl: string };
   };
   settings: {
-    origin: 'https://shikimori.one' | 'https://shikimori.io';
-    titleLang: 'ru' | 'romaji';
+    origin: 'https://shikimori.one' | 'https://shikimori.io'; // default DEFAULT_ORIGIN = .io
+    titleLang: 'ru' | 'romaji';            // default 'ru' — первая строка карточки
     // Ф6-19; каждый дефолт повторяет поведение до появления настройки
     theme: 'system' | 'light' | 'dark';    // default 'system' — по prefers-color-scheme
     startTab: 'search' | 'lists' | 'last'; // default 'last' — восстановить session.lastTab
@@ -81,7 +85,9 @@ interface LocalState {
 // popup при открытии из контекстного меню. Popup удаляет ключ сразу после чтения.
 ```
 
-`src/lib/storage.ts` экспортирует типизированные `getLocal/setLocal/getSession/setSession/removeSession` и дефолты `settings`. Читать настройки — только через `getSettings()` (дочитывает КАЖДЫЙ ключ дефолтом: профиль, записанный старой сборкой, не отдаёт `undefined`), писать — через `setSettings(patch)` (пер-ключевой мерж, UI одной настройки не затирает остальные).
+`src/lib/storage.ts` экспортирует типизированные `getLocal/setLocal/removeLocal/getSession/setSession/removeSession/clearSession` и дефолты `settings` (`DEFAULT_SETTINGS`). Читать настройки — только через `getSettings()` (дочитывает КАЖДЫЙ ключ дефолтом: профиль, записанный старой сборкой, не отдаёт `undefined`), писать — через `setSettings(patch)` (пер-ключевой мерж, UI одной настройки не затирает остальные). `clearSession()` — это «Очистить кэш» на странице настроек: сносит весь `storage.session`, авторизацию и настройки не трогает.
+
+Настройки применяются в UI по подписке на `storage.onChanged`: `src/composables/use-settings.ts` (модульное состояние, общее для всех компонентов страницы) и `src/lib/theme.ts` (ставит `data-theme` на `<html>`; вызывается ДО `mount()` в каждой точке входа). Поэтому смена настройки на вкладке настроек догоняет уже открытые popup и страницу поиска без перезагрузки.
 
 ## Rate limiter (`src/lib/api/rate-limiter.ts`; backoff и врезка в запросы — в `src/lib/api/http.ts`)
 - Очередь промисов: не более **4 запросов/сек** и **80/мин** (запас к лимитам 5/90).
@@ -115,8 +121,13 @@ src/lib/api/rates.ts     # REST v2 user_rates: create/update/delete/increment/li
 src/lib/api/auth.ts      # oauth: authorize url, exchange, refresh, whoami, logout
 src/lib/api/types.ts     # TitleCard, RateRow, User, статусы и пр.
 src/lib/messaging.ts     # MessageMap + sendMessage/onMessage
-src/lib/storage.ts       # типизированный chrome.storage
+src/lib/storage.ts       # типизированный chrome.storage + getSettings/setSettings
 src/lib/config.ts        # ORIGINS, APP_NAME, CLIENT_ID/SECRET из env
+src/lib/theme.ts         # применение настройки theme к <html> (Ф6-19)
+src/lib/i18n.ts          # все русские строки UI + statusLabel(status, media)
+src/lib/title-name.ts    # displayTitle(name/russian, titleLang) — чистая логика
+src/lib/context-menu.ts  # регистрация пункта меню и обработка клика (фаза 5)
+src/lib/search-url.ts    # сборка/разбор search.html?q= (фаза 5)
 ```
 
 ## Тестирование
