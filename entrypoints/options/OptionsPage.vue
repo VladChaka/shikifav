@@ -497,20 +497,18 @@ async function clearCache(): Promise<void> {
     border-radius: 8px;
     background: transparent;
     color: var(--color-fg-muted);
-    font-family: inherit;
+    font: inherit;
     font-size: 13.5px;
     font-weight: 500;
-    line-height: 1.4;
     text-align: left;
-    cursor: pointer;
 
     &:hover {
         background: color-mix(in srgb, var(--color-fg) 6%, transparent);
         color: var(--color-fg);
     }
 
+    /* Tighter than the foundation default: the tabs sit 2px apart. */
     &:focus-visible {
-        outline: 2px solid var(--color-accent);
         outline-offset: 1px;
     }
 }
@@ -632,20 +630,9 @@ async function clearCache(): Promise<void> {
     font: inherit;
     font-size: 13px;
     font-weight: 600;
-    cursor: pointer;
 
     &:hover:not(:disabled) {
         background: var(--color-surface);
-    }
-
-    &:disabled {
-        opacity: 0.6;
-        cursor: default;
-    }
-
-    &:focus-visible {
-        outline: 2px solid var(--color-accent);
-        outline-offset: 2px;
     }
 }
 

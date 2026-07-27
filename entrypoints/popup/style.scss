@@ -3,6 +3,7 @@
    the search page can reuse it without inheriting popup sizes. */
 
 @use '@/src/styles/foundation.scss';
+@use '@/src/styles/badge.scss';
 
 body {
     width: 380px;

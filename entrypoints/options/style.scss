@@ -1,15 +1,10 @@
 /* Options-page layer on top of the shared foundation (design card
    screens/options): the page is opened in its own tab (options_ui.open_in_tab),
-   so — exactly like the search page — it owns no shell border, no radius and no
-   fixed size. Everything themeable stays in the foundation. */
+   so — exactly like the search page — it owns no shell border, no radius, no
+   fixed size and no sizing rules, because OptionsPage.vue's own root already
+   carries `min-height: 100vh`. Everything themeable stays in the foundation.
+
+   badge.scss is deliberately NOT pulled in: this page renders no status badge,
+   only the .st-* palettes behind the chips and the select dot (Ф6-17). */
 
 @use '@/src/styles/foundation.scss';
-
-html,
-body {
-    min-height: 100%;
-}
-
-#app {
-    min-height: 100vh;
-}

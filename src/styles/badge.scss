@@ -1,0 +1,47 @@
+/* Status badge pill (design card components-atoms), shared by TitleCard and
+   RateRow, which only override sizes in their scoped CSS. Works on <span> and
+   <button> alike, hence the explicit font reset.
+
+   Separate from foundation.scss on purpose: the options page renders no badge,
+   so it does not pull this file in (Ф6-17). Colors come from the .st-* palette
+   of the element (--sc / --sct), which foundation.scss owns; the dark fill is
+   the only value this component themes itself, and it repeats the two-place
+   pattern documented there — the system theme narrowed by :not([data-theme='light'])
+   plus the explicit choice. */
+
+.badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 9px 3px 8px;
+    border: 1px solid color-mix(in srgb, var(--sc) 32%, transparent);
+    border-radius: 999px;
+    background: var(--sct);
+    color: var(--sc);
+    font: inherit;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.badge .dot {
+    flex: 0 0 auto;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--sc);
+}
+
+.badge .car {
+    font-size: 10px;
+    opacity: 0.7;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme='light']) .badge {
+        background: color-mix(in srgb, var(--sct) 85%, transparent);
+    }
+}
+
+:root[data-theme='dark'] .badge {
+    background: color-mix(in srgb, var(--sct) 85%, transparent);
+}

@@ -198,7 +198,6 @@ defineExpose({ focus });
     border-radius: 6px;
     background: transparent;
     color: var(--color-fg-muted);
-    cursor: pointer;
     transform: translateY(-50%);
 
     svg {
@@ -210,8 +209,9 @@ defineExpose({ focus });
         color: var(--color-fg);
     }
 
+    /* Inset ring: the button sits inside the field, an outset one would spill
+       over the field border. */
     &:focus-visible {
-        outline: 2px solid var(--color-accent);
         outline-offset: -1px;
         color: var(--color-fg);
     }

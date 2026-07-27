@@ -356,21 +356,10 @@ function onRemove(): void {
     font: inherit;
     font-size: 13px;
     font-weight: 600;
-    cursor: pointer;
 
     &:hover:not(:disabled) {
         background: var(--color-accent-hover);
         border-color: var(--color-accent-hover);
-    }
-
-    &:disabled {
-        opacity: 0.6;
-        cursor: default;
-    }
-
-    &:focus-visible {
-        outline: 2px solid var(--color-accent);
-        outline-offset: 2px;
     }
 }
 
@@ -384,24 +373,13 @@ function onRemove(): void {
     border-radius: 0 6px 6px 0;
 }
 
-/* Visual comes from the global .badge/.st-* classes; here only the button
-   reset and the interactive states of the pill. */
+/* Visual comes from the global .badge/.st-* classes; here only the size and
+   the hover of the pill (the rest of the button states are the foundation's). */
 .card__badge {
     padding: 4px 10px 4px 8px;
-    cursor: pointer;
 
     &:hover:not(:disabled) {
         border-color: var(--sc);
-    }
-
-    &:disabled {
-        opacity: 0.6;
-        cursor: default;
-    }
-
-    &:focus-visible {
-        outline: 2px solid var(--color-accent);
-        outline-offset: 2px;
     }
 }
 

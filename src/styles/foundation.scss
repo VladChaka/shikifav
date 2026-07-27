@@ -1,16 +1,20 @@
 /* CSS foundation shared by every extension page (docs/05-ui.md, design
    reference "Shikimori Quick UI"): system font, light/dark via CSS variables,
-   status palettes, status badge. No UI frameworks.
-   Page-specific sizing (e.g. the 380x580 popup) stays in the page stylesheet.
+   status palettes. No UI frameworks.
+   Page-specific sizing (e.g. the 380x580 popup) stays in the page stylesheet,
+   and the status badge — a component, not a primitive — in badge.scss, which
+   only the pages that render one pull in.
 
-   Theme (Ф6-19). Light values are the base; every dark value lives in a mixin
-   applied from exactly two places (see "Dark theme" at the bottom):
+   Theme (Ф6-19). Light values — tokens and `color-scheme` alike — are the base
+   on :root; every dark value lives in a mixin applied from exactly two places
+   (see "Dark theme" at the bottom):
    - the system theme — @media (prefers-color-scheme: dark), narrowed with
      :not([data-theme='light']) so an explicit light choice wins over a dark
      system;
    - the explicit choice — :root[data-theme='dark'].
    The attribute is set on <html> by src/lib/theme.ts; 'system' means no
-   attribute at all. */
+   attribute at all. An explicit *light* choice therefore needs no rule of its
+   own — it is exactly the case where neither dark rule matches. */
 
 @mixin dark-tokens {
     --color-bg: #1c1a18;
@@ -24,9 +28,9 @@
     --color-danger: #ef8a78;
 }
 
-/* Dark half of the status palettes and of the badge fill. Nested selectors on
-   purpose: the palettes are element classes, not :root variables, so the mixin
-   emits them as descendants of the themed root. */
+/* Dark half of the status palettes. Nested selectors on purpose: the palettes
+   are element classes, not :root variables, so the mixin emits them as
+   descendants of the themed root. */
 @mixin dark-status-palettes {
     .st-planned {
         --sc: #7ea9dd;
@@ -57,16 +61,13 @@
         --sc: #ef8a78;
         --sct: #56312b;
     }
-
-    .badge {
-        background: color-mix(in srgb, var(--sct) 85%, transparent);
-    }
 }
 
 :root {
-    /* Native scrollbars and form controls follow the active theme; the pair
-       means "follows the system" and is narrowed below for an explicit choice. */
-    color-scheme: light dark;
+    /* Native scrollbars and form controls follow the active theme. Light is the
+       base here and both dark rules below switch it, so an explicit light
+       choice needs no rule of its own: it simply fails to match them. */
+    color-scheme: light;
     --color-bg: #ffffff;
     --color-fg: #1f2328;
     --color-fg-muted: #57606a;
@@ -76,14 +77,6 @@
     --color-accent-hover: #146c4c;
     --color-accent-fg: #ffffff;
     --color-danger: #b42318;
-}
-
-:root[data-theme='light'] {
-    color-scheme: light;
-}
-
-:root[data-theme='dark'] {
-    color-scheme: dark;
 }
 
 /* --- Status palettes (single source, foundations/components cards) ---
@@ -122,48 +115,20 @@
     --sct: #eec1bd;
 }
 
-/* --- Status badge pill (components-atoms card) ---
-   Shared by TitleCard and RateRow (which only override sizes in scoped CSS).
-   Works on <span> and <button> alike, hence the explicit font reset. */
-
-.badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 3px 9px 3px 8px;
-    border: 1px solid color-mix(in srgb, var(--sc) 32%, transparent);
-    border-radius: 999px;
-    background: var(--sct);
-    color: var(--sc);
-    font-family: inherit;
-    font-size: 12px;
-    font-weight: 600;
-    line-height: 1.4;
-}
-
-.badge .dot {
-    flex: 0 0 auto;
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: var(--sc);
-}
-
-.badge .car {
-    font-size: 10px;
-    opacity: 0.7;
-}
-
 /* --- Dark theme: system default and explicit choice --- */
 
 @media (prefers-color-scheme: dark) {
     :root:not([data-theme='light']) {
+        color-scheme: dark;
+
         @include dark-tokens;
         @include dark-status-palettes;
     }
 }
 
 :root[data-theme='dark'] {
+    color-scheme: dark;
+
     @include dark-tokens;
     @include dark-status-palettes;
 }
@@ -184,4 +149,26 @@ body {
     line-height: 1.4;
     color: var(--color-fg);
     background: var(--color-bg);
+}
+
+/* --- Interactive defaults ---
+   Every <button> of this UI is a pointer target, dims while disabled and wears
+   the same accent focus ring. Stated once here instead of in each of the ~15
+   component rules that used to repeat it (Ф6-17); components override only the
+   part that really differs — a tighter ring offset, a deeper dim — and opting
+   out is a plain `outline: none` (XSelect does exactly that). Element
+   selectors, so any class rule of a component wins over them by specificity. */
+
+button {
+    cursor: pointer;
+}
+
+button:disabled {
+    opacity: 0.6;
+    cursor: default;
+}
+
+button:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
 }

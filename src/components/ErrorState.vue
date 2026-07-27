@@ -73,15 +73,9 @@ const emit = defineEmits<{
     font: inherit;
     font-size: 13px;
     font-weight: 600;
-    cursor: pointer;
 
     &:hover {
         background: var(--color-surface);
-    }
-
-    &:focus-visible {
-        outline: 2px solid var(--color-accent);
-        outline-offset: 2px;
     }
 }
 </style>

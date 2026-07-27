@@ -223,20 +223,9 @@ const statusOptions = computed<readonly ChipOption<UserRateStatus>[]>(() =>
     font: inherit;
     font-size: 13px;
     font-weight: 600;
-    cursor: pointer;
 
     &:hover:not(:disabled) {
         border-color: var(--color-accent);
-    }
-
-    &:disabled {
-        opacity: 0.6;
-        cursor: default;
-    }
-
-    &:focus-visible {
-        outline: 2px solid var(--color-accent);
-        outline-offset: 2px;
     }
 }
 </style>

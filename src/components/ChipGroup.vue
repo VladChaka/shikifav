@@ -76,21 +76,19 @@ function pick(value: T): void {
     border-radius: 999px;
     background: transparent;
     color: var(--color-fg-muted);
-    font-family: inherit;
+    font: inherit;
     font-size: 12px;
 
     /* Constant weight: a bold active chip would shift the wrap point. */
     font-weight: 500;
-    line-height: 1.4;
-    cursor: pointer;
 
     &:hover {
         border-color: color-mix(in srgb, var(--sc) 45%, transparent);
         color: var(--color-fg);
     }
 
+    /* Tighter than the default ring of the foundation: a pill this small. */
     &:focus-visible {
-        outline: 2px solid var(--color-accent);
         outline-offset: 1px;
     }
 }

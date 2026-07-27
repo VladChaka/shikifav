@@ -1,15 +1,8 @@
 /* Search-page layer on top of the shared foundation (design card
    screens/search-page): the page owns the whole tab — no fixed box, no shell
-   border and no radius, unlike the popup. Everything themeable stays in the
-   foundation. */
+   border and no radius, unlike the popup, and no sizing rules either, because
+   SearchPage.vue's own root already carries `min-height: 100vh`. Everything
+   themeable stays in the foundation. */
 
 @use '@/src/styles/foundation.scss';
-
-html,
-body {
-    min-height: 100%;
-}
-
-#app {
-    min-height: 100vh;
-}
+@use '@/src/styles/badge.scss';

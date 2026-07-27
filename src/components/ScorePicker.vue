@@ -121,17 +121,18 @@ onBeforeUnmount(() => {
     background: var(--color-bg);
     color: var(--color-fg);
     font: inherit;
-    cursor: pointer;
 
-    &:hover {
-        background: var(--color-surface);
+    /* Mouse and keyboard get the same ring the foundation gives the keyboard;
+       inset, because the squares sit 6px apart and an outset ring would touch
+       its neighbour. */
+    &:hover,
+    &:focus-visible {
         outline: 2px solid var(--color-accent);
         outline-offset: -1px;
     }
 
-    &:focus-visible {
-        outline: 2px solid var(--color-accent);
-        outline-offset: -1px;
+    &:hover {
+        background: var(--color-surface);
     }
 }
 

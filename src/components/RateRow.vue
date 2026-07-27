@@ -351,19 +351,14 @@ function onRemove(): void {
     font: inherit;
     font-size: 13px;
     font-weight: 600;
-    cursor: pointer;
 
     &:hover:not(:disabled) {
         border-color: var(--color-accent);
     }
 
-    &:disabled {
-        opacity: 0.6;
-        cursor: default;
-    }
-
+    /* Tighter than the default ring of the foundation: a 2px control in a
+       12px-padded row would otherwise touch the title above it. */
     &:focus-visible {
-        outline: 2px solid var(--color-accent);
         outline-offset: 1px;
     }
 }
@@ -398,20 +393,9 @@ function onRemove(): void {
     font: inherit;
     font-size: 13px;
     font-weight: 600;
-    cursor: pointer;
 
     &:hover:not(:disabled) {
         border-color: var(--color-accent);
-    }
-
-    &:disabled {
-        opacity: 0.6;
-        cursor: default;
-    }
-
-    &:focus-visible {
-        outline: 2px solid var(--color-accent);
-        outline-offset: 2px;
     }
 }
 
@@ -423,19 +407,14 @@ function onRemove(): void {
     padding: 2px 8px 2px 7px;
     font-size: 11px;
     white-space: nowrap;
-    cursor: pointer;
 
     &:hover:not(:disabled) {
         border-color: var(--sc);
     }
 
-    &:disabled {
-        opacity: 0.6;
-        cursor: default;
-    }
-
+    /* Tighter than the default ring of the foundation: the pill sits flush
+       against the right edge of the row. */
     &:focus-visible {
-        outline: 2px solid var(--color-accent);
         outline-offset: 1px;
     }
 
@@ -473,19 +452,14 @@ function onRemove(): void {
     font: inherit;
     font-size: 13px;
     font-weight: 600;
-    cursor: pointer;
 
     &:hover:not(:disabled) {
         text-decoration: underline;
     }
 
-    &:disabled {
-        opacity: 0.6;
-        cursor: default;
-    }
-
+    /* Tighter than the default ring of the foundation: a borderless link
+       button, the 2px default would read as a box around the text. */
     &:focus-visible {
-        outline: 2px solid var(--color-accent);
         outline-offset: 1px;
     }
 }

@@ -133,7 +133,6 @@ function openOptions(): void {
     border-radius: 6px;
     background: transparent;
     color: var(--color-fg-muted);
-    cursor: pointer;
 
     svg {
         width: 17px;
@@ -145,13 +144,14 @@ function openOptions(): void {
         color: var(--color-fg);
     }
 
+    /* Deeper dim than the foundation default: an icon-only button carries no
+       label to read, so it has to fall further out of the eye. */
     &:disabled {
         opacity: 0.5;
-        cursor: default;
     }
 
+    /* Tighter ring: the two icons sit 10px from the nickname beside them. */
     &:focus-visible {
-        outline: 2px solid var(--color-accent);
         outline-offset: 1px;
     }
 }

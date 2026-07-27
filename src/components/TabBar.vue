@@ -68,14 +68,14 @@ function select(tab: TabId): void {
     font-size: 13px;
     font-weight: 600;
     text-align: center;
-    cursor: pointer;
 
     &:hover:not(.tabs__tab--active) {
         color: var(--color-fg);
     }
 
+    /* Inset ring: the tabs are full-bleed, an outset one would be cut off by
+       the popup edge. */
     &:focus-visible {
-        outline: 2px solid var(--color-accent);
         outline-offset: -2px;
     }
 }

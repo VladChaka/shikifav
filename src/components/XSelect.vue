@@ -274,12 +274,13 @@ onBeforeUnmount(() => {
     background: var(--color-bg);
     color: var(--color-fg);
     font: inherit;
-    cursor: pointer;
 
     &:hover {
         border-color: var(--color-accent);
     }
 
+    /* Opts out of the foundation's focus ring: this control shows focus with
+       its own border and the --open glow instead. */
     &:focus-visible {
         outline: none;
         border-color: var(--color-accent);

@@ -96,20 +96,9 @@ const buttonLabel = computed(() => {
     color: var(--color-accent-fg);
     font: inherit;
     font-weight: 600;
-    cursor: pointer;
 
     &:hover:not(:disabled) {
         background: var(--color-accent-hover);
-    }
-
-    &:disabled {
-        opacity: 0.6;
-        cursor: default;
-    }
-
-    &:focus-visible {
-        outline: 2px solid var(--color-accent);
-        outline-offset: 2px;
     }
 }
 

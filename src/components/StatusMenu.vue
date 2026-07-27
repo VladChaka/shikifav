@@ -147,14 +147,14 @@ onBeforeUnmount(() => {
     font: inherit;
     font-size: 13px;
     text-align: left;
-    cursor: pointer;
 
     &:hover {
         background: var(--color-surface);
     }
 
+    /* Inset ring: full-bleed items, an outset one would be clipped by the
+       menu's own overflow: hidden. */
     &:focus-visible {
-        outline: 2px solid var(--color-accent);
         outline-offset: -2px;
     }
 }
