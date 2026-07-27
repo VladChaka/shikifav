@@ -5,8 +5,8 @@
             class="card__poster"
             :src="card.posterUrl"
             :srcset="posterSrcset"
-            width="48"
-            height="66"
+            width="60"
+            height="94"
             loading="lazy"
             alt=""
         />
@@ -275,10 +275,12 @@ function onRemove(): void {
 }
 
 .card__poster {
-    /* Fixed 48x66 box (components-title-card): no layout shift while loading. */
+    /* Fixed 60x94 box (components-title-card) — the natural size of miniUrl, so
+       nothing is rescaled or cropped. The width/height attributes on the <img>
+       must stay in sync with these: they hold the box before the poster loads. */
     flex-shrink: 0;
-    width: 48px;
-    height: 66px;
+    width: 60px;
+    height: 94px;
     border-radius: 5px;
     background: var(--color-surface);
     object-fit: cover;

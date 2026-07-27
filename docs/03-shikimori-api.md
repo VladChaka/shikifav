@@ -62,7 +62,7 @@ curl -s -X POST https://shikimori.io/api/graphql \
 ### Результаты интроспекции (2026-07-23, дополнено 2026-07-24)
 - **Anime:** `id: ID!`, `malId: ID`, `name: String!`, `russian: String`, `kind: AnimeKindEnum`, `score: Float`, `status: AnimeStatusEnum`, `episodes: Int!`, `episodesAired: Int!`, `airedOn: IncompleteDate` (подполе `year` подтверждено живым запросом), `poster: Poster`, `userRate: UserRate`.
 - **`id: ID!` сериализуется строкой** (например `"52991"`), значение числовое → для REST `target_id` конвертировать `Number(id)`.
-- **Poster** — все поля `String!`: `id`, `miniUrl`, `mini2xUrl`, `miniAltUrl`, `miniAlt2xUrl`, `mainUrl`, `main2xUrl`, `mainAltUrl`, `mainAlt2xUrl`, `previewUrl`, `preview2xUrl`, `previewAltUrl`, `previewAlt2xUrl`, `originalUrl`. Для карточки ~48px — **`miniUrl`** (фактически 60×94 px webp) + `mini2xUrl` для retina.
+- **Poster** — все поля `String!`: `id`, `miniUrl`, `mini2xUrl`, `miniAltUrl`, `miniAlt2xUrl`, `mainUrl`, `main2xUrl`, `mainAltUrl`, `mainAlt2xUrl`, `previewUrl`, `preview2xUrl`, `previewAltUrl`, `previewAlt2xUrl`, `originalUrl`. Для карточки поиска (бокс 60×94 с Ф6-25) — **`miniUrl`**: он и приходит ровно 60×94 px webp, то есть показывается без пересчёта; `mini2xUrl` (120×188) — retina. Замеры остальных вариантов 2026-07-27: `previewUrl` 160×226 (пропорция ДРУГАЯ, 1:1,413 против 1:1,567 у mini), `mainUrl` 225×318–355 (высота плавает), `originalUrl` 685×975…760×1200 jpeg 362–379 КБ.
 - **UserRate:** `id: ID!`, `status: UserRateStatusEnum!`, `episodes: Int!`, `chapters: Int!`, `volumes: Int!`, `score: Int!`, `rewatches: Int!`, `text: String`, `anime: Anime`, `manga: Manga`, `createdAt`/`updatedAt: ISO8601DateTime!`.
 - **UserRateStatusEnum** = `planned | watching | rewatching | completed | on_hold | dropped` — 1:1 с REST-статусами.
 - **Аргументы `animes`:** `search: String`, `limit: PositiveInt`, `page: PositiveInt`, `kind: AnimeKindString`, `status: AnimeStatusString`, `season: SeasonString`, `score: Int`, `duration: DurationString`, `rating: RatingString`, `origin: OriginString`, `genre/studio/franchise: String`, `censored: Boolean`, `mylist: MylistString`, `ids/excludeIds: String`, `order: OrderEnum`.
@@ -85,7 +85,7 @@ query SearchAnimes($search: String, $limit: PositiveInt, $page: PositiveInt) {
     episodes      # Int!
     episodesAired # Int!
     airedOn { year }
-    poster { miniUrl mini2xUrl }            # 60×94 webp — превью для карточки ~48px
+    poster { miniUrl mini2xUrl }            # 60×94 webp — ровно бокс карточки поиска
     userRate { id status episodes score }   # null без Bearer или если тайтла нет в списке
   }
 }
@@ -181,7 +181,7 @@ GET {origin}/api/users/whoami
 
 ## Проверить при реализации (результат фиксировать здесь же: чекбокс + заметка)
 - [x] Точные поля типа `Poster` — нужен URL маленького превью для списков (интроспекция)
-  - Интроспекция 2026-07-23: 14 полей, все `String!` (список в «Результатах интроспекции» выше). Для карточки ~48px — `miniUrl` (скачан живой файл: 60×94 px webp) + `mini2xUrl` для retina.
+  - Интроспекция 2026-07-23: 14 полей, все `String!` (список в «Результатах интроспекции» выше). Для карточки поиска — `miniUrl` (скачан живой файл: 60×94 px webp) + `mini2xUrl` для retina.
 - [x] Поведение `userRate` в GraphQL с токеном и без
   - Частично: БЕЗ токена `userRate: null` подтверждено живым публичным запросом 2026-07-23. Под Bearer (ненулевой userRate для тайтла из списка) — ожидает ручной проверки владельца, команды в отчёте задачи Ф2-1.
   - Ненулевой `userRate` под Bearer закрывается тем же curl, что и аргумент `mylist` (см. чекбокс «Существует ли аргумент `mylist`…» ниже): один ответ владельца подтверждает и фильтрацию списка, и ненулевой `userRate`. Результат владельца: подтверждено 2026-07-23 (owner-verification фазы 3 — mylist под Bearer вернул ненулевой `userRate`).
