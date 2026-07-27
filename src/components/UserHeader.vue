@@ -8,14 +8,14 @@
             alt=""
         />
         <span class="header__nickname">{{ user.nickname }}</span>
-        <!-- Feather "settings"; the options page arrives in a later phase,
-             so the button is disabled until it exists (integration point). -->
+        <!-- Feather "settings": opens entrypoints/options in its own tab
+             (options_ui.open_in_tab). Chrome closes the popup for us. -->
         <button
             class="header__btn"
             type="button"
             :title="i18n.header.settings"
             :aria-label="i18n.header.settings"
-            disabled
+            @click="openOptions"
         >
             <svg
                 viewBox="0 0 24 24"
@@ -68,6 +68,7 @@
 </template>
 
 <script setup lang="ts">
+import { browser } from 'wxt/browser';
 import type { User } from '@/src/lib/api/types';
 import { useAuth } from '@/src/composables/use-auth';
 import { i18n } from '@/src/lib/i18n';
@@ -81,6 +82,12 @@ import { i18n } from '@/src/lib/i18n';
 defineProps<{ user: User }>();
 
 const { pending, logout } = useAuth();
+
+// The page is a full tab, so the same button works from the popup and from the
+// search page; Chrome focuses an already open options tab instead of adding one.
+function openOptions(): void {
+    void browser.runtime.openOptionsPage();
+}
 </script>
 
 <style scoped lang="scss">

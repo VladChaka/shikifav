@@ -129,18 +129,57 @@ export const i18n = {
     contextMenu: {
         searchSelection: 'Найти «%s» на Shikimori',
     },
-    // Options page (docs/05 "Options page"): API domain, title language,
-    // cache/session buttons, extension version.
+    // Options page (design card screens/options): three sections behind
+    // vertical tabs — «Вид», «Поведение», «Аккаунт и данные».
     options: {
         title: 'Настройки',
-        originLabel: 'Домен API',
-        // Switching the domain drops the session on purpose (docs/03 «301 на
-        // shikimori.one», docs/04) — the hint must say so before the click.
-        originHint:
-            'Рабочий домен — shikimori.io: shikimori.one отвечает редиректом на запрос токена. Смена домена завершает сессию — потребуется войти заново.',
+
+        // --- section tabs ---
+        sectionsLabel: 'Разделы настроек',
+        sectionView: 'Вид',
+        sectionBehavior: 'Поведение',
+        sectionAccount: 'Аккаунт и данные',
+        // Narrow window: the tabs become a horizontal row and the long label
+        // no longer fits.
+        sectionAccountShort: 'Аккаунт',
+
+        // --- «Вид» ---
+        themeLabel: 'Тема',
+        themeHint:
+            'Системная — как в браузере и системе. Явный выбор действует только в расширении.',
+        themeSystem: 'системная',
+        themeLight: 'светлая',
+        themeDark: 'тёмная',
         titleLangLabel: 'Названия',
+        titleLangHint: 'Что показывать первой строкой в карточках поиска и списков.',
         titleLangRu: 'русские',
         titleLangRomaji: 'ромадзи',
+
+        // --- «Поведение» ---
+        startTabLabel: 'Стартовая вкладка',
+        startTabHint: 'С какой вкладки открывается popup.',
+        // The two other values reuse i18n.tabs (they name the same tabs).
+        startTabLast: 'Последняя открытая',
+        quickStatusLabel: 'Статус в один клик',
+        quickStatusHint:
+            'Какой статус ставит кнопка на карточке поиска. Для манги и ранобэ подпись меняется: «Читаю», «Прочитано».',
+        defaultsLabel: 'Фильтры по умолчанию',
+        defaultsHint: 'С какими фильтрами открываются вкладки, пока вы не переключили их сами.',
+        defaultTypeLabel: 'Тип в поиске',
+        defaultListStatusLabel: 'Статус в «Моих списках»',
+
+        // --- «Аккаунт и данные» ---
+        originLabel: 'Домен API',
+        // Switching the domain drops the session on purpose (docs/03 «301 на
+        // shikimori.one», docs/04) — the hint must say so before the click, and
+        // that half of it is emphasized instead of muted (design card), hence
+        // the two strings.
+        originHint:
+            'Рабочий домен — shikimori.io: shikimori.one отвечает редиректом на запрос токена.',
+        originHintSession: 'Смена домена завершает сессию — потребуется войти заново.',
+        dataLabel: 'Данные',
+        dataHint:
+            'Очистка сбрасывает кэш последнего поиска, списков и активной вкладки. Вход и настройки не затрагиваются.',
         clearCache: 'Очистить кэш',
         cacheCleared: 'Кэш очищен',
         logout: 'Выйти',

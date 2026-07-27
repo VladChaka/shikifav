@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="ru">
+    <head>
+        <meta charset="UTF-8" />
+        <meta
+            name="viewport"
+            content="width=device-width, initial-scale=1.0"
+        />
+        <!-- WXT turns every `manifest.*` meta tag into an entrypoint option
+             (snake_case -> camelCase), so this one lands in the built manifest
+             as options_ui.open_in_tab: true. Without it Chrome shows the page
+             in a cramped modal over chrome://extensions, and the design card
+             is drawn for a full tab. -->
+        <meta
+            name="manifest.open_in_tab"
+            content="true"
+        />
+        <title>Настройки — ShikiFav</title>
+    </head>
+    <body>
+        <div id="app"></div>
+        <script
+            type="module"
+            src="./main.ts"
+        ></script>
+    </body>
+</html>

@@ -1,0 +1,15 @@
+/* Options-page layer on top of the shared foundation (design card
+   screens/options): the page is opened in its own tab (options_ui.open_in_tab),
+   so — exactly like the search page — it owns no shell border, no radius and no
+   fixed size. Everything themeable stays in the foundation. */
+
+@use '@/src/styles/foundation.scss';
+
+html,
+body {
+    min-height: 100%;
+}
+
+#app {
+    min-height: 100vh;
+}
