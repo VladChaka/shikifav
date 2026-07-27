@@ -1,5 +1,8 @@
 <template>
-    <section class="search">
+    <section
+        class="search"
+        :class="`search--${variant}`"
+    >
         <!-- docs/05 layout: полноширинное поле поиска, под ним чипы типа -->
         <div class="search__field">
             <div class="search__box">
@@ -65,13 +68,27 @@ import type { ChipOption } from '@/src/components/ChipGroup.vue';
 import type { SearchType } from '@/src/lib/api/types';
 import { i18n } from '@/src/lib/i18n';
 
-// Search screen frame: query field + type chip row + scrollable results area.
+// Search screen frame: query field + type chip row + results area.
 // Both the query and the type are owned by the parent (v-model pair) — they
 // plug into use-search's setQuery/setType.
-defineProps<{
-    modelValue: string;
-    searchType: SearchType;
-}>();
+//
+// Public layout handle (Ф6-6 — the owners set the variant instead of reaching
+// for .search__field / .search__results from the outside):
+//   variant='popup' (default) — fixed-size window: the results area is the
+//                               scroll container, the field sits in a framed
+//                               row of the shell;
+//   variant='page'            — full tab: the document scrolls (an inner
+//                               scroller would clip the status menu of the
+//                               bottom cards), and the field follows the
+//                               column rhythm instead of the shell frame.
+withDefaults(
+    defineProps<{
+        modelValue: string;
+        searchType: SearchType;
+        variant?: 'popup' | 'page';
+    }>(),
+    { variant: 'popup' },
+);
 
 const emit = defineEmits<{
     'update:modelValue': [value: string];
@@ -122,6 +139,13 @@ defineExpose({ focus });
     gap: 8px;
     padding: 10px 12px;
     border-bottom: 1px solid var(--color-border);
+}
+
+/* On the page the divider under the field is the results box border, and the
+   horizontal padding belongs to the content column. */
+.search--page .search__field {
+    padding: 0 0 14px;
+    border-bottom: 0;
 }
 
 .search__box {
@@ -196,7 +220,15 @@ defineExpose({ focus });
 .search__results {
     flex: 1;
     min-height: 0;
+
+    /* Popup: this is the scroll container of the fixed-size window. */
     overflow-y: auto;
     scrollbar-width: thin;
+}
+
+/* Page: the whole document scrolls instead — an inner scroller would clip the
+   status menu of the bottom cards. */
+.search--page .search__results {
+    overflow: visible;
 }
 </style>

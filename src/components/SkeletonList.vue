@@ -20,6 +20,12 @@
 <script setup lang="ts">
 // Loading placeholder per the screens-states card (docs/05: 3-5 rows):
 // poster stub + two pulsing bars.
+//
+// Public style handle (set it on any ancestor, never reach for .skeleton__row
+// from the outside — Ф6-6):
+//   --skeleton-last-row-border   closing line of the last row, default
+//                                1px solid var(--color-border); a container
+//                                that draws its own bottom border sets it to 0
 withDefaults(defineProps<{ count?: number }>(), { count: 4 });
 </script>
 
@@ -29,6 +35,12 @@ withDefaults(defineProps<{ count?: number }>(), { count: 4 });
     gap: 10px;
     padding: 12px;
     border-bottom: 1px solid var(--color-border);
+
+    /* The rows carry the separators, so the closing one is the container's
+       call: inside a bordered box it would double the box border. */
+    &:last-child {
+        border-bottom: var(--skeleton-last-row-border, 1px solid var(--color-border));
+    }
 }
 
 .skeleton__poster {

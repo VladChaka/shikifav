@@ -14,6 +14,12 @@ import { onBeforeUnmount, onMounted, watch } from 'vue';
 // Bottom toast for non-blocking errors (optimistic update rollback, Ф2-7).
 // The parent owns visibility: renders with v-if and removes it on `closed`.
 // Click dismisses early.
+//
+// Public style handles (set them on any ancestor, never reach for .toast from
+// the outside — Ф6-6). The toast is fixed 12px off both edges, which is right
+// for the popup but a full screen band on a wide page:
+//   --toast-width           width of the band,   default auto (both insets win)
+//   --toast-margin-inline   centring inside it,  default 0
 const props = withDefaults(defineProps<{ text: string; duration?: number }>(), {
     duration: 4000,
 });
@@ -59,6 +65,11 @@ onBeforeUnmount(() => {
     bottom: 12px;
     left: 12px;
     z-index: 20;
+
+    /* auto + margin 0 means the two insets alone size the toast (popup); a
+       narrower width plus `auto` centres it inside them (search page). */
+    width: var(--toast-width, auto);
+    margin-inline: var(--toast-margin-inline, 0);
     padding: 9px 14px;
     border-radius: 8px;
     /* Inverse colors (components-atoms card): readable in both themes. */

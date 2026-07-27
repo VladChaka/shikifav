@@ -42,6 +42,7 @@
 
                 <SearchTab
                     ref="searchTab"
+                    variant="page"
                     :model-value="searchQuery"
                     :search-type="searchType"
                     @update:model-value="setQuery"
@@ -189,8 +190,19 @@ watch(
 <style scoped lang="scss">
 /* Design card screens/search-page: the page fills the tab (no shell border, no
    radius, no fixed size); the header spans the full width while its content and
-   the results share one 720px column. */
+   the results share one 720px column.
+
+   The shared components are tuned through their public handles only — the
+   variant prop of SearchTab and the CSS variables below. Reaching into their
+   BEM classes with a deep selector is what Ф6-6 removed: it silently breaks
+   whenever a component renames its own internals. */
 .page {
+    /* Toast: fixed 12px off both edges reads as a full-screen band on a wide
+       tab, so here it is clamped to the content column and centred with it (the
+       insets stay the fallback for narrow windows). */
+    --toast-width: min(100% - 24px, 672px);
+    --toast-margin-inline: auto;
+
     display: flex;
     flex-direction: column;
     min-height: 100vh;
@@ -201,18 +213,14 @@ watch(
 }
 
 .page__bar-inner {
+    /* UserHeader is the popup shell header and carries its own padding and
+       bottom border. Here the border belongs to the full-width bar, and the
+       horizontal padding must match the content column. */
+    --header-pad: 10px 24px;
+    --header-border-bottom: 0;
+
     max-width: 720px;
     margin: 0 auto;
-}
-
-/* UserHeader carries its own padding and bottom border (it is the popup shell
-   header). On this page the border belongs to the full-width bar, and the
-   horizontal padding must match the content column — overridden here so the
-   shared component stays untouched. */
-.page__bar-inner :deep(.header) {
-    padding-right: 24px;
-    padding-left: 24px;
-    border-bottom: 0;
 }
 
 .page__content {
@@ -220,20 +228,6 @@ watch(
     max-width: 720px;
     margin: 0 auto;
     padding: 20px 24px 28px;
-}
-
-/* Same reason as the header: the popup-sized field frame is replaced by the
-   column rhythm — the divider under the field is the results box border here. */
-.page__content :deep(.search__field) {
-    padding: 0 0 14px;
-    border-bottom: 0;
-}
-
-/* In the popup the results area is the scroll container of a fixed-size window;
-   the page scrolls as a whole document instead, and an inner scroller would clip
-   the status menu of the bottom cards. */
-.page__content :deep(.search__results) {
-    overflow: visible;
 }
 
 .page__error {
@@ -247,33 +241,23 @@ watch(
    draw bottom borders, so nothing needs clipping to keep the corners clean,
    while the StatusMenu of the last card has to hang out of the box. */
 .page__results {
+    /* The box draws the closing line, and SkeletonList puts its separators on
+       the rows (its root has none), so the last row would double it. */
+    --skeleton-last-row-border: 0;
+
+    /* The 120px popup placeholders read as a sliver in a 672px column. */
+    --state-min-height: 240px;
+
     border: 1px solid var(--color-border);
     border-radius: 10px;
 
-    /* The box draws the closing line, the last row must not double it — be it
-       a card (its own root) or a skeleton row (nested inside SkeletonList,
-       which draws the borders on the rows and not on its root). */
+    /* Same closing line, for the last child the box owns directly: a card root
+       (or the SkeletonList root, which draws no border of its own). Addressing
+       a child component's root element is inside the scoped boundary — unlike
+       a deep selector, it survives any rename of that component's internals. */
     > :last-child {
         border-bottom: 0;
     }
-
-    :deep(.skeleton__row:last-child) {
-        border-bottom: 0;
-    }
-
-    /* The 120px popup placeholders read as a sliver in a 672px column. */
-    :deep(.empty),
-    :deep(.error) {
-        min-height: 240px;
-    }
-}
-
-/* The toast is fixed 12px off both popup edges; on a full-width tab that band
-   stretches across the screen, so here it is clamped to the content column and
-   centred with it (the insets stay the fallback for narrow windows). */
-.page :deep(.toast) {
-    width: min(100% - 24px, 672px);
-    margin-inline: auto;
 }
 
 .page__login {

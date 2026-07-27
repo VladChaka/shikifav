@@ -47,6 +47,13 @@ import { apiErrorMessage, i18n } from '@/src/lib/i18n';
 // their own scroll/box container, whose styling addresses the cards as direct
 // children — a wrapper element here would break that layout in both.
 //
+// It has no styles of its own, so it takes no layout variant (the scroll
+// container lives in SearchTab). What an owner may tune is the look of the data
+// states rendered below; the handles belong to those components and are set on
+// the owner's own container, which they inherit from (Ф6-6):
+//   --state-min-height           EmptyState / ErrorState height
+//   --skeleton-last-row-border   SkeletonList closing separator
+//
 // Ф4-6b invariant: rateKey(card) — the composite `${targetType}:${id}` key of
 // busyIds/warnings/openMenuKey — is computed HERE and nowhere else. Anime and
 // manga ids are independent sequences, so a bare-id key silently locks (or

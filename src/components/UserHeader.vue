@@ -72,6 +72,12 @@ import type { User } from '@/src/lib/api/types';
 import { useAuth } from '@/src/composables/use-auth';
 import { i18n } from '@/src/lib/i18n';
 
+// Shell header: avatar + nickname + icon actions.
+//
+// Public style handles (set them on any ancestor, never reach for .header from
+// the outside — Ф6-6):
+//   --header-pad            padding of the bar,           default 10px 12px
+//   --header-border-bottom  its closing line,             default 1px solid var(--color-border)
 defineProps<{ user: User }>();
 
 const { pending, logout } = useAuth();
@@ -83,8 +89,11 @@ const { pending, logout } = useAuth();
     align-items: center;
     flex-shrink: 0;
     gap: 10px;
-    padding: 10px 12px;
-    border-bottom: 1px solid var(--color-border);
+
+    /* Popup shell values by default; the search page puts the header inside a
+       full-width bar that owns the line and widens the padding to its column. */
+    padding: var(--header-pad, 10px 12px);
+    border-bottom: var(--header-border-bottom, 1px solid var(--color-border));
 }
 
 .header__avatar {
