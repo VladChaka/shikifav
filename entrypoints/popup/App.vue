@@ -127,7 +127,7 @@ import { useLists } from '@/src/composables/use-lists';
 import { rateKey, useRates } from '@/src/composables/use-rates';
 import { useSearch } from '@/src/composables/use-search';
 import type { TitleCard as TitleCardData, UserRateStatus } from '@/src/lib/api/types';
-import { getSession, setSession } from '@/src/lib/storage';
+import { getSession, removeSession, setSession } from '@/src/lib/storage';
 import { apiErrorMessage, i18n } from '@/src/lib/i18n';
 
 const { status, user, error } = useAuth();
@@ -139,6 +139,7 @@ const {
     items: searchItems,
     error: searchError,
     setQuery,
+    startQuery,
     setType: setSearchType,
     retry,
 } = useSearch();
@@ -183,10 +184,68 @@ const activeTab = ref<TabId>('search');
 // The async lastTab restore must not override a tab the user already picked.
 let tabTouched = false;
 
+// Query handed over by the context menu (Ф5-11), pending until it runs signed
+// in. A real login always passes through the 'anonymous' gate, which is what
+// tells a run that left signed out — doomed — from one merely racing the auth
+// read on a normal open.
+let pendingQuery: string | null = null;
+let sawAnonymous = false;
+
 onMounted(async () => {
-    const lastTab = await getSession('lastTab');
+    // Both keys are read as one pair, so the outcome cannot depend on which
+    // storage promise settles first: a query handed over by the context menu
+    // (Ф5-11) always beats the restored tab.
+    const [pending, lastTab] = await Promise.all([
+        getSession('pendingSearch'),
+        getSession('lastTab'),
+    ]);
+    if (pending) {
+        // Kept in storage until the search actually runs signed in (see the
+        // watcher below): signing in opens the OAuth window, Chrome closes the
+        // popup with it, and a key already dropped here would leave the user
+        // with nothing to reopen into.
+        pendingQuery = pending.query;
+        // tabTouched is not consulted: the popup exists because of this query,
+        // and the read lands while the auth gate still shows the skeleton, so
+        // there is no tab the user could have picked before it.
+        activeTab.value = 'search';
+        // The selection carries no type, and a «Ранобэ» restored from the
+        // session cache would silently answer an anime title with 0 results
+        // (docs/05 §Поиск из контекстного меню). Clearing the query first keeps
+        // setType from dispatching a request for the previous session's query —
+        // the one request of this open belongs to startQuery.
+        setQuery('');
+        setSearchType('anime');
+        startQuery(pending.query);
+        return;
+    }
     if (lastTab && !tabTouched) {
         activeTab.value = lastTab;
+    }
+});
+
+// The handed-over query is consumed only once it has run with a token: while
+// the user is signed out the key stays in storage, so after the login (which
+// closes this popup along the way) the next open replays the search instead of
+// losing it. Mirrors the replay in entrypoints/search/SearchPage.vue.
+watch(status, (next) => {
+    if (next === 'anonymous') {
+        sawAnonymous = true;
+        return;
+    }
+    if (next !== 'authorized' || pendingQuery === null) {
+        return;
+    }
+    const query = pendingQuery;
+    pendingQuery = null;
+    // A failed remove costs one replay on the next open, not the search itself.
+    removeSession('pendingSearch').catch(() => {});
+    // Replayed: a run that came back unauthorized, and a run still in flight if
+    // it left while signed out (startQuery bumps the request id, so the late
+    // answer of the doomed one is dropped). A run racing the auth read with a
+    // valid token must not be sent twice.
+    if (sawAnonymous || searchError.value?.kind === 'unauthorized') {
+        startQuery(query);
     }
 });
 

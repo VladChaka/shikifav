@@ -25,6 +25,10 @@ export interface SessionState {
     // Last search results for the instant first render of the popup (docs/05-ui.md).
     // type keeps the Аниме/Манга/Ранобэ selector in sync with restored items.
     lastSearch?: { query: string; type: SearchType; items: TitleCard[] };
+    // Query handed over by the context menu to the popup it opens (Ф5-11).
+    // Written right before browser.action.openPopup() and consumed exactly once:
+    // the popup removes the key as soon as it reads it.
+    pendingSearch?: { query: string };
     // Last opened "My lists" filter+page for the instant first render (docs/05).
     // Only the last-viewed (type,status) combo is cached — mirrors lastSearch.
     lastList?: {
@@ -71,6 +75,10 @@ export async function setSession<K extends keyof SessionState>(
     value: SessionState[K],
 ): Promise<void> {
     await browser.storage.session.set({ [key]: value });
+}
+
+export async function removeSession<K extends keyof SessionState>(key: K): Promise<void> {
+    await browser.storage.session.remove(key);
 }
 
 // The session cache may hold personal data (lists, search with userRate), so it

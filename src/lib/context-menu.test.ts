@@ -3,19 +3,25 @@ import { fakeBrowser } from 'wxt/testing';
 import type { Browser } from 'wxt/browser';
 import { SEARCH_MENU_ID, handleMenuClick, registerContextMenu } from './context-menu';
 import { i18n } from './i18n';
-import { parseSearchQuery } from './search-url';
+import { MAX_QUERY_LENGTH, parseSearchQuery } from './search-url';
+import { getSession, setSession } from './storage';
 
 // US-8 wiring: registration must be idempotent (menu items outlive the service
-// worker) and a click must open search.html?q=… A failure on either side is
-// swallowed — a broken menu must not take the worker down with it.
+// worker) and a click must hand the selection over to the popup (Ф5-11). A
+// failure on either side is swallowed — a broken menu must not take the worker
+// down with it.
 
-// fakeBrowser ships contextMenus stubs that throw "not implemented", so they are
-// mocked; tabs.create is implemented and only spied on (mockReset returns it to
-// the real fake implementation). console.debug stays muted for the whole file:
-// half of these cases exercise the failure paths on purpose.
+// fakeBrowser ships contextMenus and action.openPopup stubs that throw "not
+// implemented", so they are mocked; tabs.create and storage.session are
+// implemented and only spied on (mockReset returns them to the real fake
+// implementation). console.debug stays muted for the whole file: half of these
+// cases exercise the failure paths on purpose.
 const removeAll = vi.spyOn(fakeBrowser.contextMenus, 'removeAll');
 const create = vi.spyOn(fakeBrowser.contextMenus, 'create');
+const openPopup = vi.spyOn(fakeBrowser.action, 'openPopup');
 const createTab = vi.spyOn(fakeBrowser.tabs, 'create');
+const sessionSet = vi.spyOn(fakeBrowser.storage.session, 'set');
+const sessionRemove = vi.spyOn(fakeBrowser.storage.session, 'remove');
 const debug = vi.spyOn(console, 'debug');
 
 function clickInfo(
@@ -28,10 +34,14 @@ beforeEach(() => {
     fakeBrowser.reset();
     removeAll.mockReset();
     create.mockReset();
+    openPopup.mockReset();
     createTab.mockReset();
+    sessionSet.mockReset();
+    sessionRemove.mockReset();
     debug.mockReset();
     removeAll.mockImplementation(() => Promise.resolve());
     create.mockReturnValue(SEARCH_MENU_ID);
+    openPopup.mockImplementation(() => Promise.resolve());
     debug.mockImplementation(() => {});
 });
 
@@ -96,20 +106,46 @@ describe('registerContextMenu', () => {
 });
 
 describe('handleMenuClick', () => {
-    it('opens the search page with the selected text as the q parameter', async () => {
+    it('hands the selection over through pendingSearch and opens the popup', async () => {
         await handleMenuClick(clickInfo({ selectionText: 'Стальной алхимик & Co' }));
 
-        expect(createTab).toHaveBeenCalledTimes(1);
-        const url = new URL(createTab.mock.calls[0]![0].url ?? '');
-        expect(url.pathname).toBe('/search.html');
-        expect(parseSearchQuery(url.search)).toBe('Стальной алхимик & Co');
+        expect(openPopup).toHaveBeenCalledTimes(1);
+        await expect(getSession('pendingSearch')).resolves.toEqual({
+            query: 'Стальной алхимик & Co',
+        });
+        // The page in a tab is the fallback only.
+        expect(createTab).not.toHaveBeenCalled();
+    });
+
+    it('commits pendingSearch before the popup opens', async () => {
+        // The popup reads the key while mounting: a write still in flight when
+        // the window appears would leave it searching for nothing.
+        let seenOnOpen: { query: string } | undefined;
+        openPopup.mockImplementation(async () => {
+            seenOnOpen = await getSession('pendingSearch');
+        });
+
+        await handleMenuClick(clickInfo({ selectionText: 'Berserk' }));
+
+        expect(seenOnOpen).toEqual({ query: 'Berserk' });
     });
 
     it('sanitizes a multi-line selection into a single-line query', async () => {
         await handleMenuClick(clickInfo({ selectionText: '  Fullmetal\nAlchemist  ' }));
 
-        const url = new URL(createTab.mock.calls[0]![0].url ?? '');
-        expect(url.searchParams.get('q')).toBe('Fullmetal Alchemist');
+        await expect(getSession('pendingSearch')).resolves.toEqual({
+            query: 'Fullmetal Alchemist',
+        });
+    });
+
+    it('cuts a paragraph-long selection down before handing it to the popup', async () => {
+        // The smoke case "выделение в 300+ символов": the popup path must clamp
+        // the query just like the URL one does.
+        await handleMenuClick(clickInfo({ selectionText: 'б'.repeat(300) }));
+
+        const pending = await getSession('pendingSearch');
+        expect(pending?.query).toHaveLength(MAX_QUERY_LENGTH);
+        expect(createTab).not.toHaveBeenCalled();
     });
 
     it('ignores a click on a menu item of someone else', async () => {
@@ -118,24 +154,114 @@ describe('handleMenuClick', () => {
         );
         await handleMenuClick(clickInfo({ menuItemId: 42, selectionText: 'x' }));
 
+        expect(openPopup).not.toHaveBeenCalled();
         expect(createTab).not.toHaveBeenCalled();
+        expect(sessionSet).not.toHaveBeenCalled();
+        expect(sessionRemove).not.toHaveBeenCalled();
+        await expect(getSession('pendingSearch')).resolves.toBeUndefined();
     });
 
-    it('opens the page without q when the selection is blank or missing', async () => {
+    it('leaves a pending handover alone when another item is clicked', async () => {
+        // Another extension's item in the same menu must not swallow the query
+        // our own click has just prepared.
+        await setSession('pendingSearch', { query: 'берсерк' });
+
+        await handleMenuClick(clickInfo({ menuItemId: 'other-extension-item' }));
+
+        await expect(getSession('pendingSearch')).resolves.toEqual({ query: 'берсерк' });
+    });
+
+    it('opens the popup without a pending query when the selection is blank', async () => {
+        // A key left by an earlier click must not fire in a popup opened for a
+        // selection that carries nothing.
+        await setSession('pendingSearch', { query: 'предыдущее выделение' });
+
         await handleMenuClick(clickInfo({ selectionText: '   ' }));
         await handleMenuClick(clickInfo());
 
-        expect(createTab).toHaveBeenCalledTimes(2);
-        for (const [props] of createTab.mock.calls) {
-            const url = new URL(props.url ?? '');
-            expect(url.pathname).toBe('/search.html');
-            expect(url.searchParams.has('q')).toBe(false);
-        }
+        expect(openPopup).toHaveBeenCalledTimes(2);
+        await expect(getSession('pendingSearch')).resolves.toBeUndefined();
+        // Still the popup, not the page: a blank selection is not a failure.
+        expect(createTab).not.toHaveBeenCalled();
+    });
+
+    it('drops the stale key before the popup opens for a blank selection', async () => {
+        // Same commit-order requirement as the write: a popup that mounts while
+        // the removal is still in flight would replay the previous click.
+        await setSession('pendingSearch', { query: 'предыдущее выделение' });
+        let seenOnOpen: { query: string } | undefined = { query: 'not read yet' };
+        openPopup.mockImplementation(async () => {
+            seenOnOpen = await getSession('pendingSearch');
+        });
+
+        await handleMenuClick(clickInfo({ selectionText: '\n\t ' }));
+
+        expect(seenOnOpen).toBeUndefined();
+    });
+
+    it('falls back to the search page tab when the popup refuses to open', async () => {
+        openPopup.mockImplementation(() => Promise.reject(new Error('no active window')));
+
+        await expect(
+            handleMenuClick(clickInfo({ selectionText: 'Стальной алхимик & Co' })),
+        ).resolves.toBeUndefined();
+
+        expect(createTab).toHaveBeenCalledTimes(1);
+        const url = new URL(createTab.mock.calls[0]![0].url ?? '');
+        expect(url.pathname).toBe('/search.html');
+        expect(parseSearchQuery(url.search)).toBe('Стальной алхимик & Co');
+        // The popup never opened, so the key would otherwise surface on the next
+        // manual open, long after this click.
+        await expect(getSession('pendingSearch')).resolves.toBeUndefined();
+    });
+
+    it('falls back on a build without action.openPopup', async () => {
+        // Chrome < 127 (and the fakeBrowser default) has no working openPopup:
+        // the synchronous throw must land in the same fallback.
+        openPopup.mockImplementation(() => {
+            throw new TypeError('browser.action.openPopup is not a function');
+        });
+
+        await expect(
+            handleMenuClick(clickInfo({ selectionText: 'Berserk' })),
+        ).resolves.toBeUndefined();
+
+        expect(createTab).toHaveBeenCalledTimes(1);
+        expect(debug).toHaveBeenCalledWith('[context-menu] failed to open the popup:', 'TypeError');
+    });
+
+    it('falls back to the tab when the handover write itself fails', async () => {
+        // A query that never reached storage cannot reach the popup either, so
+        // this failure takes the same exit as a refused popup.
+        sessionSet.mockImplementation(() => Promise.reject(new Error('storage full')));
+
+        await handleMenuClick(clickInfo({ selectionText: 'берсерк' }));
+
+        expect(openPopup).not.toHaveBeenCalled();
+        expect(createTab).toHaveBeenCalledTimes(1);
+        const url = new URL(createTab.mock.calls[0]![0].url ?? '');
+        expect(parseSearchQuery(url.search)).toBe('берсерк');
+    });
+
+    it('still opens the tab when dropping the pending key fails', async () => {
+        openPopup.mockImplementation(() => Promise.reject(new Error('no active window')));
+        sessionRemove.mockImplementation(() => Promise.reject(new Error('storage locked')));
+
+        await expect(
+            handleMenuClick(clickInfo({ selectionText: 'берсерк' })),
+        ).resolves.toBeUndefined();
+
+        // The stale key costs one replayed search at worst; losing the fallback
+        // tab would cost the click itself.
+        expect(createTab).toHaveBeenCalledTimes(1);
     });
 
     it('swallows a failing tabs.create and keeps the selection out of the log', async () => {
         // Chrome quotes the rejected URL in the message ("Invalid url: …"), and
         // that URL carries the selection — only the error kind may be logged.
+        openPopup.mockImplementation(() =>
+            Promise.reject(new Error('No active browser window: секретное выделение')),
+        );
         createTab.mockImplementation(() =>
             Promise.reject(
                 new Error('Invalid url: "chrome-extension://x/search.html?q=секретное+выделение"'),

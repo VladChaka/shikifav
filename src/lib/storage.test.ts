@@ -6,6 +6,7 @@ import {
     getLocal,
     getSession,
     removeLocal,
+    removeSession,
     setLocal,
     setSession,
 } from './storage';
@@ -97,14 +98,65 @@ describe('storage', () => {
             await expect(getSession('lastTab')).resolves.toBe('lists');
         });
 
+        // Ф5-11: the context menu writes the selection here right before opening
+        // the popup, and the popup consumes it exactly once.
+        it('round-trips pendingSearch', async () => {
+            const pending: SessionState['pendingSearch'] = { query: 'Стальной алхимик & Co' };
+            await setSession('pendingSearch', pending);
+            await expect(getSession('pendingSearch')).resolves.toEqual(pending);
+        });
+
+        it('returns undefined for pendingSearch on empty storage (no handover pending)', async () => {
+            await expect(getSession('pendingSearch')).resolves.toBeUndefined();
+        });
+
         it('clearSession wipes the session area but not local', async () => {
             await setSession('lastTab', 'search');
+            // A pending selection is personal data too and must not survive logout.
+            await setSession('pendingSearch', { query: 'берсерк' });
             await setLocal('settings', DEFAULT_SETTINGS);
 
             await clearSession();
 
             await expect(getSession('lastTab')).resolves.toBeUndefined();
+            await expect(getSession('pendingSearch')).resolves.toBeUndefined();
             await expect(getLocal('settings')).resolves.toEqual(DEFAULT_SETTINGS);
+        });
+    });
+
+    describe('removeSession', () => {
+        it('deletes only the given key', async () => {
+            await setSession('pendingSearch', { query: 'берсерк' });
+            await setSession('lastTab', 'lists');
+
+            await removeSession('pendingSearch');
+
+            await expect(getSession('pendingSearch')).resolves.toBeUndefined();
+            await expect(getSession('lastTab')).resolves.toBe('lists');
+        });
+
+        it('resolves on a key that was never written (callers remove blindly)', async () => {
+            await expect(removeSession('pendingSearch')).resolves.toBeUndefined();
+            await expect(getSession('pendingSearch')).resolves.toBeUndefined();
+        });
+
+        it('is idempotent: removing twice is still a no-op', async () => {
+            await setSession('pendingSearch', { query: 'берсерк' });
+
+            await removeSession('pendingSearch');
+            await expect(removeSession('pendingSearch')).resolves.toBeUndefined();
+
+            await expect(getSession('pendingSearch')).resolves.toBeUndefined();
+        });
+
+        it('does not touch the local area', async () => {
+            await setLocal('settings', DEFAULT_SETTINGS);
+            await fakeBrowser.storage.local.set({ pendingSearch: { query: 'берсерк' } });
+
+            await removeSession('pendingSearch');
+
+            const local = await fakeBrowser.storage.local.get('pendingSearch');
+            expect(local['pendingSearch']).toEqual({ query: 'берсерк' });
         });
     });
 
