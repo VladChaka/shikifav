@@ -59,14 +59,15 @@ curl -s -X POST https://shikimori.io/api/graphql \
 -d '{"query":"{ __type(name: \"Query\") { fields { name args { name type { kind name } } } } }"}'
 ```
 
-### Результаты интроспекции (2026-07-23)
+### Результаты интроспекции (2026-07-23, дополнено 2026-07-24)
 - **Anime:** `id: ID!`, `malId: ID`, `name: String!`, `russian: String`, `kind: AnimeKindEnum`, `score: Float`, `status: AnimeStatusEnum`, `episodes: Int!`, `episodesAired: Int!`, `airedOn: IncompleteDate` (подполе `year` подтверждено живым запросом), `poster: Poster`, `userRate: UserRate`.
 - **`id: ID!` сериализуется строкой** (например `"52991"`), значение числовое → для REST `target_id` конвертировать `Number(id)`.
 - **Poster** — все поля `String!`: `id`, `miniUrl`, `mini2xUrl`, `miniAltUrl`, `miniAlt2xUrl`, `mainUrl`, `main2xUrl`, `mainAltUrl`, `mainAlt2xUrl`, `previewUrl`, `preview2xUrl`, `previewAltUrl`, `previewAlt2xUrl`, `originalUrl`. Для карточки ~48px — **`miniUrl`** (фактически 60×94 px webp) + `mini2xUrl` для retina.
 - **UserRate:** `id: ID!`, `status: UserRateStatusEnum!`, `episodes: Int!`, `chapters: Int!`, `volumes: Int!`, `score: Int!`, `rewatches: Int!`, `text: String`, `anime: Anime`, `manga: Manga`, `createdAt`/`updatedAt: ISO8601DateTime!`.
 - **UserRateStatusEnum** = `planned | watching | rewatching | completed | on_hold | dropped` — 1:1 с REST-статусами.
 - **Аргументы `animes`:** `search: String`, `limit: PositiveInt`, `page: PositiveInt`, `kind: AnimeKindString`, `status: AnimeStatusString`, `season: SeasonString`, `score: Int`, `duration: DurationString`, `rating: RatingString`, `origin: OriginString`, `genre/studio/franchise: String`, `censored: Boolean`, `mylist: MylistString`, `ids/excludeIds: String`, `order: OrderEnum`.
-- **Аргументы `mangas`:** как у `animes` минус `duration/rating/origin/studio`, плюс `publisher: String`; `kind: MangaKindString`.
+- **Аргументы `mangas`:** как у `animes` минус `duration/rating/origin/studio`, плюс `publisher: String`; `kind: MangaKindString`. Перепроверено интроспекцией 2026-07-24: `kind: MangaKindString` и `mylist: MylistString` на месте.
+- **Manga (интроспекция 2026-07-24):** `chapters: Int!` и `volumes: Int!` — non-null; `status: MangaStatusEnum` — nullable (как `status` у Anime). **MangaStatusEnum** = `anons | ongoing | released | paused | discontinued` (на два значения больше, чем AnimeStatusEnum).
 - **`limit`/`page` — скаляр `PositiveInt`, НЕ `Int`:** переменные в запросах объявлять `$limit: PositiveInt` (с `Int` сервер отклонит переменную по несовместимости типов).
 - **`AnimeKindString`/`MangaKindString`/`MylistString`** — скаляры вида «List of values separated by comma», `!` перед значением — негативный фильтр. `MangaKindString`: `manga, manhwa, manhua, light_novel, novel, one_shot, doujin`. `MylistString`: те же 6 статусов, что и `UserRateStatusEnum`.
 
@@ -98,10 +99,10 @@ query SearchMangas($search: String, $limit: PositiveInt, $page: PositiveInt, $ki
     name
     russian
     kind          # MangaKindEnum: manga, manhwa, manhua, light_novel, novel, one_shot, doujin
-    score
-    status
-    volumes
-    chapters
+    score         # Float, nullable
+    status        # MangaStatusEnum: anons, ongoing, released, paused, discontinued
+    volumes       # Int!
+    chapters      # Int!
     airedOn { year }
     poster { miniUrl mini2xUrl }
     userRate { id status chapters volumes score }
@@ -109,6 +110,8 @@ query SearchMangas($search: String, $limit: PositiveInt, $page: PositiveInt, $ki
 }
 ```
 Ранобэ = `kind: "light_novel,novel"` — подтверждено живым запросом 2026-07-23: вернул light_novel-тайтлы; синтаксис «значения через запятую» явно описан в description скаляра `MangaKindString`.
+
+Манга без ранобэ = `kind: "!light_novel,!novel"` (негативный фильтр) — подтверждено живым запросом 2026-07-24: `mangas(search: "monogatari", kind: "!light_novel,!novel", limit: 10)` вернул только manga/one_shot/doujin, тогда как тот же поиск без kind-фильтра содержит light_novel- и novel-тайтлы.
 
 ### Мои списки — два варианта, выбрать в фазе 3
 - **Вариант А (предпочтительный):** те же `animes` / `mangas` с аргументом `mylist: "watching"` — сразу возвращает карточки с userRate. Аргумент `mylist: MylistString` подтверждён интроспекцией 2026-07-23 (значения = 6 статусов, можно списком через запятую); поведение под Bearer проверить в фазе 3.
@@ -157,7 +160,7 @@ DELETE {origin}/api/v2/user_rates/{rate_id}   → 204
 ```
 POST {origin}/api/v2/user_rates/{rate_id}/increment
 ```
-Инкрементирует прогресс (у аниме — episodes; у манги — chapters, TODO(verify)). В `completed` автоматически НЕ переводим — предлагаем пользователю (US-6).
+Инкрементирует прогресс (у аниме — episodes; у манги — chapters, TODO(verify) — команды owner-verification фазы 4 в чекбоксе «`increment` для манги» ниже; contingency: если бампится не chapters, «+1» для Manga делаем через PATCH `{chapters: progress+1}`). В `completed` автоматически НЕ переводим — предлагаем пользователю (US-6).
 
 ## Профиль
 ```
@@ -184,6 +187,7 @@ GET {origin}/api/users/whoami
   - Ненулевой `userRate` под Bearer закрывается тем же curl, что и аргумент `mylist` (см. чекбокс «Существует ли аргумент `mylist`…» ниже): один ответ владельца подтверждает и фильтрацию списка, и ненулевой `userRate`. Результат владельца: подтверждено 2026-07-23 (owner-verification фазы 3 — mylist под Bearer вернул ненулевой `userRate`).
 - [x] Синтаксис множественного `kind` для ранобэ (`"light_novel,novel"`)
   - Подтверждено живым запросом 2026-07-23: `mangas(search: "overlord", kind: "light_novel,novel")` вернул light_novel-тайтлы; description скаляра `MangaKindString` явно описывает «List of values separated by comma» и `!` для негативного фильтра.
+  - Негативный вариант для вкладки «Манга» (`kind: "!light_novel,!novel"`) подтверждён живым запросом 2026-07-24: на поиске «monogatari» light_novel/novel исчезли из выдачи (без фильтра — присутствуют). Поля Manga для карточки подтверждены интроспекцией 2026-07-24: `chapters`/`volumes: Int!`, `status: MangaStatusEnum` nullable (см. «Результаты интроспекции»).
 - [x] Существует ли аргумент `mylist` у `animes`/`mangas` (для варианта А списков)
   - ДА (интроспекция 2026-07-23): `mylist: MylistString` у обоих запросов; значения = 6 статусов user_rate, тоже списком через запятую. Поведение под Bearer — проверить в фазе 3.
   - **Owner-verification фазы 3 (Bearer):** выбран вариант А (чтение списков через GraphQL `animes(mylist:)`, один запрос на страницу, без `user_id` в read-пути). Подтвердить фильтрацию по владельцу живым запросом:
@@ -195,11 +199,51 @@ GET {origin}/api/users/whoami
     ```
     Ожидание (вариант А подтверждён): вернутся ТОЛЬКО тайтлы из «Смотрю», у каждого `userRate` ненулевой, `status=watching`. Результат владельца: ПОДТВЕРЖДЕНО 2026-07-23 — вариант А рабочий, `animes(mylist:)` под Bearer фильтрует по владельцу токена; расширение живёт на варианте А.
     Иначе (mylist под Bearer вернул чужие/все тайтлы или ошибку) → откат на вариант Б: REST `GET /api/v2/user_rates?user_id=<id>&target_type=Anime&status=watching&limit=30&page=1` + дозапрос карточек одним GraphQL по `ids`.
+- [ ] `mangas(mylist:)` под Bearer: фильтрация по владельцу и совместная работа `mylist` + `kind` (вариант А для списков манги/ранобэ, фаза 4)
+  - Аргументы `mylist`/`kind` у `mangas` подтверждены интроспекцией (2026-07-23/24, см. «Результаты интроспекции»); под Bearer для `mangas` поведение не проверялось — фаза 3 проверяла только `animes(mylist:)`.
+  - **Owner-verification фазы 4, GraphQL (Bearer).** Два запроса:
+    ```
+    # 1) mylist + kind вместе: ожидаются ТОЛЬКО мои тайтлы из «Читаю» и ТОЛЬКО ранобэ
+    #    (kind = light_novel | novel), у каждого userRate ненулевой, status=watching
+    curl -s -X POST https://shikimori.io/api/graphql \
+      -H 'Content-Type: application/json' -H 'User-Agent: ShikiFav' \
+      -H 'Authorization: Bearer <живой access token>' \
+      -d '{"query":"{ mangas(mylist: \"watching\", kind: \"light_novel,novel\", limit: 5) { id name kind userRate { id status chapters score } } }"}'
+
+    # 2) контрольный, тот же mylist БЕЗ kind: по-прежнему только мои «Читаю»,
+    #    но в выдаче манга и ранобэ вместе
+    curl -s -X POST https://shikimori.io/api/graphql \
+      -H 'Content-Type: application/json' -H 'User-Agent: ShikiFav' \
+      -H 'Authorization: Bearer <живой access token>' \
+      -d '{"query":"{ mangas(mylist: \"watching\", limit: 5) { id name kind userRate { id status chapters score } } }"}'
+    ```
+    Если в «Читаю» нет ни одного ранобэ, запрос 1 вернёт пустой список — тогда повторить оба curl со статусом, где ранобэ точно есть (например `planned`).
+    Результат: TODO — ожидает живой проверки владельца (фаза 4).
 - [ ] `increment` для манги: главы или что-то другое
   - Ожидает: живой Bearer + фаза 4 («+1» для манги/ранобэ).
+  - **Owner-verification фазы 4, REST (Bearer).** Полный цикл на тестовой записи: создать → increment → удалить. Тайтл — любая манга НЕ из моих списков (её `id` можно взять из публичного поиска `mangas`, для REST — `Number(id)`):
+    ```
+    # 1) создать тестовую запись (ожидается 201; из тела сохранить "id" — это <rate_id>)
+    curl -s -X POST https://shikimori.io/api/v2/user_rates \
+      -H 'Content-Type: application/json' -H 'User-Agent: ShikiFav' \
+      -H 'Authorization: Bearer <живой access token>' \
+      -d '{"user_rate":{"user_id":<мой id из whoami>,"target_id":<id манги>,"target_type":"Manga","status":"planned"}}'
+
+    # 2) increment: в теле ответа chapters должен стать 1 (бампнулись именно главы,
+    #    volumes остался 0); заодно проверить, что chapters/volumes/episodes/score
+    #    присутствуют в теле и являются числами (не null/строки)
+    curl -s -X POST https://shikimori.io/api/v2/user_rates/<rate_id>/increment \
+      -H 'User-Agent: ShikiFav' -H 'Authorization: Bearer <живой access token>'
+
+    # 3) удалить тестовую запись (ожидается 204)
+    curl -s -o /dev/null -w '%{http_code}\n' -X DELETE https://shikimori.io/api/v2/user_rates/<rate_id> \
+      -H 'User-Agent: ShikiFav' -H 'Authorization: Bearer <живой access token>'
+    ```
+    Результат: TODO — ожидает живой проверки владельца (фаза 4). Сюда же вписать подтверждение формы тела ответа increment для манги (chapters/volumes числами) — закрывает хвост чекбокса «Форма REST-ответа write-операций» ниже.
+  - **Contingency:** если increment бампит НЕ chapters (или тело ответа не позволяет это подтвердить) — «+1» для Manga реализуется через `PATCH /api/v2/user_rates/{rate_id}` с телом `{"user_rate":{"chapters":<progress+1>}}` (прогресс — из текущего `RateState`). Итоговое решение (increment vs PATCH chapters) вписать сюда по результату проверки.
 - [x] Форма REST-ответа write-операций (create / update / increment): присутствуют ли и non-null поля `score`, `episodes`, `chapters`, `volumes`, из которых собирается `RateState` (`src/lib/api/rates.ts`, `toRateState`)
   - `RestUserRate` типизирует их как non-null `number`, но проверен только GraphQL-тип `UserRate` (интроспекция 2026-07-23); форма REST v2 `user_rate` в ответе не подтверждена. Закрывается живой write-операцией владельца (PATCH/increment) — свериться, что тело ответа содержит все четыре поля числами.
-  - Результат: подтверждено косвенно smoke фазы 3 (2026-07-23) — реконсиляция прогресса и оценки в UI идёт по полям тела ответа PATCH/increment (`RateState.episodes`/`score`), в smoke значения отображались корректно (NaN/undefined не наблюдалось). Прямую проверку тела для манги (chapters/volumes) повторить в фазе 4 вместе с чекбоксом «increment для манги».
+  - Результат: подтверждено косвенно smoke фазы 3 (2026-07-23) — реконсиляция прогресса и оценки в UI идёт по полям тела ответа PATCH/increment (`RateState.episodes`/`score`), в smoke значения отображались корректно (NaN/undefined не наблюдалось). Прямую проверку тела для манги (chapters/volumes) повторить в фазе 4 вместе с чекбоксом «increment для манги» — команды в блоке owner-verification фазы 4 (REST) в том чекбоксе выше, результат вписать туда.
 - [x] Что возвращает API после отзыва доступа в профиле (фаза 2): 401 (токен инвалидирован целиком) или 403 (только scope user_rates), и работает ли whoami — от результата зависит текст/поведение предупреждения при отказе записи (ленивое обнаружение, docs/04 §3)
   - Живая проверка владельца 2026-07-23: отзыв приложения в профиле → whoami и POST `/api/v2/user_rates` возвращают **401 `invalid_token`** (токен инвалидирован целиком, 403 не наблюдается); refresh (`/oauth/token` grant_type=refresh_token) → **400 `invalid_grant`**.
   - ВНИМАНИЕ: этот 401 виден только при `credentials: 'omit'` в fetch (http.ts). Без omit браузер прикладывает сессионную куку сайта (host_permissions на домен), сервер аутентифицирует запрос по ней в обход Bearer, и отзыв токена не детектится — отозванный токен «работает», пока жива сессия сайта.
