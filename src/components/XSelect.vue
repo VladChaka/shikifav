@@ -325,6 +325,10 @@ onBeforeUnmount(() => {
     background: var(--sc);
 }
 
+/* Absolute is enough here, unlike StatusMenu/ScorePicker (Ф6-24): this control
+   is only used on the settings page, which has no scroll container above it —
+   nothing can clip the dropdown, and an overflowing one simply extends the
+   document. Moving it into a scroller would need use-popover-position. */
 .xselect__menu {
     position: absolute;
     top: calc(100% + 6px);

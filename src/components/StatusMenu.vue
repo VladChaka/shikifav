@@ -2,7 +2,6 @@
     <div
         ref="menuEl"
         class="menu"
-        :class="{ 'menu--up': openUp }"
         role="menu"
     >
         <button
@@ -46,6 +45,7 @@
 
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue';
+import { usePopoverPosition } from '@/src/composables/use-popover-position';
 import type { UserRateStatus } from '@/src/lib/api/types';
 import { i18n, statusLabel } from '@/src/lib/i18n';
 import type { MediaKind } from '@/src/lib/i18n';
@@ -81,8 +81,15 @@ const STATUSES: readonly UserRateStatus[] = [
 ];
 
 const menuEl = ref<HTMLElement | null>(null);
-// Flip upwards when the menu would overflow the popup bottom edge.
-const openUp = ref(false);
+
+// Fixed positioning against the trigger wrapper: the card lives in a scroll
+// container that would clip an absolutely positioned menu (Ф6-24). Flipping
+// above the anchor near the window bottom is part of the placement.
+usePopoverPosition(menuEl, {
+    align: 'start',
+    gap: 4,
+    onAnchorHidden: () => emit('close'),
+});
 
 function onDocumentClick(event: MouseEvent): void {
     // The trigger button uses @click.stop, so a click reaching the document
@@ -99,11 +106,6 @@ function onDocumentKeydown(event: KeyboardEvent): void {
 }
 
 onMounted(() => {
-    // Measured after insertion but before paint: no visible jump.
-    const rect = menuEl.value?.getBoundingClientRect();
-    if (rect && rect.bottom > window.innerHeight - 8) {
-        openUp.value = true;
-    }
     document.addEventListener('click', onDocumentClick);
     document.addEventListener('keydown', onDocumentKeydown);
 });
@@ -116,11 +118,11 @@ onBeforeUnmount(() => {
 
 <style scoped lang="scss">
 /* components-menus card: full-bleed items, colored status dots, danger row
-   separated by a top border. */
+   separated by a top border.
+   Fixed, not absolute: the scroll container of the tab would clip the menu
+   (Ф6-24). top/left come from use-popover-position. */
 .menu {
-    position: absolute;
-    top: calc(100% + 4px);
-    left: 0;
+    position: fixed;
     z-index: 10;
     overflow: hidden;
     width: 200px;
@@ -128,11 +130,6 @@ onBeforeUnmount(() => {
     border-radius: 8px;
     background: var(--color-bg);
     box-shadow: 0 6px 20px rgb(0 0 0 / 14%);
-}
-
-.menu--up {
-    top: auto;
-    bottom: calc(100% + 4px);
 }
 
 .menu__item {

@@ -77,10 +77,9 @@ import { i18n } from '@/src/lib/i18n';
 //   variant='popup' (default) — fixed-size window: the results area is the
 //                               scroll container, the field sits in a framed
 //                               row of the shell;
-//   variant='page'            — full tab: the document scrolls (an inner
-//                               scroller would clip the status menu of the
-//                               bottom cards), and the field follows the
-//                               column rhythm instead of the shell frame.
+//   variant='page'            — full tab: the document scrolls, and the field
+//                               follows the column rhythm instead of the shell
+//                               frame.
 withDefaults(
     defineProps<{
         modelValue: string;
@@ -226,8 +225,10 @@ defineExpose({ focus });
     scrollbar-width: thin;
 }
 
-/* Page: the whole document scrolls instead — an inner scroller would clip the
-   status menu of the bottom cards. */
+/* Page: the whole document scrolls instead, so the page grows with its
+   content rather than trapping it in a fixed-height scroller.
+   (Popovers are no longer a reason: since Ф6-24 they position themselves as
+   fixed and are not clipped by a scroll container at all.) */
 .search--page .search__results {
     overflow: visible;
 }

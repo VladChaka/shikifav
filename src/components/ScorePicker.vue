@@ -2,7 +2,6 @@
     <div
         ref="pickerEl"
         class="picker"
-        :class="{ 'picker--up': openUp }"
         role="menu"
     >
         <div class="picker__grid">
@@ -33,6 +32,7 @@
 
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue';
+import { usePopoverPosition } from '@/src/composables/use-popover-position';
 import { i18n } from '@/src/lib/i18n';
 
 // Score picker (US-5, docs/05): 1–10 grid + "снять оценку" (0). Purely
@@ -49,8 +49,14 @@ const emit = defineEmits<{
 }>();
 
 const pickerEl = ref<HTMLElement | null>(null);
-// Flip upwards when the picker would overflow the popup bottom edge.
-const openUp = ref(false);
+
+// Right-aligned under the score button; fixed, because the list scroll
+// container would clip an absolutely positioned picker (Ф6-24).
+usePopoverPosition(pickerEl, {
+    align: 'end',
+    gap: 4,
+    onAnchorHidden: () => emit('close'),
+});
 
 function onDocumentClick(event: MouseEvent): void {
     // The trigger button uses @click.stop, so a click reaching the document is
@@ -67,11 +73,6 @@ function onDocumentKeydown(event: KeyboardEvent): void {
 }
 
 onMounted(() => {
-    // Measured after insertion but before paint: no visible jump.
-    const rect = pickerEl.value?.getBoundingClientRect();
-    if (rect && rect.bottom > window.innerHeight - 8) {
-        openUp.value = true;
-    }
     document.addEventListener('click', onDocumentClick);
     document.addEventListener('keydown', onDocumentKeydown);
 });
@@ -84,22 +85,17 @@ onBeforeUnmount(() => {
 
 <style scoped lang="scss">
 /* components-menus card (ScorePicker): 30x30 squares, 5 per row,
-   selected — accent fill, "Снять оценку" — danger. */
+   selected — accent fill, "Снять оценку" — danger.
+   Fixed, not absolute: the list scroll container would clip the picker
+   (Ф6-24). top/left come from use-popover-position. */
 .picker {
-    position: absolute;
-    top: calc(100% + 4px);
-    right: 0;
+    position: fixed;
     z-index: 10;
     padding: 8px;
     border: 1px solid var(--color-border);
     border-radius: 8px;
     background: var(--color-bg);
     box-shadow: 0 6px 20px rgb(0 0 0 / 14%);
-}
-
-.picker--up {
-    top: auto;
-    bottom: calc(100% + 4px);
 }
 
 .picker__grid {
