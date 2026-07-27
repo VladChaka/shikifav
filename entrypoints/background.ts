@@ -3,6 +3,7 @@ import { listRates, searchTitles } from '@/src/lib/api/graphql';
 import { setTokenProvider } from '@/src/lib/api/http';
 import { createRate, deleteRate, incrementRate, updateRate } from '@/src/lib/api/rates';
 import { registerUserAgentRule } from '@/src/lib/api/user-agent-rule';
+import { handleMenuClick, registerContextMenu } from '@/src/lib/context-menu';
 import { onMessage } from '@/src/lib/messaging';
 
 export default defineBackground(() => {
@@ -13,6 +14,25 @@ export default defineBackground(() => {
     // Chrome drops the fetch()-level User-Agent in the MV3 SW (docs/03), so a
     // DNR rule enforces it; errors are swallowed inside (console.debug only).
     void registerUserAgentRule();
+
+    // Listener is added synchronously on every SW start: a click on the menu
+    // item wakes the worker up and must find the handler already attached.
+    browser.contextMenus.onClicked.addListener((info) => {
+        void handleMenuClick(info);
+    });
+
+    // Menu items are persistent, so registering them once per install/update is
+    // enough — a create() with an existing id on every SW start would fail.
+    // onStartup repeats it once per browser session as a cheap recovery path:
+    // registerContextMenu() swallows its errors, so a single failed install
+    // would otherwise leave the profile without the menu item until reinstall
+    // (removeAll() before create() keeps the repeat idempotent).
+    browser.runtime.onInstalled.addListener(() => {
+        void registerContextMenu();
+    });
+    browser.runtime.onStartup.addListener(() => {
+        void registerContextMenu();
+    });
 
     // MessageHandlers is a mapped type over every MessageMap key, so this object
     // must stay exhaustive: adding a message type without a handler fails compile.

@@ -200,6 +200,9 @@ describe('graphql', () => {
         vi.stubGlobal('fetch', fetchMock);
         // Mirrors the registration in entrypoints/background.ts.
         setTokenProvider(ensureToken);
+        // fake-browser has no contextMenus implementation, and background.main()
+        // subscribes to onClicked synchronously — stub it out (Ф5-7).
+        vi.spyOn(fakeBrowser.contextMenus.onClicked, 'addListener').mockImplementation(() => {});
         // Fresh sliding window: leftover timestamps would delay this test.
         rateLimiter.reset();
     });

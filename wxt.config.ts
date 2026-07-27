@@ -17,7 +17,9 @@ export default defineConfig({
         // declarativeNetRequestWithHostAccess, not declarativeNetRequest: the
         // UA rule (modifyHeaders) requires host permissions anyway, and this
         // variant grants nothing beyond hosts we already have (CLAUDE.md rule 7).
-        permissions: ['identity', 'storage', 'declarativeNetRequestWithHostAccess'],
+        // contextMenus arrives exactly in phase 5 (US-8, CLAUDE.md rule 7);
+        // tabs.create({ url }) needs no "tabs" permission.
+        permissions: ['identity', 'storage', 'declarativeNetRequestWithHostAccess', 'contextMenus'],
         host_permissions: ['https://shikimori.one/*', 'https://shikimori.io/*'],
     }),
 });

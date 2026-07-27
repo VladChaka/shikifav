@@ -116,6 +116,11 @@ export const i18n = {
         // Book-variant of the completion suggestion (phase 4).
         markReadQuestion: 'Перевести в «Прочитано»?',
     },
+    // Context menu item for a text selection (US-8). %s is substituted by
+    // Chrome with the selected text — never interpolate it by hand.
+    contextMenu: {
+        searchSelection: 'Найти «%s» на Shikimori',
+    },
     errors: {
         network: 'Нет соединения с Shikimori. Проверьте интернет и повторите.',
         unauthorized: 'Сессия истекла. Войдите заново.',
