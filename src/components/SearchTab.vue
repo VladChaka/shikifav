@@ -9,15 +9,48 @@
                 :aria-label="i18n.lists.typeFilterLabel"
                 @update:model-value="emit('update:searchType', $event)"
             />
-            <input
-                class="search__input"
-                type="search"
-                :placeholder="i18n.search.placeholder"
-                :value="modelValue"
-                autocomplete="off"
-                spellcheck="false"
-                @input="onInput"
-            />
+            <div class="search__box">
+                <input
+                    ref="inputEl"
+                    class="search__input"
+                    type="search"
+                    :placeholder="i18n.search.placeholder"
+                    :value="modelValue"
+                    autocomplete="off"
+                    spellcheck="false"
+                    @input="onInput"
+                />
+                <button
+                    v-if="modelValue !== ''"
+                    class="search__clear"
+                    type="button"
+                    :aria-label="i18n.search.clear"
+                    @click="clearQuery"
+                >
+                    <svg
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2.2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true"
+                    >
+                        <line
+                            x1="6"
+                            y1="6"
+                            x2="18"
+                            y2="18"
+                        />
+                        <line
+                            x1="6"
+                            y1="18"
+                            x2="18"
+                            y2="6"
+                        />
+                    </svg>
+                </button>
+            </div>
         </div>
 
         <div class="search__results">
@@ -27,6 +60,7 @@
 </template>
 
 <script setup lang="ts">
+import { ref } from 'vue';
 import XSelect from '@/src/components/XSelect.vue';
 import type { XSelectOption } from '@/src/components/XSelect.vue';
 import type { SearchType } from '@/src/lib/api/types';
@@ -55,6 +89,15 @@ const TYPE_OPTIONS: readonly XSelectOption<SearchType>[] = [
 function onInput(event: Event): void {
     emit('update:modelValue', (event.target as HTMLInputElement).value);
 }
+
+const inputEl = ref<HTMLInputElement | null>(null);
+
+// Custom clear button (UX-1): the native webkit cancel button is hidden in
+// CSS (it ignores the theme). Clearing keeps focus in the field.
+function clearQuery(): void {
+    emit('update:modelValue', '');
+    inputEl.value?.focus();
+}
 </script>
 
 <style scoped lang="scss">
@@ -78,10 +121,20 @@ function onInput(event: Event): void {
     flex-shrink: 0;
 }
 
+.search__box {
+    /* Anchor for the absolutely positioned clear button. */
+    position: relative;
+    display: flex;
+    flex: 1;
+    min-width: 0;
+}
+
 .search__input {
     flex: 1;
     min-width: 0;
-    padding: 7px 10px;
+
+    /* Right padding reserves room for the clear button. */
+    padding: 7px 30px 7px 10px;
     border: 1px solid var(--color-border);
     border-radius: 6px;
     background: var(--color-bg);
@@ -95,6 +148,45 @@ function onInput(event: Event): void {
     &:focus-visible {
         outline: none;
         border-color: var(--color-accent);
+    }
+
+    /* The native (blue, unthemed) cancel button is replaced by ours. */
+    &::-webkit-search-cancel-button {
+        -webkit-appearance: none;
+        appearance: none;
+    }
+}
+
+.search__clear {
+    position: absolute;
+    top: 50%;
+    right: 5px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--color-fg-muted);
+    cursor: pointer;
+    transform: translateY(-50%);
+
+    svg {
+        width: 14px;
+        height: 14px;
+    }
+
+    &:hover {
+        color: var(--color-fg);
+    }
+
+    &:focus-visible {
+        outline: 2px solid var(--color-accent);
+        outline-offset: -1px;
+        color: var(--color-fg);
     }
 }
 

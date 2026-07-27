@@ -24,6 +24,7 @@ export const i18n = {
         placeholder: 'Поиск',
         emptyHint: 'Введите название аниме, манги или ранобэ',
         noResults: 'Ничего не найдено',
+        clear: 'Очистить',
     },
     // "Мои списки" tab: type/status filters, pagination, empty state (docs/05).
     lists: {
