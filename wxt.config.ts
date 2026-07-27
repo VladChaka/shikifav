@@ -13,6 +13,10 @@ export default defineConfig({
     modules: ['@wxt-dev/module-vue'],
     manifest: (env) => ({
         name: 'ShikiFav',
+        // Explicit description: without it WXT falls back to the English
+        // `description` from package.json. Chrome Web Store caps it at 132 chars.
+        description:
+            'Быстрый доступ к спискам Shikimori: поиск аниме, манги и ранобэ, статусы, оценки и «+1 эпизод» без открытия сайта.',
         ...(env.command === 'build' ? { key: PROD_MANIFEST_KEY } : {}),
         // declarativeNetRequestWithHostAccess, not declarativeNetRequest: the
         // UA rule (modifyHeaders) requires host permissions anyway, and this
