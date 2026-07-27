@@ -163,8 +163,10 @@
 import { computed } from 'vue';
 import ScorePicker from '@/src/components/ScorePicker.vue';
 import StatusMenu from '@/src/components/StatusMenu.vue';
+import { useSettings } from '@/src/composables/use-settings';
 import type { RateRow, UserRateStatus } from '@/src/lib/api/types';
 import { i18n, mediaOf, statusLabel } from '@/src/lib/i18n';
+import { displayTitle } from '@/src/lib/title-name';
 
 // "Мои списки" list row (US-4/5/6 + Ф3-7 status badge). Presentational only:
 // progress, +1, score, status change/removal and the "completed?" suggestion
@@ -213,7 +215,10 @@ const emit = defineEmits<{
     'update:statusOpen': [open: boolean];
 }>();
 
-const title = computed(() => props.rate.russian || props.rate.name);
+// Which name goes first is a setting (docs/05 «Названия»). A list row shows one
+// name only, so the second one from displayTitle is deliberately dropped.
+const { settings } = useSettings();
+const title = computed(() => displayTitle(props.rate, settings.value.titleLang).primary);
 
 // Wording follows the row media (phase 4): anime counts episodes
 // («эп.», «+1 эпизод», «Просмотрено»), manga/ranobe count chapters

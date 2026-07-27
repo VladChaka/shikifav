@@ -143,8 +143,10 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import StatusMenu from '@/src/components/StatusMenu.vue';
+import { useSettings } from '@/src/composables/use-settings';
 import type { TitleCard, UserRateStatus } from '@/src/lib/api/types';
 import { i18n, kindLabel, mediaOf, statusLabel, titleStatusLabel } from '@/src/lib/i18n';
+import { displayTitle } from '@/src/lib/title-name';
 
 // Search result card (US-2/US-3). Presentational only: mutations are emitted
 // upwards, `busy`, `warning` and `menuOpen` are controlled by the owner of the
@@ -173,9 +175,13 @@ const emit = defineEmits<{
     'update:menuOpen': [open: boolean];
 }>();
 
-const title = computed(() => props.card.russian || props.card.name);
-// Original name goes second and only when the first row is the Russian one.
-const original = computed(() => (props.card.russian ? props.card.name : null));
+// Which name goes first is a setting (docs/05 «Названия»); the card data keeps
+// both names, so switching the setting re-renders without a refetch.
+const { settings } = useSettings();
+const names = computed(() => displayTitle(props.card, settings.value.titleLang));
+const title = computed(() => names.value.primary);
+// The other name goes second, when there is one to show.
+const original = computed(() => names.value.secondary);
 
 // Wording/meta variant (phase 4): anime cards show episodes and «Смотрю…»
 // labels, manga/ranobe cards show volumes/chapters and «Читаю…» labels.
