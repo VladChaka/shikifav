@@ -41,34 +41,18 @@
                 @update:model-value="setQuery"
                 @update:search-type="setSearchType"
             >
-                <SkeletonList v-if="searchStatus === 'loading'" />
-                <EmptyState
-                    v-else-if="searchStatus === 'idle'"
-                    :text="i18n.search.emptyHint"
-                />
-                <EmptyState
-                    v-else-if="searchStatus === 'empty'"
-                    :text="i18n.search.noResults"
-                />
-                <ErrorState
-                    v-else-if="searchStatus === 'error'"
-                    :text="searchError ? apiErrorMessage(searchError) : i18n.errors.internal"
+                <SearchResults
+                    v-model:open-menu-key="openMenuKey"
+                    :items="searchItems"
+                    :status="searchStatus"
+                    :error="searchError"
+                    :busy-ids="busyIds"
+                    :warnings="warnings"
                     @retry="retry"
+                    @add="onSetStatus($event, 'planned')"
+                    @set-status="onSetStatus"
+                    @remove="onRemove"
                 />
-                <template v-else>
-                    <TitleCard
-                        v-for="card in searchItems"
-                        :key="rateKey(card)"
-                        :card="card"
-                        :busy="busyIds.has(rateKey(card))"
-                        :warning="warnings.get(rateKey(card)) ?? null"
-                        :menu-open="openMenuCardId === rateKey(card)"
-                        @update:menu-open="openMenuCardId = $event ? rateKey(card) : null"
-                        @add="onSetStatus(card, 'planned')"
-                        @set-status="onSetStatus(card, $event)"
-                        @remove="onRemove(card)"
-                    />
-                </template>
             </SearchTab>
 
             <MyListsTab
@@ -111,27 +95,32 @@
 
 <script setup lang="ts">
 import { onMounted, ref, watch } from 'vue';
-import EmptyState from '@/src/components/EmptyState.vue';
-import ErrorState from '@/src/components/ErrorState.vue';
 import LoginScreen from '@/src/components/LoginScreen.vue';
 import MyListsTab from '@/src/components/MyListsTab.vue';
+import SearchResults from '@/src/components/SearchResults.vue';
 import SearchTab from '@/src/components/SearchTab.vue';
-import SkeletonList from '@/src/components/SkeletonList.vue';
 import TabBar from '@/src/components/TabBar.vue';
 import type { TabId } from '@/src/components/TabBar.vue';
-import TitleCard from '@/src/components/TitleCard.vue';
 import Toast from '@/src/components/Toast.vue';
 import UserHeader from '@/src/components/UserHeader.vue';
 import { useAuth } from '@/src/composables/use-auth';
 import { useLists } from '@/src/composables/use-lists';
-import { rateKey, useRates } from '@/src/composables/use-rates';
-import { useSearch } from '@/src/composables/use-search';
-import type { TitleCard as TitleCardData, UserRateStatus } from '@/src/lib/api/types';
+import { useSearchScreen } from '@/src/composables/use-search-screen';
 import { getSession, removeSession, setSession } from '@/src/lib/storage';
-import { apiErrorMessage, i18n } from '@/src/lib/i18n';
+import { apiErrorMessage } from '@/src/lib/i18n';
 
 const { status, user, error } = useAuth();
 
+// The nonce feeds :key so a repeated identical message still re-mounts the
+// Toast and restarts its timer (a text-only watch would not fire).
+const toast = ref<{ text: string; nonce: number } | null>(null);
+
+function showToast(text: string): void {
+    toast.value = { text, nonce: (toast.value?.nonce ?? 0) + 1 };
+}
+
+// Search session + the rate writes over its results, shared with the
+// full-screen search page (Ф6-5).
 const {
     query: searchQuery,
     searchType,
@@ -142,17 +131,12 @@ const {
     startQuery,
     setType: setSearchType,
     retry,
-} = useSearch();
-
-// The nonce feeds :key so a repeated identical message still re-mounts the
-// Toast and restarts its timer (a text-only watch would not fire).
-const toast = ref<{ text: string; nonce: number } | null>(null);
-
-function showToast(text: string): void {
-    toast.value = { text, nonce: (toast.value?.nonce ?? 0) + 1 };
-}
-
-const { busyIds, warnings, performAction } = useRates(searchItems, showToast);
+    busyIds,
+    warnings,
+    openMenuKey,
+    onSetStatus,
+    onRemove,
+} = useSearchScreen(showToast);
 
 const {
     items: listItems,
@@ -268,22 +252,6 @@ watch(
     },
     { immediate: true },
 );
-
-// At most one open StatusMenu across the list: the rateKey of the card that
-// owns it (id alone can collide between anime and manga of the same id).
-const openMenuCardId = ref<string | null>(null);
-
-// A card outside my list creates a rate, one inside updates its status (US-3).
-function onSetStatus(card: TitleCardData, status: UserRateStatus): void {
-    void performAction(
-        card,
-        card.userRate === null ? { type: 'create', status } : { type: 'update', status },
-    );
-}
-
-function onRemove(card: TitleCardData): void {
-    void performAction(card, { type: 'delete' });
-}
 </script>
 
 <style scoped lang="scss">
