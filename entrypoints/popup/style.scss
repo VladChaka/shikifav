@@ -3,6 +3,9 @@
    compact popup ~380x580. No UI frameworks. */
 
 :root {
+    /* Match the browser popup-window fill to the theme so the corners outside
+       the .app radius blend in (true transparency is not supported in MV3). */
+    color-scheme: light dark;
     --color-bg: #ffffff;
     --color-fg: #1f2328;
     --color-fg-muted: #57606a;
@@ -151,7 +154,10 @@ body {
     font-size: 14px;
     line-height: 1.4;
     color: var(--color-fg);
-    background: var(--color-bg);
+
+    /* The theme background lives on .app (rounded shell); a painted body
+       would show as square corners around the radius. */
+    background: transparent;
 }
 
 #app {

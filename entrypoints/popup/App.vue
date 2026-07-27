@@ -229,9 +229,18 @@ function onRemove(card: TitleCardData): void {
 
 <style scoped lang="scss">
 .app {
+    /* Rounded popup shell (design screens/search.html, UX-2): the radius +
+       overflow clip keep the header/content inside the corners; the app owns
+       the background — body stays transparent so the corners show the browser
+       window fill. Chrome draws the popup drop shadow itself, so the design's
+       box-shadow is intentionally not reproduced here. */
     display: flex;
     flex-direction: column;
+    overflow: hidden;
     height: 100%;
+    border: 1px solid var(--color-border);
+    border-radius: 14px;
+    background: var(--color-bg);
 }
 
 .app__error {
