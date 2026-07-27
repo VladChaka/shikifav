@@ -2,7 +2,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing';
 import background from '@/entrypoints/background';
 import { sendMessage } from '../messaging';
-import { getLocal, getSession, getSettings, setLocal, setSession } from '../storage';
+import {
+    DEFAULT_SETTINGS,
+    getLocal,
+    getSession,
+    getSettings,
+    setLocal,
+    setSession,
+    setSettings,
+} from '../storage';
 import type { LocalState } from '../storage';
 import {
     authorizedRequest,
@@ -657,8 +665,8 @@ describe('auth', () => {
             await expect(getLocal('auth')).resolves.toBeUndefined();
             await expect(getSession('lastTab')).resolves.toBeUndefined();
             await expect(getSettings()).resolves.toEqual({
+                ...DEFAULT_SETTINGS,
                 origin: 'https://shikimori.one',
-                titleLang: 'ru',
             });
             // The ordering is the whole point: writing the origin first would
             // leave a window with the new domain and the old token.
@@ -669,11 +677,12 @@ describe('auth', () => {
 
         it('keeps the settings it was not asked to change', async () => {
             background.main();
-            await setLocal('settings', { origin: 'https://shikimori.io', titleLang: 'romaji' });
+            await setSettings({ origin: 'https://shikimori.io', titleLang: 'romaji' });
 
             await sendMessage('settings.setOrigin', { origin: 'https://shikimori.one' });
 
             await expect(getSettings()).resolves.toEqual({
+                ...DEFAULT_SETTINGS,
                 origin: 'https://shikimori.one',
                 titleLang: 'romaji',
             });
@@ -688,8 +697,8 @@ describe('auth', () => {
 
             expect(response).toEqual({ ok: true, data: {} });
             await expect(getSettings()).resolves.toEqual({
+                ...DEFAULT_SETTINGS,
                 origin: 'https://shikimori.one',
-                titleLang: 'ru',
             });
         });
     });

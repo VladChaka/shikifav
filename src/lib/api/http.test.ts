@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing';
 import { APP_NAME } from '../config';
-import { setLocal } from '../storage';
+import { setSettings } from '../storage';
 import { apiRequest, oauthRequest, rateLimiter, setTokenProvider } from './http';
 import type { HttpResult } from './http';
 import type { ApiError } from './types';
@@ -242,7 +242,7 @@ describe('http', () => {
             await apiRequest('/api/users/whoami');
             expect(lastRequest().url).toBe('https://shikimori.io/api/users/whoami');
 
-            await setLocal('settings', { origin: 'https://shikimori.one', titleLang: 'ru' });
+            await setSettings({ origin: 'https://shikimori.one' });
             await apiRequest('/api/users/whoami');
             expect(lastRequest().url).toBe('https://shikimori.one/api/users/whoami');
         });

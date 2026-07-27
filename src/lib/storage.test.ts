@@ -15,6 +15,17 @@ import {
 import type { LocalState, SessionState } from './storage';
 import { ORIGINS } from './config';
 
+// One non-default value per key added in Ф6-19: reused for the read side
+// (a stored value must survive the per-key merge) and for the write side
+// (a one-key patch must not disturb the rest).
+const NON_DEFAULT_VALUES: Array<[string, Partial<LocalState['settings']>]> = [
+    ['theme', { theme: 'dark' }],
+    ['startTab', { startTab: 'search' }],
+    ['quickStatus', { quickStatus: 'completed' }],
+    ['defaultSearchType', { defaultSearchType: 'ranobe' }],
+    ['defaultListStatus', { defaultListStatus: 'dropped' }],
+];
+
 describe('storage', () => {
     beforeEach(() => {
         fakeBrowser.reset();
@@ -22,11 +33,18 @@ describe('storage', () => {
 
     describe('DEFAULT_SETTINGS', () => {
         // Pins the documented defaults (docs/02-architecture.md, task 11):
-        // breaking either value must fail this test.
+        // breaking any value must fail this test. The Ф6-19 keys are pinned for
+        // a second reason — each default reproduces the behaviour the extension
+        // had before the setting existed.
         it('matches the documented defaults', () => {
             expect(DEFAULT_SETTINGS).toEqual({
                 origin: 'https://shikimori.io',
                 titleLang: 'ru',
+                theme: 'system',
+                startTab: 'last',
+                quickStatus: 'planned',
+                defaultSearchType: 'anime',
+                defaultListStatus: 'watching',
             });
         });
 
@@ -45,6 +63,7 @@ describe('storage', () => {
 
         it('round-trips settings', async () => {
             const settings: LocalState['settings'] = {
+                ...DEFAULT_SETTINGS,
                 origin: 'https://shikimori.io',
                 titleLang: 'romaji',
             };
@@ -102,35 +121,65 @@ describe('storage', () => {
         });
 
         it('returns the stored values when every key is present', async () => {
-            await setLocal('settings', { origin: 'https://shikimori.one', titleLang: 'romaji' });
-            await expect(getSettings()).resolves.toEqual({
+            const stored: LocalState['settings'] = {
                 origin: 'https://shikimori.one',
                 titleLang: 'romaji',
-            });
+                theme: 'dark',
+                startTab: 'search',
+                quickStatus: 'watching',
+                defaultSearchType: 'manga',
+                defaultListStatus: 'completed',
+            };
+            await setLocal('settings', stored);
+            await expect(getSettings()).resolves.toEqual(stored);
         });
 
         it('fills a missing titleLang from the defaults, keeping the stored origin', async () => {
             await writeRawSettings({ origin: 'https://shikimori.one' });
             await expect(getSettings()).resolves.toEqual({
+                ...DEFAULT_SETTINGS,
                 origin: 'https://shikimori.one',
-                titleLang: DEFAULT_SETTINGS.titleLang,
             });
         });
 
         it('fills a missing origin from the defaults, keeping the stored titleLang', async () => {
             await writeRawSettings({ titleLang: 'romaji' });
             await expect(getSettings()).resolves.toEqual({
-                origin: DEFAULT_SETTINGS.origin,
+                ...DEFAULT_SETTINGS,
                 titleLang: 'romaji',
             });
         });
+
+        // The exact shape a profile carries after updating from a build that
+        // predates Ф6-19: the appearance/behaviour keys are simply absent.
+        it('fills every key added later from the defaults', async () => {
+            await writeRawSettings({ origin: 'https://shikimori.one', titleLang: 'romaji' });
+
+            const settings = await getSettings();
+
+            expect(settings).toEqual({
+                ...DEFAULT_SETTINGS,
+                origin: 'https://shikimori.one',
+                titleLang: 'romaji',
+            });
+        });
+
+        it.each(NON_DEFAULT_VALUES)(
+            'reads a stored %s while defaulting the rest',
+            async (_key, stored) => {
+                await writeRawSettings({ ...stored });
+
+                await expect(getSettings()).resolves.toEqual({ ...DEFAULT_SETTINGS, ...stored });
+            },
+        );
 
         it('never returns undefined for a key of a partially written object', async () => {
             await writeRawSettings({ titleLang: 'romaji' });
             const settings = await getSettings();
             // The whole point of the per-key merge: callers index these blindly.
-            expect(settings.origin).toBeDefined();
-            expect(settings.titleLang).toBeDefined();
+            for (const key of Object.keys(DEFAULT_SETTINGS)) {
+                expect(settings[key as keyof LocalState['settings']]).toBeDefined();
+            }
         });
 
         it('falls back to the defaults for an empty stored object', async () => {
@@ -139,11 +188,12 @@ describe('storage', () => {
         });
 
         it('setSettings patches one key and keeps the other', async () => {
-            await setLocal('settings', { origin: 'https://shikimori.io', titleLang: 'romaji' });
+            await setLocal('settings', { ...DEFAULT_SETTINGS, titleLang: 'romaji' });
 
             await setSettings({ origin: 'https://shikimori.one' });
 
             await expect(getSettings()).resolves.toEqual({
+                ...DEFAULT_SETTINGS,
                 origin: 'https://shikimori.one',
                 titleLang: 'romaji',
             });
@@ -153,7 +203,7 @@ describe('storage', () => {
             await setSettings({ titleLang: 'romaji' });
 
             await expect(getLocal('settings')).resolves.toEqual({
-                origin: DEFAULT_SETTINGS.origin,
+                ...DEFAULT_SETTINGS,
                 titleLang: 'romaji',
             });
         });
@@ -164,19 +214,34 @@ describe('storage', () => {
             await setSettings({ origin: 'https://shikimori.one' });
 
             await expect(getLocal('settings')).resolves.toEqual({
+                ...DEFAULT_SETTINGS,
                 origin: 'https://shikimori.one',
                 titleLang: 'romaji',
             });
         });
 
         it('setSettings ignores an explicitly undefined value in the patch', async () => {
-            await setLocal('settings', { origin: 'https://shikimori.one', titleLang: 'romaji' });
+            await setLocal('settings', { ...DEFAULT_SETTINGS, origin: 'https://shikimori.one' });
 
             await setSettings({ origin: undefined });
 
             await expect(getSettings()).resolves.toEqual({
+                ...DEFAULT_SETTINGS,
                 origin: 'https://shikimori.one',
+            });
+        });
+
+        // Each new key owns a control of its own on the options page, so a
+        // single-setting UI must write it without knowing about the others.
+        it.each(NON_DEFAULT_VALUES)('setSettings patches %s alone', async (_key, patch) => {
+            await setSettings({ titleLang: 'romaji' });
+
+            await setSettings(patch);
+
+            await expect(getSettings()).resolves.toEqual({
+                ...DEFAULT_SETTINGS,
                 titleLang: 'romaji',
+                ...patch,
             });
         });
 

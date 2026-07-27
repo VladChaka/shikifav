@@ -1,10 +1,71 @@
 /* CSS foundation shared by every extension page (docs/05-ui.md, design
-   reference "Shikimori Quick UI"): system font, light/dark via CSS variables +
-   prefers-color-scheme, status palettes, status badge. No UI frameworks.
-   Page-specific sizing (e.g. the 380x580 popup) stays in the page stylesheet. */
+   reference "Shikimori Quick UI"): system font, light/dark via CSS variables,
+   status palettes, status badge. No UI frameworks.
+   Page-specific sizing (e.g. the 380x580 popup) stays in the page stylesheet.
+
+   Theme (Ф6-19). Light values are the base; every dark value lives in a mixin
+   applied from exactly two places (see "Dark theme" at the bottom):
+   - the system theme — @media (prefers-color-scheme: dark), narrowed with
+     :not([data-theme='light']) so an explicit light choice wins over a dark
+     system;
+   - the explicit choice — :root[data-theme='dark'].
+   The attribute is set on <html> by src/lib/theme.ts; 'system' means no
+   attribute at all. */
+
+@mixin dark-tokens {
+    --color-bg: #1c1a18;
+    --color-fg: #e9e6e2;
+    --color-fg-muted: #a49b93;
+    --color-border: #383430;
+    --color-surface: #262320;
+    --color-accent: #43b98d;
+    --color-accent-hover: #5fcaa1;
+    --color-accent-fg: #0c2b21;
+    --color-danger: #ef8a78;
+}
+
+/* Dark half of the status palettes and of the badge fill. Nested selectors on
+   purpose: the palettes are element classes, not :root variables, so the mixin
+   emits them as descendants of the themed root. */
+@mixin dark-status-palettes {
+    .st-planned {
+        --sc: #7ea9dd;
+        --sct: #3a495f;
+    }
+
+    .st-watching {
+        --sc: #4cbf93;
+        --sct: #2b493a;
+    }
+
+    .st-rewatching {
+        --sc: #46c2cc;
+        --sct: #2a494e;
+    }
+
+    .st-completed {
+        --sc: #b18ee6;
+        --sct: #3f3756;
+    }
+
+    .st-on_hold {
+        --sc: #d4a53a;
+        --sct: #4e4123;
+    }
+
+    .st-dropped {
+        --sc: #ef8a78;
+        --sct: #56312b;
+    }
+
+    .badge {
+        background: color-mix(in srgb, var(--sct) 85%, transparent);
+    }
+}
 
 :root {
-    /* Native scrollbars and form controls follow the active theme. */
+    /* Native scrollbars and form controls follow the active theme; the pair
+       means "follows the system" and is narrowed below for an explicit choice. */
     color-scheme: light dark;
     --color-bg: #ffffff;
     --color-fg: #1f2328;
@@ -17,18 +78,12 @@
     --color-danger: #b42318;
 }
 
-@media (prefers-color-scheme: dark) {
-    :root {
-        --color-bg: #1c1a18;
-        --color-fg: #e9e6e2;
-        --color-fg-muted: #a49b93;
-        --color-border: #383430;
-        --color-surface: #262320;
-        --color-accent: #43b98d;
-        --color-accent-hover: #5fcaa1;
-        --color-accent-fg: #0c2b21;
-        --color-danger: #ef8a78;
-    }
+:root[data-theme='light'] {
+    color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+    color-scheme: dark;
 }
 
 /* --- Status palettes (single source, foundations/components cards) ---
@@ -67,38 +122,6 @@
     --sct: #eec1bd;
 }
 
-@media (prefers-color-scheme: dark) {
-    .st-planned {
-        --sc: #7ea9dd;
-        --sct: #3a495f;
-    }
-
-    .st-watching {
-        --sc: #4cbf93;
-        --sct: #2b493a;
-    }
-
-    .st-rewatching {
-        --sc: #46c2cc;
-        --sct: #2a494e;
-    }
-
-    .st-completed {
-        --sc: #b18ee6;
-        --sct: #3f3756;
-    }
-
-    .st-on_hold {
-        --sc: #d4a53a;
-        --sct: #4e4123;
-    }
-
-    .st-dropped {
-        --sc: #ef8a78;
-        --sct: #56312b;
-    }
-}
-
 /* --- Status badge pill (components-atoms card) ---
    Shared by TitleCard and RateRow (which only override sizes in scoped CSS).
    Works on <span> and <button> alike, hence the explicit font reset. */
@@ -131,10 +154,18 @@
     opacity: 0.7;
 }
 
+/* --- Dark theme: system default and explicit choice --- */
+
 @media (prefers-color-scheme: dark) {
-    .badge {
-        background: color-mix(in srgb, var(--sct) 85%, transparent);
+    :root:not([data-theme='light']) {
+        @include dark-tokens;
+        @include dark-status-palettes;
     }
+}
+
+:root[data-theme='dark'] {
+    @include dark-tokens;
+    @include dark-status-palettes;
 }
 
 * {

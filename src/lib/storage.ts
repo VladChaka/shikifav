@@ -5,6 +5,13 @@ import type { Origin } from './config';
 
 // All chrome.storage access goes ONLY through this module (docs/02-architecture.md).
 
+// UI-level settings vocabulary (docs/05-ui.md). Declared next to the schema so
+// consumers (lib/theme.ts, the options page) share one definition instead of
+// importing each other.
+export type Theme = 'system' | 'light' | 'dark';
+// 'last' = restore the tab the popup was closed on (session.lastTab).
+export type StartTab = 'search' | 'lists' | 'last';
+
 export interface LocalState {
     auth?: {
         accessToken: string;
@@ -12,9 +19,16 @@ export interface LocalState {
         expiresAt: number; // ms epoch, already with a -60s margin
         user: User;
     };
+    // Every default below reproduces the behaviour the extension had before the
+    // setting existed, so an untouched profile sees no change (Ф6-19).
     settings: {
         origin: Origin;
         titleLang: 'ru' | 'romaji';
+        theme: Theme;
+        startTab: StartTab;
+        quickStatus: UserRateStatus; // one-click add button on a search card
+        defaultSearchType: SearchType;
+        defaultListStatus: UserRateStatus; // status filter of "Мои списки"
     };
 }
 
@@ -43,6 +57,11 @@ export interface SessionState {
 export const DEFAULT_SETTINGS: LocalState['settings'] = {
     origin: DEFAULT_ORIGIN,
     titleLang: 'ru',
+    theme: 'system',
+    startTab: 'last',
+    quickStatus: 'planned',
+    defaultSearchType: 'anime',
+    defaultListStatus: 'watching',
 };
 
 export async function getLocal<K extends keyof LocalState>(
@@ -73,6 +92,11 @@ export async function getSettings(): Promise<LocalState['settings']> {
     return {
         origin: stored?.origin ?? DEFAULT_SETTINGS.origin,
         titleLang: stored?.titleLang ?? DEFAULT_SETTINGS.titleLang,
+        theme: stored?.theme ?? DEFAULT_SETTINGS.theme,
+        startTab: stored?.startTab ?? DEFAULT_SETTINGS.startTab,
+        quickStatus: stored?.quickStatus ?? DEFAULT_SETTINGS.quickStatus,
+        defaultSearchType: stored?.defaultSearchType ?? DEFAULT_SETTINGS.defaultSearchType,
+        defaultListStatus: stored?.defaultListStatus ?? DEFAULT_SETTINGS.defaultListStatus,
     };
 }
 
@@ -84,6 +108,11 @@ export async function setSettings(patch: Partial<LocalState['settings']>): Promi
     await setLocal('settings', {
         origin: patch.origin ?? current.origin,
         titleLang: patch.titleLang ?? current.titleLang,
+        theme: patch.theme ?? current.theme,
+        startTab: patch.startTab ?? current.startTab,
+        quickStatus: patch.quickStatus ?? current.quickStatus,
+        defaultSearchType: patch.defaultSearchType ?? current.defaultSearchType,
+        defaultListStatus: patch.defaultListStatus ?? current.defaultListStatus,
     });
 }
 

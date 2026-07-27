@@ -65,6 +65,12 @@ interface LocalState {
   settings: {
     origin: 'https://shikimori.one' | 'https://shikimori.io';
     titleLang: 'ru' | 'romaji';
+    // Ф6-19; каждый дефолт повторяет поведение до появления настройки
+    theme: 'system' | 'light' | 'dark';    // default 'system' — по prefers-color-scheme
+    startTab: 'search' | 'lists' | 'last'; // default 'last' — восстановить session.lastTab
+    quickStatus: UserRateStatus;           // default 'planned' — кнопка быстрого добавления
+    defaultSearchType: SearchType;         // default 'anime'
+    defaultListStatus: UserRateStatus;     // default 'watching' — стартовый фильтр «Моих списков»
   };
 }
 
@@ -75,7 +81,7 @@ interface LocalState {
 // popup при открытии из контекстного меню. Popup удаляет ключ сразу после чтения.
 ```
 
-`src/lib/storage.ts` экспортирует типизированные `getLocal/setLocal/getSession/setSession/removeSession` и дефолты `settings`.
+`src/lib/storage.ts` экспортирует типизированные `getLocal/setLocal/getSession/setSession/removeSession` и дефолты `settings`. Читать настройки — только через `getSettings()` (дочитывает КАЖДЫЙ ключ дефолтом: профиль, записанный старой сборкой, не отдаёт `undefined`), писать — через `setSettings(patch)` (пер-ключевой мерж, UI одной настройки не затирает остальные).
 
 ## Rate limiter (`src/lib/api/rate-limiter.ts`; backoff и врезка в запросы — в `src/lib/api/http.ts`)
 - Очередь промисов: не более **4 запросов/сек** и **80/мин** (запас к лимитам 5/90).
