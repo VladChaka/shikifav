@@ -5,10 +5,12 @@ import {
     DEFAULT_SETTINGS,
     getLocal,
     getSession,
+    getSettings,
     removeLocal,
     removeSession,
     setLocal,
     setSession,
+    setSettings,
 } from './storage';
 import type { LocalState, SessionState } from './storage';
 import { ORIGINS } from './config';
@@ -84,6 +86,112 @@ describe('storage', () => {
                 user: { id: 1, nickname: 'n', avatarUrl: '' },
             });
             await expect(getLocal('settings')).resolves.toBeUndefined();
+        });
+    });
+
+    describe('getSettings / setSettings', () => {
+        // The typed wrapper cannot express an incomplete settings object, but
+        // storage can hold one: a build that knew fewer keys, or a key added
+        // later, leaves exactly this shape behind.
+        async function writeRawSettings(value: Record<string, unknown>): Promise<void> {
+            await fakeBrowser.storage.local.set({ settings: value });
+        }
+
+        it('returns the defaults on empty storage', async () => {
+            await expect(getSettings()).resolves.toEqual(DEFAULT_SETTINGS);
+        });
+
+        it('returns the stored values when every key is present', async () => {
+            await setLocal('settings', { origin: 'https://shikimori.one', titleLang: 'romaji' });
+            await expect(getSettings()).resolves.toEqual({
+                origin: 'https://shikimori.one',
+                titleLang: 'romaji',
+            });
+        });
+
+        it('fills a missing titleLang from the defaults, keeping the stored origin', async () => {
+            await writeRawSettings({ origin: 'https://shikimori.one' });
+            await expect(getSettings()).resolves.toEqual({
+                origin: 'https://shikimori.one',
+                titleLang: DEFAULT_SETTINGS.titleLang,
+            });
+        });
+
+        it('fills a missing origin from the defaults, keeping the stored titleLang', async () => {
+            await writeRawSettings({ titleLang: 'romaji' });
+            await expect(getSettings()).resolves.toEqual({
+                origin: DEFAULT_SETTINGS.origin,
+                titleLang: 'romaji',
+            });
+        });
+
+        it('never returns undefined for a key of a partially written object', async () => {
+            await writeRawSettings({ titleLang: 'romaji' });
+            const settings = await getSettings();
+            // The whole point of the per-key merge: callers index these blindly.
+            expect(settings.origin).toBeDefined();
+            expect(settings.titleLang).toBeDefined();
+        });
+
+        it('falls back to the defaults for an empty stored object', async () => {
+            await writeRawSettings({});
+            await expect(getSettings()).resolves.toEqual(DEFAULT_SETTINGS);
+        });
+
+        it('setSettings patches one key and keeps the other', async () => {
+            await setLocal('settings', { origin: 'https://shikimori.io', titleLang: 'romaji' });
+
+            await setSettings({ origin: 'https://shikimori.one' });
+
+            await expect(getSettings()).resolves.toEqual({
+                origin: 'https://shikimori.one',
+                titleLang: 'romaji',
+            });
+        });
+
+        it('setSettings on empty storage writes a complete object', async () => {
+            await setSettings({ titleLang: 'romaji' });
+
+            await expect(getLocal('settings')).resolves.toEqual({
+                origin: DEFAULT_SETTINGS.origin,
+                titleLang: 'romaji',
+            });
+        });
+
+        it('setSettings completes the keys missing from a partially written object', async () => {
+            await writeRawSettings({ titleLang: 'romaji' });
+
+            await setSettings({ origin: 'https://shikimori.one' });
+
+            await expect(getLocal('settings')).resolves.toEqual({
+                origin: 'https://shikimori.one',
+                titleLang: 'romaji',
+            });
+        });
+
+        it('setSettings ignores an explicitly undefined value in the patch', async () => {
+            await setLocal('settings', { origin: 'https://shikimori.one', titleLang: 'romaji' });
+
+            await setSettings({ origin: undefined });
+
+            await expect(getSettings()).resolves.toEqual({
+                origin: 'https://shikimori.one',
+                titleLang: 'romaji',
+            });
+        });
+
+        it('setSettings does not touch auth', async () => {
+            const auth: LocalState['auth'] = {
+                accessToken: 'a',
+                refreshToken: 'r',
+                expiresAt: 0,
+                user: { id: 1, nickname: 'n', avatarUrl: '' },
+            };
+            await setLocal('auth', auth);
+
+            await setSettings({ origin: 'https://shikimori.one' });
+
+            await expect(getLocal('auth')).resolves.toEqual(auth);
         });
     });
 

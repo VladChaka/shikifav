@@ -1,5 +1,5 @@
 import { APP_NAME } from '../config';
-import { DEFAULT_SETTINGS, getLocal } from '../storage';
+import { getSettings } from '../storage';
 import { API_RATE_LIMITS, RateLimiter } from './rate-limiter';
 import { isApiError } from './types';
 import type { ApiError } from './types';
@@ -126,7 +126,7 @@ async function executeRequest<T>(spec: RequestSpec): Promise<HttpResult<T>> {
     // Origin is re-read from storage on every request: the service worker
     // restarts at will, so caching it in a module variable would go stale
     // (CLAUDE.md rule 4).
-    const settings = (await getLocal('settings')) ?? DEFAULT_SETTINGS;
+    const settings = await getSettings();
 
     let response: Response;
     try {

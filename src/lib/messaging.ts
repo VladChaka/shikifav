@@ -13,6 +13,7 @@ import type {
     UserRateRef,
     UserRateStatus,
 } from './api/types';
+import type { Origin } from './config';
 
 // Typed popup/options <-> background protocol (docs/02-architecture.md).
 // Raw browser.runtime.sendMessage calls outside this module are forbidden.
@@ -42,6 +43,12 @@ export interface MessageMap {
         payload: { rateId: string };
         data: { rate: RateState };
     };
+    // The only settings message: switching the API domain ends the session, and
+    // that must happen in background, in one step, next to the token (docs/04).
+    // titleLang and cache clearing stay plain storage writes from the UI —
+    // rule 1 restricts network, not storage, and an extra message would wake the
+    // service worker for nothing (popup open budget, docs/05).
+    'settings.setOrigin': { payload: { origin: Origin }; data: Record<string, never> };
 }
 
 export type MessageType = keyof MessageMap;

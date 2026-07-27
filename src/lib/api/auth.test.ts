@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing';
-import { getLocal, getSession, setLocal, setSession } from '../storage';
+import background from '@/entrypoints/background';
+import { sendMessage } from '../messaging';
+import { getLocal, getSession, getSettings, setLocal, setSession } from '../storage';
 import type { LocalState } from '../storage';
 import {
     authorizedRequest,
@@ -619,6 +621,76 @@ describe('auth', () => {
             await expect(getSession('lastTab')).resolves.toBeUndefined();
             // Settings survive logout.
             await expect(getAuthState()).resolves.toEqual({ status: 'anonymous' });
+        });
+    });
+
+    describe('background settings.setOrigin handler', () => {
+        beforeEach(() => {
+            // fake-browser has no contextMenus implementation, and
+            // background.main() subscribes to onClicked synchronously.
+            vi.spyOn(fakeBrowser.contextMenus.onClicked, 'addListener').mockImplementation(
+                () => {},
+            );
+        });
+
+        // Observable write order in storage.local: the handler is correct only
+        // if 'auth' disappears before the new origin appears.
+        function trackLocalKeyChanges(): string[] {
+            const keys: string[] = [];
+            fakeBrowser.storage.local.onChanged.addListener((changes) => {
+                keys.push(...Object.keys(changes));
+            });
+            return keys;
+        }
+
+        it('drops auth and the session cache, then writes the new origin — in that order', async () => {
+            background.main();
+            await setLocal('auth', storedAuth());
+            await setSession('lastTab', 'lists');
+            const changedKeys = trackLocalKeyChanges();
+
+            const response = await sendMessage('settings.setOrigin', {
+                origin: 'https://shikimori.one',
+            });
+
+            expect(response).toEqual({ ok: true, data: {} });
+            await expect(getLocal('auth')).resolves.toBeUndefined();
+            await expect(getSession('lastTab')).resolves.toBeUndefined();
+            await expect(getSettings()).resolves.toEqual({
+                origin: 'https://shikimori.one',
+                titleLang: 'ru',
+            });
+            // The ordering is the whole point: writing the origin first would
+            // leave a window with the new domain and the old token.
+            expect(changedKeys).toEqual(['auth', 'settings']);
+            // Ending the session is storage-only — no request to either domain.
+            expect(fetchMock).not.toHaveBeenCalled();
+        });
+
+        it('keeps the settings it was not asked to change', async () => {
+            background.main();
+            await setLocal('settings', { origin: 'https://shikimori.io', titleLang: 'romaji' });
+
+            await sendMessage('settings.setOrigin', { origin: 'https://shikimori.one' });
+
+            await expect(getSettings()).resolves.toEqual({
+                origin: 'https://shikimori.one',
+                titleLang: 'romaji',
+            });
+        });
+
+        it('writes the origin for an anonymous user too', async () => {
+            background.main();
+
+            const response = await sendMessage('settings.setOrigin', {
+                origin: 'https://shikimori.one',
+            });
+
+            expect(response).toEqual({ ok: true, data: {} });
+            await expect(getSettings()).resolves.toEqual({
+                origin: 'https://shikimori.one',
+                titleLang: 'ru',
+            });
         });
     });
 

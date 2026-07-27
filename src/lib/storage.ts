@@ -63,6 +63,30 @@ export async function removeLocal<K extends keyof LocalState>(key: K): Promise<v
     await browser.storage.local.remove(key);
 }
 
+// Single source of truth for settings: every reader goes through getSettings()
+// instead of getLocal('settings') ?? DEFAULT_SETTINGS. The stored object is
+// treated as partial on purpose — a build that wrote fewer keys (or a patch
+// that touched one of them) must not surface undefined where a value is
+// expected, so defaults are applied per key, not to the object as a whole.
+export async function getSettings(): Promise<LocalState['settings']> {
+    const stored = (await getLocal('settings')) as Partial<LocalState['settings']> | undefined;
+    return {
+        origin: stored?.origin ?? DEFAULT_SETTINGS.origin,
+        titleLang: stored?.titleLang ?? DEFAULT_SETTINGS.titleLang,
+    };
+}
+
+// Patch semantics: an omitted key (or an explicitly undefined one — Partial
+// allows it) keeps its current value, so a UI that owns a single setting cannot
+// wipe the rest.
+export async function setSettings(patch: Partial<LocalState['settings']>): Promise<void> {
+    const current = await getSettings();
+    await setLocal('settings', {
+        origin: patch.origin ?? current.origin,
+        titleLang: patch.titleLang ?? current.titleLang,
+    });
+}
+
 export async function getSession<K extends keyof SessionState>(
     key: K,
 ): Promise<SessionState[K] | undefined> {

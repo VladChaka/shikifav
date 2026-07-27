@@ -5,6 +5,7 @@ import { createRate, deleteRate, incrementRate, updateRate } from '@/src/lib/api
 import { registerUserAgentRule } from '@/src/lib/api/user-agent-rule';
 import { handleMenuClick, registerContextMenu } from '@/src/lib/context-menu';
 import { onMessage } from '@/src/lib/messaging';
+import { setSettings } from '@/src/lib/storage';
 
 export default defineBackground(() => {
     // Module state dies with the service worker; defineBackground runs on every
@@ -66,5 +67,18 @@ export default defineBackground(() => {
         'rates.increment': async ({ rateId }) => ({
             rate: await incrementRate(rateId),
         }),
+        'settings.setOrigin': async ({ origin }) => {
+            // Changing the domain ends the session by construction: the token
+            // was issued by the app on one domain, cross-domain validity was
+            // never verified, and .one answers 301 to POST /oauth/token, so it
+            // cannot even be refreshed there (docs/03, docs/04).
+            // Order is strict — logout() first, settings after. The reverse
+            // would open a window where the new origin is already in storage
+            // while the old token is still there, and any request in between
+            // would go to the new domain with a foreign Bearer.
+            await logout();
+            await setSettings({ origin });
+            return {};
+        },
     });
 });

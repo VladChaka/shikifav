@@ -27,6 +27,7 @@ async function setup(overrides: Partial<MessageHandlers> = {}): Promise<UseAuth>
         'rates.increment': async () => ({
             rate: { id: '1', status: 'watching', score: 0, episodes: 0, chapters: 0, volumes: 0 },
         }),
+        'settings.setOrigin': async () => ({}),
         ...overrides,
     });
     const composable = await import('./use-auth');

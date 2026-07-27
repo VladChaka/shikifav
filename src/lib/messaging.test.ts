@@ -3,6 +3,7 @@ import { fakeBrowser } from 'wxt/testing';
 import { onMessage, sendMessage } from './messaging';
 import type { MessageHandlers, MessageResponse, MessageType } from './messaging';
 import type { ApiError, User } from './api/types';
+import type { Origin } from './config';
 
 // fake-browser invokes onMessage listeners without sendResponse, so these tests
 // exercise the promise-return branch of the listener; the sendResponse+return true
@@ -28,6 +29,7 @@ function makeHandlers(overrides: Partial<MessageHandlers> = {}): MessageHandlers
         'rates.increment': async () => ({
             rate: { id: '1', status: 'watching', score: 0, episodes: 0, chapters: 0, volumes: 0 },
         }),
+        'settings.setOrigin': async () => ({}),
         ...overrides,
     };
 }
@@ -94,6 +96,25 @@ describe('messaging', () => {
             registerBackground();
             const response = await sendMessage('auth.logout');
             expect(response).toEqual({ ok: true, data: {} });
+        });
+    });
+
+    describe('settings round-trip', () => {
+        it('settings.setOrigin delivers the origin and answers with an empty data object', async () => {
+            const received: Origin[] = [];
+            registerBackground({
+                'settings.setOrigin': async ({ origin }) => {
+                    received.push(origin);
+                    return {};
+                },
+            });
+
+            const response = await sendMessage('settings.setOrigin', {
+                origin: 'https://shikimori.one',
+            });
+
+            expect(response).toEqual({ ok: true, data: {} });
+            expect(received).toEqual(['https://shikimori.one']);
         });
     });
 

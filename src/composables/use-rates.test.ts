@@ -126,6 +126,7 @@ function setup(initial: TitleCard[], overrides: Partial<MessageHandlers> = {}): 
         'rates.increment': async () => ({
             rate: { id: '100', status: 'watching', score: 0, episodes: 0, chapters: 0, volumes: 0 },
         }),
+        'settings.setOrigin': async () => ({}),
         ...overrides,
     });
     const items = ref(initial);

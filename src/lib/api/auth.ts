@@ -1,6 +1,6 @@
 import { browser } from 'wxt/browser';
 import { CLIENT_ID, CLIENT_SECRET } from '../config';
-import { clearSession, DEFAULT_SETTINGS, getLocal, removeLocal, setLocal } from '../storage';
+import { clearSession, getLocal, getSettings, removeLocal, setLocal } from '../storage';
 import { apiRequest, oauthRequest, setTokenProvider } from './http';
 import type { ApiRequestOptions, HttpResult } from './http';
 import { isApiError } from './types';
@@ -96,7 +96,7 @@ export function login(): Promise<User> {
 }
 
 async function doLogin(): Promise<User> {
-    const settings = (await getLocal('settings')) ?? DEFAULT_SETTINGS;
+    const settings = await getSettings();
     const redirectUri = browser.identity.getRedirectURL();
     const pkce = PKCE_ENABLED ? await createPkcePair() : undefined;
     const authorizeParams = new URLSearchParams({

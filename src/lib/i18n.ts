@@ -121,6 +121,23 @@ export const i18n = {
     contextMenu: {
         searchSelection: 'Найти «%s» на Shikimori',
     },
+    // Options page (docs/05 "Options page"): API domain, title language,
+    // cache/session buttons, extension version.
+    options: {
+        title: 'Настройки',
+        originLabel: 'Домен API',
+        // Switching the domain drops the session on purpose (docs/03 «301 на
+        // shikimori.one», docs/04) — the hint must say so before the click.
+        originHint:
+            'Рабочий домен — shikimori.io: shikimori.one отвечает редиректом на запрос токена. Смена домена завершает сессию — потребуется войти заново.',
+        titleLangLabel: 'Названия',
+        titleLangRu: 'русские',
+        titleLangRomaji: 'ромадзи',
+        clearCache: 'Очистить кэш',
+        cacheCleared: 'Кэш очищен',
+        logout: 'Выйти',
+        version: 'Версия',
+    },
     errors: {
         network: 'Нет соединения с Shikimori. Проверьте интернет и повторите.',
         unauthorized: 'Сессия истекла. Войдите заново.',
