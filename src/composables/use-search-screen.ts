@@ -3,6 +3,7 @@ import type { Ref } from 'vue';
 import { useRates } from './use-rates';
 import { useSearch } from './use-search';
 import type { UseSearch } from './use-search';
+import { useSettings } from './use-settings';
 import type { TitleCard, UserRateStatus } from '../lib/api/types';
 
 // Search screen wiring shared by the popup and the full-screen search page
@@ -19,6 +20,8 @@ export interface UseSearchScreen extends UseSearch {
     // list (id alone can collide between anime and manga of the same id).
     openMenuKey: Ref<string | null>;
     onSetStatus: (card: TitleCard, status: UserRateStatus) => void;
+    // Primary part of the split button: adds with the `quickStatus` setting.
+    onQuickAdd: (card: TitleCard) => void;
     onRemove: (card: TitleCard) => void;
 }
 
@@ -43,9 +46,18 @@ export function useSearchScreen(showToast: (text: string) => void): UseSearchScr
         );
     }
 
+    // One-click add (Ф6-20): the status is the `quickStatus` setting, not a
+    // constant. The button label in TitleCard reads the same settings ref, so
+    // the two cannot show and write different statuses.
+    const { settings } = useSettings();
+
+    function onQuickAdd(card: TitleCard): void {
+        onSetStatus(card, settings.value.quickStatus);
+    }
+
     function onRemove(card: TitleCard): void {
         void performAction(card, { type: 'delete' });
     }
 
-    return { ...search, busyIds, warnings, openMenuKey, onSetStatus, onRemove };
+    return { ...search, busyIds, warnings, openMenuKey, onSetStatus, onQuickAdd, onRemove };
 }

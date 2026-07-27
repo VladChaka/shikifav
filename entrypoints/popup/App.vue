@@ -49,7 +49,7 @@
                     :busy-ids="busyIds"
                     :warnings="warnings"
                     @retry="retry"
-                    @add="onSetStatus($event, 'planned')"
+                    @add="onQuickAdd"
                     @set-status="onSetStatus"
                     @remove="onRemove"
                 />
@@ -106,7 +106,7 @@ import UserHeader from '@/src/components/UserHeader.vue';
 import { useAuth } from '@/src/composables/use-auth';
 import { useLists } from '@/src/composables/use-lists';
 import { useSearchScreen } from '@/src/composables/use-search-screen';
-import { getSession, removeSession, setSession } from '@/src/lib/storage';
+import { getSession, getSettings, removeSession, setSession } from '@/src/lib/storage';
 import { apiErrorMessage } from '@/src/lib/i18n';
 
 const { status, user, error } = useAuth();
@@ -135,6 +135,7 @@ const {
     warnings,
     openMenuKey,
     onSetStatus,
+    onQuickAdd,
     onRemove,
 } = useSearchScreen(showToast);
 
@@ -162,10 +163,11 @@ const {
     dismissSuggest: dismissRateSuggest,
 } = useLists(showToast);
 
-// Active top-level tab (docs/05). Restored from session on open and persisted on
-// every switch, so the popup reopens on the last used tab.
+// Active top-level tab (docs/05). Which tab opens is the `startTab` setting:
+// 'last' restores session.lastTab, 'search'/'lists' pin the tab (Ф6-20). The
+// cache is written on every switch either way — 'last' lives on it.
 const activeTab = ref<TabId>('search');
-// The async lastTab restore must not override a tab the user already picked.
+// The async start-tab restore must not override a tab the user already picked.
 let tabTouched = false;
 
 // Query handed over by the context menu (Ф5-11), pending until it runs signed
@@ -176,12 +178,13 @@ let pendingQuery: string | null = null;
 let sawAnonymous = false;
 
 onMounted(async () => {
-    // Both keys are read as one pair, so the outcome cannot depend on which
+    // All three reads are awaited as one, so the outcome cannot depend on which
     // storage promise settles first: a query handed over by the context menu
-    // (Ф5-11) always beats the restored tab.
-    const [pending, lastTab] = await Promise.all([
+    // (Ф5-11) always beats both the restored tab and the startTab setting.
+    const [pending, lastTab, settings] = await Promise.all([
         getSession('pendingSearch'),
         getSession('lastTab'),
+        getSettings(),
     ]);
     if (pending) {
         // Kept in storage until the search actually runs signed in (see the
@@ -193,19 +196,29 @@ onMounted(async () => {
         // and the read lands while the auth gate still shows the skeleton, so
         // there is no tab the user could have picked before it.
         activeTab.value = 'search';
-        // The selection carries no type, and a «Ранобэ» restored from the
-        // session cache would silently answer an anime title with 0 results
-        // (docs/05 §Поиск из контекстного меню). Clearing the query first keeps
-        // setType from dispatching a request for the previous session's query —
-        // the one request of this open belongs to startQuery.
+        // The selection carries no type, so the search runs with the user's
+        // default type instead of a «Ранобэ» restored from the session cache,
+        // which would silently answer an anime title with 0 results (docs/05
+        // §Поиск из контекстного меню; until Ф6-20 the type was pinned to
+        // 'anime' — the setting is the explicit intent and outranks it).
+        // Clearing the query first keeps setType from dispatching a request for
+        // the previous session's query — the one request of this open belongs
+        // to startQuery.
         setQuery('');
-        setSearchType('anime');
+        setSearchType(settings.defaultSearchType);
         startQuery(pending.query);
         return;
     }
-    if (lastTab && !tabTouched) {
-        activeTab.value = lastTab;
+    if (tabTouched) {
+        return; // the user picked a tab while these reads were in flight
     }
+    if (settings.startTab === 'last') {
+        if (lastTab) {
+            activeTab.value = lastTab;
+        }
+        return;
+    }
+    activeTab.value = settings.startTab;
 });
 
 // The handed-over query is consumed only once it has run with a token: while

@@ -89,7 +89,8 @@ import type { MediaKind } from '@/src/lib/i18n';
 //   hasMore       — another page exists → show "Ещё"
 //   loadingMore   — the next page is loading → "Ещё" is disabled/labelled
 //   filterType    — selected type (Аниме/Манга/Ранобэ, phase 4)
-//   filterStatus  — selected status; use-lists defaults it to 'watching' (docs/05)
+//   filterStatus  — selected status; use-lists starts it from the
+//                   defaultListStatus setting, default 'watching' (docs/05)
 //   busyIds       — rateIds with a write in flight (locks that row)
 //   suggestIds    — rateIds showing the "перевести в «Просмотрено»?" offer
 //   warnings      — rateId -> inline warning text (revoked edit access)

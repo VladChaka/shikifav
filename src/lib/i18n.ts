@@ -99,7 +99,8 @@ export const i18n = {
         completed: 'Прочитано',
     },
     actions: {
-        addPlanned: '+ Запланировано',
+        // The one-click add button has no constant label: it is built as
+        // '+ ' + statusLabel(quickStatus, media) (Ф6-20).
         chooseStatus: 'Выбрать статус',
         removeFromList: 'Удалить из списка',
         retry: 'Повторить',

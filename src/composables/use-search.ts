@@ -1,7 +1,7 @@
 import { ref } from 'vue';
 import type { Ref } from 'vue';
 import { sendMessage } from '../lib/messaging';
-import { getSession, setSession } from '../lib/storage';
+import { getSession, getSettings, setSession } from '../lib/storage';
 import type { ApiError, SearchType, TitleCard } from '../lib/api/types';
 
 // Search list states (docs/05): 'idle' is the "type a title" hint shown for an
@@ -36,8 +36,8 @@ const items = ref<TitleCard[]>([]);
 const error = ref<ApiError | undefined>(undefined);
 
 let initialized = false;
-// User already typed something: the async session-cache restore must not
-// overwrite live state when it finally resolves.
+// User already typed or picked a type: the async start-state restore (session
+// cache + settings) must not overwrite live state when it finally resolves.
 let touched = false;
 let debounceTimer: ReturnType<typeof setTimeout> | undefined;
 // Monotonic id: only the response of the LAST dispatched request is applied,
@@ -75,7 +75,7 @@ function setQuery(value: string): void {
 // Query handed over from outside the field (search page opened from the context
 // menu with ?q=…): the user already "typed", so the 300 ms debounce would only
 // delay the first render. `touched` additionally guards the value against a
-// late restoreFromCache() overwriting it with the previous session's search.
+// late restoreStartState() overwriting it with the previous session's search.
 function startQuery(value: string): void {
     touched = true;
     query.value = value;
@@ -164,11 +164,23 @@ function retry(): void {
     }
 }
 
-// Instant first render from the session cache (docs/05); no automatic refetch —
-// the network catches up after the next input or retry.
-async function restoreFromCache(): Promise<void> {
-    const cached = await getSession('lastSearch');
-    if (!cached || touched) {
+// Start state, in priority order (Ф6-20):
+//   1. whatever the user already did — `touched` (they cannot be overruled by a
+//      read that lands after their click);
+//   2. session cache — instant first render of the previous search (docs/05);
+//      a type switched by hand last session is the fresher intent, so it wins
+//      over the setting;
+//   3. `defaultSearchType` from the settings.
+// Both reads are awaited together, so the outcome cannot depend on which
+// storage promise settles first. No automatic refetch — the network catches up
+// after the next input or retry.
+async function restoreStartState(): Promise<void> {
+    const [settings, cached] = await Promise.all([getSettings(), getSession('lastSearch')]);
+    if (touched) {
+        return;
+    }
+    if (!cached) {
+        searchType.value = settings.defaultSearchType;
         return;
     }
     query.value = cached.query;
@@ -181,7 +193,7 @@ async function restoreFromCache(): Promise<void> {
 export function useSearch(): UseSearch {
     if (!initialized) {
         initialized = true;
-        void restoreFromCache();
+        void restoreStartState();
     }
     return { query, searchType, status, items, error, setQuery, startQuery, setType, retry };
 }

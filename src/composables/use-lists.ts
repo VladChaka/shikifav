@@ -1,7 +1,7 @@
 import { ref } from 'vue';
 import type { Ref } from 'vue';
 import { sendMessage } from '../lib/messaging';
-import { getSession, setSession } from '../lib/storage';
+import { DEFAULT_SETTINGS, getSession, getSettings, setSession } from '../lib/storage';
 import { apiErrorMessage, i18n } from '../lib/i18n';
 import { failureToast, isEditForbidden } from './use-rates';
 import type {
@@ -51,10 +51,9 @@ export interface UseLists {
 }
 
 // Lists open on anime by default; Манга/Ранобэ are selectable in MyListsTab and
-// listRates routes reads by the active filter type.
+// listRates routes reads by the active filter type. There is no setting for the
+// type — only for the status filter (docs/05).
 const DEFAULT_TYPE: SearchType = 'anime';
-// docs/05: the status filter defaults to «Смотрю».
-const DEFAULT_STATUS: UserRateStatus = 'watching';
 
 // Module-level state: the popup is a single short-lived instance, so every
 // component shares one lists session (same pattern as use-search/use-auth).
@@ -64,7 +63,10 @@ const errorText = ref<string | undefined>(undefined);
 const hasMore = ref(false);
 const loadingMore = ref(false);
 const filterType = ref<SearchType>(DEFAULT_TYPE);
-const filterStatus = ref<UserRateStatus>(DEFAULT_STATUS);
+// The status filter follows the `defaultListStatus` setting (Ф6-20), which is
+// read asynchronously — so the ref opens on the default of that very setting
+// («Смотрю») instead of a second hardcoded constant next to it.
+const filterStatus = ref<UserRateStatus>(DEFAULT_SETTINGS.defaultListStatus);
 const busyIds = ref(new Set<string>());
 const suggestIds = ref(new Set<string>());
 const warnings = ref(new Map<string, string>());
@@ -76,8 +78,9 @@ let initialized = false;
 // True while an activate() refresh chain is running: shows of the tab during
 // an in-flight load coalesce into that one rates.list (limiter budget).
 let refreshing = false;
-// User already changed a filter or triggered a load: the async cache restore
-// must not overwrite live state when it finally resolves (as in use-search).
+// User already changed a filter or triggered a load: the async start-state
+// restore (session cache + settings) must not overwrite live state when it
+// finally resolves (as in use-search).
 let touched = false;
 let restorePromise: Promise<void> = Promise.resolve();
 // Monotonic id: only the response of the LAST first-page load is applied, and a
@@ -147,14 +150,24 @@ async function writeCache(): Promise<void> {
     }
 }
 
-// Instant first render from session.lastList (docs/05): restores the last-viewed
-// filter and rows, then activate() lets the network catch up. Never rejects —
-// activate() chains loadFirstPage on this promise, so a failed restore must
-// still fall through to the network load.
-async function restoreFromCache(): Promise<void> {
+// Start state, in priority order (Ф6-20):
+//   1. whatever the user already did — `touched`;
+//   2. session.lastList — instant first render of the last-viewed filter and
+//      rows (docs/05); a filter switched by hand last session is the fresher
+//      intent, so it wins over the setting;
+//   3. `defaultListStatus` from the settings.
+// Both reads are awaited together, so the outcome cannot depend on which
+// storage promise settles first, and activate() chains loadFirstPage on this
+// promise — the first request always goes out with the final filter. Never
+// rejects: a failed read must still fall through to the network load.
+async function restoreStartState(): Promise<void> {
     try {
-        const cached = await getSession('lastList');
-        if (!cached || touched) {
+        const [settings, cached] = await Promise.all([getSettings(), getSession('lastList')]);
+        if (touched) {
+            return;
+        }
+        if (!cached) {
+            filterStatus.value = settings.defaultListStatus;
             return;
         }
         filterType.value = cached.type;
@@ -450,7 +463,7 @@ export function useLists(showToast: (text: string) => void): UseLists {
     showToastFn = showToast;
     if (!initialized) {
         initialized = true;
-        restorePromise = restoreFromCache();
+        restorePromise = restoreStartState();
     }
     return {
         items,

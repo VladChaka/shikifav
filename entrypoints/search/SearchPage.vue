@@ -57,7 +57,7 @@
                             :busy-ids="busyIds"
                             :warnings="warnings"
                             @retry="retry"
-                            @add="onSetStatus($event, 'planned')"
+                            @add="onQuickAdd"
                             @set-status="onSetStatus"
                             @remove="onRemove"
                         />
@@ -94,6 +94,7 @@ import UserHeader from '@/src/components/UserHeader.vue';
 import { useAuth } from '@/src/composables/use-auth';
 import { useSearchScreen } from '@/src/composables/use-search-screen';
 import { apiErrorMessage } from '@/src/lib/i18n';
+import { getSettings } from '@/src/lib/storage';
 
 // Full-screen search page opened by the context menu as search.html?q=…
 // (docs/05). The query is parsed in main.ts and handed over as a prop: the page
@@ -126,6 +127,7 @@ const {
     warnings,
     openMenuKey,
     onSetStatus,
+    onQuickAdd,
     onRemove,
 } = useSearchScreen(showToast);
 
@@ -145,7 +147,16 @@ if (props.initialQuery !== '') {
     // Always true here: the page is fresh, so useAuth is still 'loading' — the
     // state is only ever known after auth.getState answers.
     pendingInitial = true;
+    // Dispatched synchronously, before any storage read: the first paint of the
+    // page must not wait on storage, and startQuery marks the shared search
+    // session as touched so the previous session's cache cannot land on top.
     startQuery(props.initialQuery);
+    // The selection carries no type, so the search belongs to the user's
+    // default type (Ф6-20 — the setting outranks the 'anime' this page used to
+    // pin). The setting is read after the dispatch above, and setType re-runs
+    // the same query only when the type actually differs: a default profile
+    // ('anime') costs no second request.
+    void getSettings().then((settings) => setSearchType(settings.defaultSearchType));
 }
 
 watch(status, (next) => {

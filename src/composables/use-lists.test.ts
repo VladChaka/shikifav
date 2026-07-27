@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing';
 import { ref, watch } from 'vue';
 import type { MessageHandlers } from '../lib/messaging';
-import type { SessionState } from '../lib/storage';
+import type { LocalState, SessionState } from '../lib/storage';
 import { i18n } from '../lib/i18n';
 import type { ApiError, RatePatch, RateRow, RateState } from '../lib/api/types';
 import type { UseLists } from './use-lists';
@@ -89,6 +89,7 @@ interface Setup {
 async function setup(
     overrides: Partial<MessageHandlers> = {},
     seedLastList?: SessionState['lastList'],
+    seedSettings?: Partial<LocalState['settings']>,
 ): Promise<Setup> {
     vi.resetModules();
     const messaging = await import('../lib/messaging');
@@ -96,6 +97,9 @@ async function setup(
     const storage = await import('../lib/storage');
     if (seedLastList) {
         await storage.setSession('lastList', seedLastList);
+    }
+    if (seedSettings) {
+        await storage.setSettings(seedSettings);
     }
     const composable = await import('./use-lists');
     const toasts: string[] = [];
@@ -1059,6 +1063,88 @@ describe('use-lists', () => {
                     hasMore: false,
                 });
             });
+        });
+
+        // Ф6-20: `defaultListStatus` decides the start filter, but only when
+        // nothing fresher exists — the last-viewed filter in the session cache
+        // and anything the user already did both outrank it.
+        it('starts on the status filter from the settings when nothing is cached', async () => {
+            const calls: { status: string; page: number }[] = [];
+            const { lists } = await setup(
+                {
+                    'rates.list': async ({ status, page }) => {
+                        calls.push({ status, page });
+                        return { items: [row('1', { status: 'planned' })], hasMore: false };
+                    },
+                },
+                undefined,
+                { defaultListStatus: 'planned' },
+            );
+
+            lists.activate();
+            await vi.waitFor(() => expect(calls).toEqual([{ status: 'planned', page: 1 }]));
+            expect(lists.filterStatus.value).toBe('planned');
+        });
+
+        it('keeps «Смотрю» as the start filter on a profile without settings', async () => {
+            const calls: { status: string; page: number }[] = [];
+            const { lists } = await setup({
+                'rates.list': async ({ status, page }) => {
+                    calls.push({ status, page });
+                    return { items: [], hasMore: false };
+                },
+            });
+
+            lists.activate();
+            await vi.waitFor(() => expect(calls).toEqual([{ status: 'watching', page: 1 }]));
+            expect(lists.filterStatus.value).toBe('watching');
+        });
+
+        it('lets the cached filter outrank the settings default', async () => {
+            const cached = row('1', { status: 'completed', progress: 12 });
+            const calls: { status: string; page: number }[] = [];
+            const { lists } = await setup(
+                {
+                    'rates.list': async ({ status, page }) => {
+                        calls.push({ status, page });
+                        return { items: [cached], hasMore: false };
+                    },
+                },
+                { type: 'anime', status: 'completed', items: [cached], page: 1, hasMore: false },
+                { defaultListStatus: 'planned' },
+            );
+
+            lists.activate();
+            await vi.waitFor(() => expect(calls).toEqual([{ status: 'completed', page: 1 }]));
+            expect(lists.filterStatus.value).toBe('completed');
+        });
+
+        it('does not let a late settings read overwrite a filter chosen by the user', async () => {
+            // Both start-state reads land together, so gating the local storage
+            // holds the whole restore back until the user has acted.
+            const gate = deferred<Record<string, unknown>>();
+            const localGet = fakeBrowser.storage.local.get;
+            fakeBrowser.storage.local.get = (() => gate.promise) as typeof localGet;
+            try {
+                const calls: string[] = [];
+                const { lists } = await setup({
+                    'rates.list': async ({ status }) => {
+                        calls.push(status);
+                        return { items: [], hasMore: false };
+                    },
+                });
+
+                lists.setFilterStatus('dropped'); // the user acts before the read
+                await vi.waitFor(() => expect(calls).toEqual(['dropped']));
+
+                gate.resolve({ settings: { defaultListStatus: 'planned' } });
+                await flush();
+
+                expect(lists.filterStatus.value).toBe('dropped');
+                expect(calls).toEqual(['dropped']); // no reload behind their back
+            } finally {
+                fakeBrowser.storage.local.get = localGet;
+            }
         });
 
         it('a failed session read still loads the first page (no eternal skeleton)', async () => {

@@ -169,6 +169,31 @@ describe('popup opened by the context menu (pendingSearch, ф.5)', () => {
         expect(requests).toEqual([{ query: 'берсерк', type: 'anime' }]);
     });
 
+    // Ф6-20 (owner decision): the type used to be pinned to 'anime' here,
+    // because a selection carries none and a cached «Ранобэ» would silently
+    // answer with zero results. The user now has an explicit default type, and
+    // it outranks that rule — while the cache still loses to it.
+    it('searches with the default type from the settings', async () => {
+        const requests: SearchRequest[] = [];
+        await mountPopup(
+            async ({ setSession, setSettings }) => {
+                await setSettings({ defaultSearchType: 'ranobe' });
+                await setSession('lastSearch', { query: 'kimetsu', type: 'manga', items: [] });
+                await setSession('pendingSearch', { query: 'берсерк' });
+            },
+            {
+                'search.titles': async ({ query, type }) => {
+                    requests.push({ query, type });
+                    return { items: [card('9', 'Berserk')] };
+                },
+            },
+        );
+
+        await vi.waitFor(() => expect(requests).toHaveLength(1));
+        await settle();
+        expect(requests).toEqual([{ query: 'берсерк', type: 'ranobe' }]);
+    });
+
     // Signing in opens the OAuth window and Chrome closes the popup with it, so
     // a key consumed on read would lose the query for good: the user would have
     // to go back and select the text again.

@@ -71,7 +71,7 @@ import { apiErrorMessage, i18n } from '@/src/lib/i18n';
 // Emits:
 //   retry                      — error state's retry button
 //   update:openMenuKey(key)    — menu opened on a card / closed
-//   add(card)                  — one-click "add to planned"
+//   add(card)                  — one-click add (status = the quickStatus setting)
 //   set-status(card, status)   — status picked in the menu
 //   remove(card)               — removed from my list
 withDefaults(

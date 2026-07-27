@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing';
 import type { MessageHandlers } from '../lib/messaging';
-import type { SessionState } from '../lib/storage';
+import type { LocalState, SessionState } from '../lib/storage';
 import type { ApiError, TitleCard } from '../lib/api/types';
 import type { UseSearch } from './use-search';
 
@@ -88,6 +88,7 @@ interface Setup {
 async function setup(
     overrides: Partial<MessageHandlers> = {},
     seedLastSearch?: SessionState['lastSearch'],
+    seedSettings?: Partial<LocalState['settings']>,
 ): Promise<Setup> {
     vi.resetModules();
     const messaging = await import('../lib/messaging');
@@ -95,6 +96,9 @@ async function setup(
     const storage = await import('../lib/storage');
     if (seedLastSearch) {
         await storage.setSession('lastSearch', seedLastSearch);
+    }
+    if (seedSettings) {
+        await storage.setSettings(seedSettings);
     }
     const composable = await import('./use-search');
     return { search: composable.useSearch(), storage };
@@ -553,6 +557,68 @@ describe('use-search', () => {
             await vi.waitFor(() =>
                 expect(requests).toEqual([{ query: 'overlord', type: 'ranobe' }]),
             );
+        });
+
+        // Ф6-20: `defaultSearchType` decides the start type, but only when
+        // nothing fresher exists — the previous session's cache and anything
+        // the user already did both outrank it.
+        it('starts on the search type from the settings when nothing is cached', async () => {
+            const requests: { query: string; type: string }[] = [];
+            const { search } = await setup(
+                {
+                    'search.titles': async ({ query, type }) => {
+                        requests.push({ query, type });
+                        return { items: [] };
+                    },
+                },
+                undefined,
+                { defaultSearchType: 'ranobe' },
+            );
+
+            await vi.waitFor(() => expect(search.searchType.value).toBe('ranobe'));
+            search.setQuery('overlord');
+            await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+            await vi.waitFor(() =>
+                expect(requests).toEqual([{ query: 'overlord', type: 'ranobe' }]),
+            );
+        });
+
+        it('keeps anime as the start type on a profile without settings', async () => {
+            const { search } = await setup();
+
+            await vi.advanceTimersByTimeAsync(0);
+            expect(search.searchType.value).toBe('anime');
+        });
+
+        it('lets the session cache outrank the settings default', async () => {
+            const cachedItems = [mangaCard('9', 'Berserk')];
+            const { search } = await setup(
+                {},
+                { query: 'berserk', type: 'manga', items: cachedItems },
+                { defaultSearchType: 'ranobe' },
+            );
+
+            await vi.waitFor(() => expect(search.status.value).toBe('data'));
+            expect(search.searchType.value).toBe('manga');
+        });
+
+        it('does not let a late settings read overwrite a type chosen by the user', async () => {
+            // Both start-state reads land together, so gating the local storage
+            // holds the whole restore back until the user has acted.
+            const gate = deferred<Record<string, unknown>>();
+            const localGet = fakeBrowser.storage.local.get;
+            fakeBrowser.storage.local.get = (() => gate.promise) as typeof localGet;
+            try {
+                const { search } = await setup();
+                search.setType('manga'); // the user acts before the read lands
+
+                gate.resolve({ settings: { defaultSearchType: 'ranobe' } });
+                await vi.advanceTimersByTimeAsync(0);
+
+                expect(search.searchType.value).toBe('manga');
+            } finally {
+                fakeBrowser.storage.local.get = localGet;
+            }
         });
 
         it('does not let a late cache restore overwrite a type chosen by the user', async () => {

@@ -84,10 +84,16 @@ let cleanups: Array<() => void> = [];
 async function mountPage(
     initialQuery: string,
     overrides: Partial<MessageHandlers> = {},
+    // Storage seed, applied through the SAME fresh module graph the page is
+    // mounted from (as in AppPendingSearch.test.ts).
+    seed?: (storage: typeof import('@/src/lib/storage')) => Promise<void>,
 ): Promise<Mounted> {
     vi.resetModules();
     const messaging = await import('@/src/lib/messaging');
     messaging.onMessage(handlers(overrides));
+    if (seed) {
+        await seed(await import('@/src/lib/storage'));
+    }
     const { default: SearchPage } = await import('@/entrypoints/search/SearchPage.vue');
 
     const container = createFakeElement('#container');
@@ -148,6 +154,44 @@ describe('SearchPage (ф.5)', () => {
         expect(find(container, 'search__input').props.value).toBe('berserk');
         await settle();
         expect(requests).toEqual([{ query: 'berserk', type: 'anime' }]);
+    });
+
+    // Ф6-20: the page used to open on 'anime' for the same reason the popup did
+    // — a selection carries no type. The user's default type now decides. The
+    // first dispatch still goes out synchronously (the first paint must not
+    // wait on a storage read), so a non-default type costs one corrective
+    // re-run; a default profile costs nothing (the case asserted above).
+    it('re-runs the ?q= query with the default type from the settings', async () => {
+        const requests: SearchRequest[] = [];
+        const { container } = await mountPage(
+            'berserk',
+            {
+                'search.titles': async ({ query, type }) => {
+                    requests.push({ query, type });
+                    return {
+                        items: [card('9', type === 'ranobe' ? 'Berserk (ranobe)' : 'Berserk')],
+                    };
+                },
+            },
+            async ({ setSettings }) => {
+                await setSettings({ defaultSearchType: 'ranobe' });
+            },
+        );
+
+        // The synchronous first run leaves with the type the module opens on;
+        // the settings read lands a tick later and re-runs the same query. The
+        // correction is far faster than the network, so the anime response is
+        // dropped by its stale request id and never reaches the screen.
+        await vi.waitFor(() => expect(requests).toHaveLength(2));
+        expect(requests).toEqual([
+            { query: 'berserk', type: 'anime' },
+            { query: 'berserk', type: 'ranobe' },
+        ]);
+        await vi.waitFor(() =>
+            expect(textOf(find(container, 'card'))).toContain('Berserk (ranobe)'),
+        );
+        await settle();
+        expect(requests).toHaveLength(2); // the correction runs exactly once
     });
 
     it('opened without ?q= searches nothing and puts the caret in the field', async () => {

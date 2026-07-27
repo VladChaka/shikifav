@@ -70,8 +70,9 @@
             </p>
 
             <div class="card__control">
-                <!-- Not in my list: split button — primary part adds to "planned"
-                     in one click, the caret opens the full status menu (docs/05). -->
+                <!-- Not in my list: split button — primary part adds with the
+                     quickStatus setting in one click, the caret opens the full
+                     status menu (docs/05). -->
                 <span
                     v-if="card.userRate === null"
                     class="card__split"
@@ -82,7 +83,7 @@
                         :disabled="busy"
                         @click="emit('add')"
                     >
-                        {{ i18n.actions.addPlanned }}
+                        {{ addLabel }}
                     </button>
                     <button
                         class="card__caret"
@@ -166,7 +167,8 @@ const props = withDefaults(
 );
 
 const emit = defineEmits<{
-    // Primary one-click "add to planned".
+    // Primary one-click add; which status it means is the owner's business
+    // (the quickStatus setting), the card only labels the button with it.
     add: [];
     // Status picked in the menu; for a card without userRate this means
     // "create with that status", for a card with userRate — "update".
@@ -186,6 +188,11 @@ const original = computed(() => names.value.secondary);
 // Wording/meta variant (phase 4): anime cards show episodes and «Смотрю…»
 // labels, manga/ranobe cards show volumes/chapters and «Читаю…» labels.
 const media = computed(() => mediaOf(props.card.targetType));
+
+// One-click add button (Ф6-20): the status is a setting, and its label is
+// media-dependent — the same quickStatus reads «Смотрю» on an anime card and
+// «Читаю» on a manga one.
+const addLabel = computed(() => `+ ${statusLabel(settings.value.quickStatus, media.value)}`);
 
 // 0.0 means "no score yet" (announcements) — hidden.
 const scoreText = computed(() =>
