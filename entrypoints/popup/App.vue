@@ -106,7 +106,13 @@ import UserHeader from '@/src/components/UserHeader.vue';
 import { useAuth } from '@/src/composables/use-auth';
 import { useLists } from '@/src/composables/use-lists';
 import { useSearchScreen } from '@/src/composables/use-search-screen';
-import { getSession, getSettings, removeSession, setSession } from '@/src/lib/storage';
+import {
+    DEFAULT_SETTINGS,
+    getSession,
+    getSettings,
+    removeSession,
+    setSession,
+} from '@/src/lib/storage';
 import { apiErrorMessage } from '@/src/lib/i18n';
 
 const { status, user, error } = useAuth();
@@ -181,11 +187,14 @@ onMounted(async () => {
     // All three reads are awaited as one, so the outcome cannot depend on which
     // storage promise settles first: a query handed over by the context menu
     // (Ф5-11) always beats both the restored tab and the startTab setting.
+    // Never rejects (same rule as src/lib/theme.ts): a failed storage read must
+    // not break the open — the popup then keeps the tab it started on and the
+    // documented defaults, instead of dying on an unhandled rejection.
     const [pending, lastTab, settings] = await Promise.all([
         getSession('pendingSearch'),
         getSession('lastTab'),
         getSettings(),
-    ]);
+    ]).catch(() => [undefined, undefined, DEFAULT_SETTINGS] as const);
     if (pending) {
         // Kept in storage until the search actually runs signed in (see the
         // watcher below): signing in opens the OAuth window, Chrome closes the

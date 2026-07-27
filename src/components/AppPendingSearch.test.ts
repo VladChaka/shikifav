@@ -136,6 +136,36 @@ describe('popup opened by the context menu (pendingSearch, ф.5)', () => {
         expect(requests).toHaveLength(1);
     });
 
+    // Ф6-23: the same invariant against the `startTab` setting (Ф6-20), not just
+    // against the cached tab — the popup exists because of this query, so a
+    // pinned «Мои списки» must not hide the search it was opened for. Both are
+    // read together in onMounted, and only the early return keeps the query on
+    // top of the setting.
+    it('beats a start tab pinned by the settings', async () => {
+        const requests: SearchRequest[] = [];
+        const container = await mountPopup(
+            async ({ setSession, setSettings }) => {
+                await setSettings({ startTab: 'lists' });
+                await setSession('pendingSearch', { query: 'берсерк' });
+            },
+            {
+                'search.titles': async ({ query, type }) => {
+                    requests.push({ query, type });
+                    return { items: [card('9', 'Berserk')] };
+                },
+            },
+        );
+
+        await vi.waitFor(() => expect(findAll(container, 'card')).toHaveLength(1));
+        expect(activeTabLabel(container)).toContain('Поиск');
+        expect(requests).toEqual([{ query: 'берсерк', type: 'anime' }]);
+
+        await settle();
+        // The pinned tab does not win late either.
+        expect(activeTabLabel(container)).toContain('Поиск');
+        expect(requests).toHaveLength(1);
+    });
+
     it('drops the key so a later manual open does not replay the search', async () => {
         const container = await mountPopup(async ({ setSession }) => {
             await setSession('pendingSearch', { query: 'берсерк' });

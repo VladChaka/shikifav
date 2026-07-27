@@ -233,7 +233,7 @@ import { useSettings } from '@/src/composables/use-settings';
 import type { SearchType, UserRateStatus } from '@/src/lib/api/types';
 import { DEFAULT_ORIGIN, ORIGINS } from '@/src/lib/config';
 import type { Origin } from '@/src/lib/config';
-import { i18n, statusLabel } from '@/src/lib/i18n';
+import { apiErrorMessage, i18n, statusLabel } from '@/src/lib/i18n';
 import { sendMessage } from '@/src/lib/messaging';
 import { clearSession, setSettings } from '@/src/lib/storage';
 import type { LocalState, StartTab, Theme } from '@/src/lib/storage';
@@ -395,11 +395,15 @@ async function changeOrigin(origin: Origin): Promise<void> {
     // The one setting the UI must not write itself: background ends the session
     // first and stores the origin only after that (docs/04).
     const response = await sendMessage('settings.setOrigin', { origin });
-    if (response.ok) {
-        // The session is over — re-read the auth state so the page stops
-        // offering «Выйти» instead of pretending the user is still signed in.
-        await refreshState();
+    if (!response.ok) {
+        // The select has no local mirror, so it silently snaps back to the
+        // stored domain: without this toast the click would look ignored.
+        showToast(apiErrorMessage(response.error));
+        return;
     }
+    // The session is over — re-read the auth state so the page stops
+    // offering «Выйти» instead of pretending the user is still signed in.
+    await refreshState();
 }
 
 async function clearCache(): Promise<void> {

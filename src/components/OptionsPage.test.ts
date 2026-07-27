@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { nextTick } from 'vue';
 import { fakeBrowser } from 'wxt/testing';
-import type { AuthState } from '@/src/lib/api/types';
+import type { ApiError, AuthState } from '@/src/lib/api/types';
 import type { MessageHandlers } from '@/src/lib/messaging';
 import type { LocalState, SessionState } from '@/src/lib/storage';
+import { DEFAULT_ORIGIN } from '@/src/lib/config';
 import { i18n, statusLabel } from '@/src/lib/i18n';
 import {
     clickOn,
@@ -38,7 +39,13 @@ interface Mounted {
 let cleanups: Array<() => void> = [];
 
 async function mountPage(
-    options: { auth?: AuthState; seed?: Partial<LocalState['settings']> } = {},
+    options: {
+        auth?: AuthState;
+        seed?: Partial<LocalState['settings']>;
+        // Replaces a handler with a failing (or otherwise special) one; the
+        // defaults below are the happy path.
+        overrides?: Partial<MessageHandlers>;
+    } = {},
 ): Promise<Mounted> {
     vi.resetModules();
     const storage = await import('@/src/lib/storage');
@@ -75,6 +82,7 @@ async function mountPage(
             await storage.setSettings({ origin });
             return {};
         },
+        ...options.overrides,
     };
     messaging.onMessage(handlers);
 
@@ -139,6 +147,17 @@ function keydownOn(el: FakeElement, key: string): { preventDefault: ReturnType<t
 async function openSection(container: FakeElement, index: number): Promise<void> {
     clickOn(tabs(container)[index]);
     await nextTick();
+}
+
+// Opens the domain select and picks the option whose label contains `host`.
+async function pickOrigin(container: FakeElement, host: string): Promise<void> {
+    clickOn(find(container, 'xselect'));
+    await nextTick();
+    const option = findAll(container, 'xselect__opt').find((el) => textOf(el).includes(host));
+    if (!option) {
+        throw new Error(`no domain option for "${host}"`);
+    }
+    clickOn(option);
 }
 
 // --- tests ------------------------------------------------------------------
@@ -355,12 +374,7 @@ describe('OptionsPage (Ф6-3)', () => {
         await vi.waitFor(() => expect(findAll(container, 'opt__btn--danger')).toHaveLength(1));
         expect(textOf(find(container, 'xselect__val')).trim()).toBe('shikimori.io');
 
-        clickOn(find(container, 'xselect'));
-        await nextTick();
-        const option = findAll(container, 'xselect__opt').find((el) =>
-            textOf(el).includes('shikimori.one'),
-        );
-        clickOn(option!);
+        await pickOrigin(container, 'shikimori.one');
 
         // Never written from the page itself: background ends the session first.
         await vi.waitFor(() => expect(originCalls).toEqual(['https://shikimori.one']));
@@ -372,6 +386,33 @@ describe('OptionsPage (Ф6-3)', () => {
         );
         // The session is over — the page says so instead of still offering «Выйти».
         await vi.waitFor(() => expect(findAll(container, 'opt__btn--danger')).toHaveLength(0));
+    });
+
+    // Ф6-23: the select has no local mirror, so a refused switch snaps it back to
+    // the stored domain — silently, unless the failure is spelled out.
+    it('keeps the domain and shows the error when background refuses the switch', async () => {
+        const calls: string[] = [];
+        const { container, getSettings } = await mountPage({
+            overrides: {
+                'settings.setOrigin': async ({ origin }) => {
+                    calls.push(origin);
+                    throw { kind: 'network' } satisfies ApiError;
+                },
+            },
+        });
+        await openSection(container, 2);
+        await vi.waitFor(() => expect(findAll(container, 'opt__btn--danger')).toHaveLength(1));
+
+        await pickOrigin(container, 'shikimori.one');
+
+        await vi.waitFor(() => expect(calls).toEqual(['https://shikimori.one']));
+        await vi.waitFor(() =>
+            expect(textOf(find(container, 'toast')).trim()).toBe(i18n.errors.network),
+        );
+        // Nothing moved: neither the stored domain nor the session.
+        expect((await getSettings()).origin).toBe(DEFAULT_ORIGIN);
+        expect(textOf(find(container, 'xselect__val')).trim()).toBe(new URL(DEFAULT_ORIGIN).host);
+        expect(findAll(container, 'opt__btn--danger')).toHaveLength(1);
     });
 
     it('clears the session cache and confirms it with a toast', async () => {

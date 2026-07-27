@@ -94,7 +94,7 @@ import UserHeader from '@/src/components/UserHeader.vue';
 import { useAuth } from '@/src/composables/use-auth';
 import { useSearchScreen } from '@/src/composables/use-search-screen';
 import { apiErrorMessage } from '@/src/lib/i18n';
-import { getSettings } from '@/src/lib/storage';
+import { DEFAULT_SETTINGS, getSettings } from '@/src/lib/storage';
 
 // Full-screen search page opened by the context menu as search.html?q=…
 // (docs/05). The query is parsed in main.ts and handed over as a prop: the page
@@ -156,7 +156,13 @@ if (props.initialQuery !== '') {
     // pin). The setting is read after the dispatch above, and setType re-runs
     // the same query only when the type actually differs: a default profile
     // ('anime') costs no second request.
-    void getSettings().then((settings) => setSearchType(settings.defaultSearchType));
+    // Never rejects (same rule as src/lib/theme.ts): a failed read falls back to
+    // the documented default, which is the type the page already started with,
+    // so setType is a no-op and the request in flight is left alone.
+    void getSettings()
+        .then((settings) => settings.defaultSearchType)
+        .catch(() => DEFAULT_SETTINGS.defaultSearchType)
+        .then(setSearchType);
 }
 
 watch(status, (next) => {

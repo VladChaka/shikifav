@@ -21,8 +21,11 @@ const settings = ref<LocalState['settings']>({ ...DEFAULT_SETTINGS });
 
 let initialized = false;
 
+// Never rejects (same rule as src/lib/theme.ts): a failed storage read must not
+// break the page that initialises this composable, and the snapshot already in
+// the ref — the defaults on the first load — stays a valid thing to render.
 async function load(): Promise<void> {
-    settings.value = await getSettings();
+    settings.value = await getSettings().catch(() => settings.value);
 }
 
 // Re-read instead of parsing change.newValue: getSettings() owns the per-key

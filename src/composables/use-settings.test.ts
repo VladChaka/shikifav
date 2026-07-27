@@ -90,6 +90,20 @@ describe('use-settings', () => {
         reads.mockRestore();
     });
 
+    // Ф6-23: the load is fire-and-forget, so a rejected read would surface as an
+    // unhandled rejection while the page initialises (same rule as theme.ts).
+    it('keeps the defaults when the storage read fails', async () => {
+        const read = vi
+            .spyOn(fakeBrowser.storage.local, 'get')
+            .mockRejectedValue(new Error('storage unavailable'));
+
+        const { settings } = await setup();
+
+        await vi.waitFor(() => expect(read).toHaveBeenCalled());
+        expect(settings.value).toEqual(DEFAULT_SETTINGS);
+        read.mockRestore();
+    });
+
     it('shares one state across callers', async () => {
         const first = await setup();
         const composable = await import('./use-settings');
