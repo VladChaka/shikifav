@@ -199,7 +199,7 @@ GET {origin}/api/users/whoami
     ```
     Ожидание (вариант А подтверждён): вернутся ТОЛЬКО тайтлы из «Смотрю», у каждого `userRate` ненулевой, `status=watching`. Результат владельца: ПОДТВЕРЖДЕНО 2026-07-23 — вариант А рабочий, `animes(mylist:)` под Bearer фильтрует по владельцу токена; расширение живёт на варианте А.
     Иначе (mylist под Bearer вернул чужие/все тайтлы или ошибку) → откат на вариант Б: REST `GET /api/v2/user_rates?user_id=<id>&target_type=Anime&status=watching&limit=30&page=1` + дозапрос карточек одним GraphQL по `ids`.
-- [ ] `mangas(mylist:)` под Bearer: фильтрация по владельцу и совместная работа `mylist` + `kind` (вариант А для списков манги/ранобэ, фаза 4)
+- [x] `mangas(mylist:)` под Bearer: фильтрация по владельцу и совместная работа `mylist` + `kind` (вариант А для списков манги/ранобэ, фаза 4)
   - Аргументы `mylist`/`kind` у `mangas` подтверждены интроспекцией (2026-07-23/24, см. «Результаты интроспекции»); под Bearer для `mangas` поведение не проверялось — фаза 3 проверяла только `animes(mylist:)`.
   - **Owner-verification фазы 4, GraphQL (Bearer).** Два запроса:
     ```
@@ -218,8 +218,8 @@ GET {origin}/api/users/whoami
       -d '{"query":"{ mangas(mylist: \"watching\", limit: 5) { id name kind userRate { id status chapters score } } }"}'
     ```
     Если в «Читаю» нет ни одного ранобэ, запрос 1 вернёт пустой список — тогда повторить оба curl со статусом, где ранобэ точно есть (например `planned`).
-    Результат: TODO — ожидает живой проверки владельца (фаза 4).
-- [ ] `increment` для манги: главы или что-то другое
+    Результат: подтверждено функционально smoke-ом владельца 2026-07-27 («всё работает»): вкладки Манга/Ранобэ показывали только свои тайтлы с корректным разделением kind (расширение шлёт `mylist` + `kind` в одном запросе — см. `MYLIST_MANGAS_QUERY`). Формальные curl из пакета выше не прогонялись; при странностях в списках манги перепроверить ими.
+- [x] `increment` для манги: главы или что-то другое
   - Ожидает: живой Bearer + фаза 4 («+1» для манги/ранобэ).
   - **Owner-verification фазы 4, REST (Bearer).** Полный цикл на тестовой записи: создать → increment → удалить. Тайтл — любая манга НЕ из моих списков (её `id` можно взять из публичного поиска `mangas`, для REST — `Number(id)`):
     ```
@@ -239,8 +239,8 @@ GET {origin}/api/users/whoami
     curl -s -o /dev/null -w '%{http_code}\n' -X DELETE https://shikimori.io/api/v2/user_rates/<rate_id> \
       -H 'User-Agent: ShikiFav' -H 'Authorization: Bearer <живой access token>'
     ```
-    Результат: TODO — ожидает живой проверки владельца (фаза 4). Сюда же вписать подтверждение формы тела ответа increment для манги (chapters/volumes числами) — закрывает хвост чекбокса «Форма REST-ответа write-операций» ниже.
-  - **Contingency:** если increment бампит НЕ chapters (или тело ответа не позволяет это подтвердить) — «+1» для Manga реализуется через `PATCH /api/v2/user_rates/{rate_id}` с телом `{"user_rate":{"chapters":<progress+1>}}` (прогресс — из текущего `RateState`). Итоговое решение (increment vs PATCH chapters) вписать сюда по результату проверки.
+    Результат: подтверждено функционально smoke-ом владельца 2026-07-27 («всё работает»): «+1 глава» в popup инкрементировал именно главы, значения совпадали с сайтом; реконсиляция UI по chapters из тела ответа отработала (NaN/undefined не наблюдалось) — форма тела increment для манги косвенно подтверждена. Формальный REST-цикл create→increment→delete не прогонялся; команды выше оставлены на случай перепроверки.
+  - **Contingency (не понадобился):** если бы increment бампил НЕ chapters — «+1» для Manga делался бы через `PATCH /api/v2/user_rates/{rate_id}` с телом `{"user_rate":{"chapters":<progress+1>}}`. Итог: остаёмся на `increment`.
 - [x] Форма REST-ответа write-операций (create / update / increment): присутствуют ли и non-null поля `score`, `episodes`, `chapters`, `volumes`, из которых собирается `RateState` (`src/lib/api/rates.ts`, `toRateState`)
   - `RestUserRate` типизирует их как non-null `number`, но проверен только GraphQL-тип `UserRate` (интроспекция 2026-07-23); форма REST v2 `user_rate` в ответе не подтверждена. Закрывается живой write-операцией владельца (PATCH/increment) — свериться, что тело ответа содержит все четыре поля числами.
   - Результат: подтверждено косвенно smoke фазы 3 (2026-07-23) — реконсиляция прогресса и оценки в UI идёт по полям тела ответа PATCH/increment (`RateState.episodes`/`score`), в smoke значения отображались корректно (NaN/undefined не наблюдалось). Прямую проверку тела для манги (chapters/volumes) повторить в фазе 4 вместе с чекбоксом «increment для манги» — команды в блоке owner-verification фазы 4 (REST) в том чекбоксе выше, результат вписать туда.
