@@ -1,7 +1,6 @@
 <template>
     <section class="lists">
         <div class="lists__filters">
-            <!-- Phase 3 is anime-only: Манга/Ранобэ are disabled options (phase 4). -->
             <XSelect
                 class="lists__select"
                 :options="TYPE_OPTIONS"
@@ -11,7 +10,7 @@
             />
             <XSelect
                 class="lists__select"
-                :options="STATUS_OPTIONS"
+                :options="statusOptions"
                 :model-value="filterStatus"
                 :aria-label="i18n.lists.statusFilterLabel"
                 status-dots
@@ -68,7 +67,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import EmptyState from '@/src/components/EmptyState.vue';
 import ErrorState from '@/src/components/ErrorState.vue';
 import RateRow from '@/src/components/RateRow.vue';
@@ -77,6 +76,7 @@ import XSelect from '@/src/components/XSelect.vue';
 import type { XSelectOption } from '@/src/components/XSelect.vue';
 import type { RateRow as RateRowData, SearchType, UserRateStatus } from '@/src/lib/api/types';
 import { i18n, statusLabel } from '@/src/lib/i18n';
+import type { MediaKind } from '@/src/lib/i18n';
 
 // "Мои списки" tab frame (US-4/5/6 + Ф3-7 status badge, docs/05): type +
 // status filters, the row list with its data states, and "Ещё" pagination.
@@ -90,7 +90,7 @@ import { i18n, statusLabel } from '@/src/lib/i18n';
 //   errorText     — message for the error state (falls back to a generic one)
 //   hasMore       — another page exists → show "Ещё"
 //   loadingMore   — the next page is loading → "Ещё" is disabled/labelled
-//   filterType    — selected type; phase 3 forces 'anime' (Манга/Ранобэ disabled)
+//   filterType    — selected type (Аниме/Манга/Ранобэ, phase 4)
 //   filterStatus  — selected status; use-lists defaults it to 'watching' (docs/05)
 //   busyIds       — rateIds with a write in flight (locks that row)
 //   suggestIds    — rateIds showing the "перевести в «Просмотрено»?" offer
@@ -103,7 +103,7 @@ import { i18n, statusLabel } from '@/src/lib/i18n';
 //   change-status(row, value) / remove(row) /
 //   mark-completed(row) / dismiss-suggest(row)             — row actions, tagged
 //                                                            with their RateRow
-withDefaults(
+const props = withDefaults(
     defineProps<{
         items: RateRowData[];
         listStatus: 'skeleton' | 'data' | 'empty' | 'error';
@@ -169,14 +169,20 @@ const STATUSES: readonly UserRateStatus[] = [
 
 const TYPE_OPTIONS: readonly XSelectOption<SearchType>[] = [
     { value: 'anime', label: i18n.lists.types.anime },
-    { value: 'manga', label: i18n.lists.types.manga, disabled: true },
-    { value: 'ranobe', label: i18n.lists.types.ranobe, disabled: true },
+    { value: 'manga', label: i18n.lists.types.manga },
+    { value: 'ranobe', label: i18n.lists.types.ranobe },
 ];
 
-const STATUS_OPTIONS: readonly XSelectOption<UserRateStatus>[] = STATUSES.map((s) => ({
-    value: s,
-    label: statusLabel(s),
-}));
+// Status filter labels follow the selected type (phase 4): anime «Смотрю…»,
+// manga/ranobe «Читаю…» (both are books wording-wise).
+const filterMedia = computed<MediaKind>(() => (props.filterType === 'anime' ? 'anime' : 'book'));
+
+const statusOptions = computed<readonly XSelectOption<UserRateStatus>[]>(() =>
+    STATUSES.map((s) => ({
+        value: s,
+        label: statusLabel(s, filterMedia.value),
+    })),
+);
 </script>
 
 <style scoped lang="scss">

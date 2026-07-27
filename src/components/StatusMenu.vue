@@ -19,7 +19,7 @@
                 class="menu__dot"
                 aria-hidden="true"
             ></span>
-            {{ statusLabel(s) }}
+            {{ statusLabel(s, media) }}
             <span
                 v-if="s === current"
                 class="menu__check"
@@ -48,15 +48,22 @@
 import { onBeforeUnmount, onMounted, ref } from 'vue';
 import type { UserRateStatus } from '@/src/lib/api/types';
 import { i18n, statusLabel } from '@/src/lib/i18n';
+import type { MediaKind } from '@/src/lib/i18n';
 
 // Dropdown with the 6 user rate statuses (US-3 order) + "remove from list"
 // for titles already in my list. Purely presentational: the parent owns the
 // open/closed state and the actual mutation.
-defineProps<{
-    // Current status of the title, null when it is not in my list
-    // (hides "remove" and the current-item marker).
-    current: UserRateStatus | null;
-}>();
+withDefaults(
+    defineProps<{
+        // Current status of the title, null when it is not in my list
+        // (hides "remove" and the current-item marker).
+        current: UserRateStatus | null;
+        // Wording variant: anime «Смотрю/Просмотрено», book «Читаю/Прочитано»
+        // for manga/ranobe (phase 4).
+        media?: MediaKind;
+    }>(),
+    { media: 'anime' },
+);
 
 const emit = defineEmits<{
     select: [status: UserRateStatus];

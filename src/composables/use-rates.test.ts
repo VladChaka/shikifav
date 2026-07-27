@@ -7,12 +7,19 @@ import type { MessageHandlers } from '../lib/messaging';
 import { getSession, setSession } from '../lib/storage';
 import { i18n } from '../lib/i18n';
 import type { ApiError, TitleCard, UserRateRef } from '../lib/api/types';
-import { OPTIMISTIC_RATE_ID, applyRateAction, rollbackRateAction, useRates } from './use-rates';
+import {
+    OPTIMISTIC_RATE_ID,
+    applyRateAction,
+    rateKey,
+    rollbackRateAction,
+    useRates,
+} from './use-rates';
 import type { UseRates } from './use-rates';
 
 function card(id: string, userRate: UserRateRef | null = null): TitleCard {
     return {
         id,
+        targetType: 'Anime',
         name: `Title ${id}`,
         russian: null,
         kind: 'tv',
@@ -21,6 +28,27 @@ function card(id: string, userRate: UserRateRef | null = null): TitleCard {
         episodes: 12,
         episodesAired: 12,
         year: 2020,
+        posterUrl: null,
+        posterUrl2x: null,
+        userRate,
+    };
+}
+
+// Manga/ranobe card (US-7): targetType 'Manga', chapters/volumes instead of
+// the episode fields. Anime and manga ids are independent sequences, so a
+// manga card may share its id with an anime card.
+function mangaCard(id: string, userRate: UserRateRef | null = null): TitleCard {
+    return {
+        id,
+        targetType: 'Manga',
+        name: `Manga ${id}`,
+        russian: null,
+        kind: 'manga',
+        score: 8,
+        status: 'released',
+        chapters: 116,
+        volumes: 27,
+        year: 2001,
         posterUrl: null,
         posterUrl2x: null,
         userRate,
@@ -124,12 +152,12 @@ describe('use-rates', () => {
         const action = rates.performAction(items.value[0], { type: 'create', status: 'planned' });
         // The optimistic patch is synchronous: visible before the response.
         expect(items.value[0].userRate).toEqual({ id: OPTIMISTIC_RATE_ID, status: 'planned' });
-        expect(rates.busyIds.value.has('1')).toBe(true);
+        expect(rates.busyIds.value.has(rateKey(items.value[0]))).toBe(true);
 
         server.resolve({ rate: { id: '55', status: 'planned' } });
         await action;
         expect(items.value[0].userRate).toEqual({ id: '55', status: 'planned' });
-        expect(rates.busyIds.value.has('1')).toBe(false);
+        expect(rates.busyIds.value.has(rateKey(items.value[0]))).toBe(false);
         expect(toasts).toEqual([]);
         expect(payloads).toEqual([{ targetId: '1', targetType: 'Anime', status: 'planned' }]);
     });
@@ -158,7 +186,7 @@ describe('use-rates', () => {
 
         await rates.performAction(items.value[0], { type: 'update', status: 'watching' });
         expect(items.value[0].userRate).toEqual({ id: '9', status: 'planned' });
-        expect(rates.warnings.value.get('1')).toBe(i18n.errors.editForbidden);
+        expect(rates.warnings.value.get(rateKey(items.value[0]))).toBe(i18n.errors.editForbidden);
         expect(toasts).toEqual([]);
         expect(calls).toBe(1);
     });
@@ -172,7 +200,7 @@ describe('use-rates', () => {
 
         await rates.performAction(items.value[0], { type: 'create', status: 'planned' });
         expect(items.value[0].userRate).toBeNull(); // rolled back
-        expect(rates.warnings.value.get('1')).toBe(i18n.errors.editForbidden);
+        expect(rates.warnings.value.get(rateKey(items.value[0]))).toBe(i18n.errors.editForbidden);
         expect(toasts).toEqual([]);
     });
 
@@ -351,7 +379,7 @@ describe('use-rates', () => {
         });
 
         await rates.performAction(items.value[0], { type: 'create', status: 'planned' });
-        expect(rates.warnings.value.get('1')).toBe(i18n.errors.editForbidden);
+        expect(rates.warnings.value.get(rateKey(items.value[0]))).toBe(i18n.errors.editForbidden);
 
         items.value = [card('1'), card('2')]; // e.g. a new search response
         await nextTick();
@@ -378,6 +406,54 @@ describe('use-rates', () => {
             { id: '101', status: 'planned' },
             { id: '102', status: 'watching' },
         ]);
+    });
+
+    it('create on a manga card sends the card targetType to the server', async () => {
+        const payloads: unknown[] = [];
+        const { items, rates } = setup([mangaCard('1')], {
+            'rates.create': async (payload) => {
+                payloads.push(payload);
+                return { rate: { id: '55', status: 'planned' } };
+            },
+        });
+
+        await rates.performAction(items.value[0], { type: 'create', status: 'planned' });
+        expect(payloads).toEqual([{ targetId: '1', targetType: 'Manga', status: 'planned' }]);
+        expect(items.value[0].userRate).toEqual({ id: '55', status: 'planned' });
+    });
+
+    it('patches only the card with the matching (id, targetType) pair', async () => {
+        // Anime and manga ids are independent: an id-only match would patch
+        // the anime twin instead of the manga card the action targeted.
+        const animeTwin = card('1');
+        const mangaTwin = mangaCard('1');
+        const { items, rates } = setup([animeTwin, mangaTwin], {
+            'rates.create': async () => ({ rate: { id: '55', status: 'watching' } }),
+        });
+
+        await rates.performAction(items.value[1], { type: 'create', status: 'watching' });
+        expect(items.value[1].userRate).toEqual({ id: '55', status: 'watching' });
+        expect(items.value[0].userRate).toBeNull(); // the anime twin stays untouched
+    });
+
+    it('syncs only the matching (id, targetType) entry in session.lastSearch', async () => {
+        const animeTwin = card('1');
+        const mangaTwin = mangaCard('1');
+        await setSession('lastSearch', {
+            query: 'berserk',
+            type: 'manga',
+            items: [animeTwin, mangaTwin],
+        });
+        const { items, rates } = setup([mangaTwin], {
+            'rates.create': async () => ({ rate: { id: '55', status: 'watching' } }),
+        });
+
+        await rates.performAction(items.value[0], { type: 'create', status: 'watching' });
+        expect(await getSession('lastSearch')).toEqual({
+            query: 'berserk',
+            type: 'manga',
+            items: [animeTwin, { ...mangaTwin, userRate: { id: '55', status: 'watching' } }],
+        });
     });
 
     it('a failed action leaves session.lastSearch untouched', async () => {

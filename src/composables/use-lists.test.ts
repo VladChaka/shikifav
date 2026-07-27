@@ -553,6 +553,51 @@ describe('use-lists', () => {
             expect(lists.suggestIds.value.size).toBe(0);
         });
 
+        it('applies the chapters progress from the server for a manga row', async () => {
+            const { lists, toasts } = await setup({
+                'rates.list': async () => ({
+                    items: [row('1', { targetType: 'Manga', progress: 3, total: 40 })],
+                    hasMore: false,
+                }),
+                // episodes carries a decoy value: a manga row must read chapters.
+                'rates.increment': async () => ({
+                    rate: rateState('1', { chapters: 7, episodes: 99 }),
+                }),
+            });
+
+            lists.activate();
+            await vi.waitFor(() => expect(lists.listStatus.value).toBe('data'));
+
+            lists.increment(lists.items.value[0]);
+            expect(lists.items.value[0].progress).toBe(4); // optimistic +1
+
+            await vi.waitFor(() => expect(lists.items.value[0].progress).toBe(7));
+            expect(lists.suggestIds.value.size).toBe(0); // 7 of 40 — no offer
+            expect(toasts).toEqual([]);
+        });
+
+        it('offers completion when the server chapters reach the manga total', async () => {
+            const { lists } = await setup({
+                'rates.list': async () => ({
+                    items: [row('1', { targetType: 'Manga', progress: 39, total: 40 })],
+                    hasMore: false,
+                }),
+                // episodes stays 0: the offer must be driven by chapters.
+                'rates.increment': async () => ({
+                    rate: rateState('1', { chapters: 40 }),
+                }),
+            });
+
+            lists.activate();
+            await vi.waitFor(() => expect(lists.listStatus.value).toBe('data'));
+
+            lists.increment(lists.items.value[0]);
+            await vi.waitFor(() => expect(lists.suggestIds.value.has('1')).toBe(true));
+            expect(lists.items.value[0].progress).toBe(40);
+            // The status did NOT change automatically (US-6: offer only).
+            expect(lists.items.value[0].status).toBe('watching');
+        });
+
         it('«Позже» dismisses the offer locally without any request', async () => {
             let updateCalls = 0;
             const { lists } = await setup({

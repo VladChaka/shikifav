@@ -37,7 +37,9 @@
             <SearchTab
                 v-show="activeTab === 'search'"
                 :model-value="searchQuery"
+                :search-type="searchType"
                 @update:model-value="setQuery"
+                @update:search-type="setSearchType"
             >
                 <SkeletonList v-if="searchStatus === 'loading'" />
                 <EmptyState
@@ -56,12 +58,12 @@
                 <template v-else>
                     <TitleCard
                         v-for="card in searchItems"
-                        :key="card.id"
+                        :key="rateKey(card)"
                         :card="card"
-                        :busy="busyIds.has(card.id)"
-                        :warning="warnings.get(card.id) ?? null"
-                        :menu-open="openMenuCardId === card.id"
-                        @update:menu-open="openMenuCardId = $event ? card.id : null"
+                        :busy="busyIds.has(rateKey(card))"
+                        :warning="warnings.get(rateKey(card)) ?? null"
+                        :menu-open="openMenuCardId === rateKey(card)"
+                        @update:menu-open="openMenuCardId = $event ? rateKey(card) : null"
                         @add="onSetStatus(card, 'planned')"
                         @set-status="onSetStatus(card, $event)"
                         @remove="onRemove(card)"
@@ -122,7 +124,7 @@ import Toast from '@/src/components/Toast.vue';
 import UserHeader from '@/src/components/UserHeader.vue';
 import { useAuth } from '@/src/composables/use-auth';
 import { useLists } from '@/src/composables/use-lists';
-import { useRates } from '@/src/composables/use-rates';
+import { rateKey, useRates } from '@/src/composables/use-rates';
 import { useSearch } from '@/src/composables/use-search';
 import type { TitleCard as TitleCardData, UserRateStatus } from '@/src/lib/api/types';
 import { getSession, setSession } from '@/src/lib/storage';
@@ -132,10 +134,12 @@ const { status, user, error } = useAuth();
 
 const {
     query: searchQuery,
+    searchType,
     status: searchStatus,
     items: searchItems,
     error: searchError,
     setQuery,
+    setType: setSearchType,
     retry,
 } = useSearch();
 
@@ -206,7 +210,8 @@ watch(
     { immediate: true },
 );
 
-// At most one open StatusMenu across the list: the id of the card that owns it.
+// At most one open StatusMenu across the list: the rateKey of the card that
+// owns it (id alone can collide between anime and manga of the same id).
 const openMenuCardId = ref<string | null>(null);
 
 // A card outside my list creates a rate, one inside updates its status (US-3).

@@ -5,7 +5,6 @@ import { getSession, setSession } from '../lib/storage';
 import { apiErrorMessage, i18n } from '../lib/i18n';
 import type {
     ApiError,
-    RateTargetType,
     TitleCard,
     UserRateRef,
     UserRateStatus,
@@ -63,16 +62,20 @@ export function rollbackRateAction(snapshot: RateSnapshot): TitleCard {
 // --- Composable: optimistic user_rate writes over the search items (US-3) ---
 
 export interface UseRates {
-    // Cards with a write in flight: their actions are locked in the UI.
+    // rateKey(card) values with a write in flight: their actions are locked in the UI.
     busyIds: Ref<Set<string>>;
-    // Card id -> inline warning text (revoked edit access, docs/05).
+    // rateKey(card) -> inline warning text (revoked edit access, docs/05).
     warnings: Ref<Map<string, string>>;
     performAction: (card: TitleCard, action: RateAction) => Promise<void>;
 }
 
-// Fixed until the manga/ranobe search arrives (phase 4), same as SEARCH_TYPE
-// in use-search.
-const RATE_TARGET_TYPE: RateTargetType = 'Anime';
+// Per-card key of busyIds/warnings (Ф4-5b). Anime and manga ids are independent
+// sequences: a bare-id key let the finally of an in-flight anime write release
+// the busy lock of a manga twin taken after a type switch, allowing a parallel
+// second write. UI consumers must use this same key for lookups.
+export function rateKey(card: Pick<TitleCard, 'id' | 'targetType'>): string {
+    return `${card.targetType}:${card.id}`;
+}
 
 type ActionResult = { ok: true; rate: UserRateRef | null } | { ok: false; error: ApiError };
 
@@ -101,17 +104,22 @@ export function useRates(items: Ref<TitleCard[]>, showToast: (text: string) => v
     const warnings = ref(new Map<string, string>());
 
     // A replaced list (new search response, cache restore, re-login) invalidates
-    // per-card UI state: without this a card with the same id would resurrect a
-    // stale "no access" warning. Fires on array reference change only — our own
+    // per-card UI state: without this a card with the same rateKey would resurrect
+    // a stale "no access" warning. Fires on array reference change only — our own
     // in-place setUserRate patches do not re-trigger it.
     watch(items, () => {
         busyIds.value.clear();
         warnings.value.clear();
     });
 
-    function setUserRate(cardId: string, rate: UserRateRef | null): void {
+    // Anime and manga ids are independent sequences, so a card is addressed by
+    // (id, targetType) — an id match alone could patch a title of the other
+    // media after a type switch replaced the list mid-flight.
+    function setUserRate(card: TitleCard, rate: UserRateRef | null): void {
         // The card may be gone if a new search replaced the results mid-flight.
-        const index = items.value.findIndex((item) => item.id === cardId);
+        const index = items.value.findIndex(
+            (item) => item.id === card.id && item.targetType === card.targetType,
+        );
         if (index !== -1) {
             items.value[index] = { ...items.value[index], userRate: rate };
         }
@@ -126,7 +134,7 @@ export function useRates(items: Ref<TitleCard[]>, showToast: (text: string) => v
             case 'create': {
                 const response = await sendMessage('rates.create', {
                     targetId: card.id,
-                    targetType: RATE_TARGET_TYPE,
+                    targetType: card.targetType,
                     status: action.status,
                 });
                 return response.ok ? { ok: true, rate: response.data.rate } : response;
@@ -152,19 +160,21 @@ export function useRates(items: Ref<TitleCard[]>, showToast: (text: string) => v
 
     // Confirmed server state also lands in session.lastSearch — otherwise the
     // next popup open would render stale badges from the cache (docs/05).
-    function syncLastSearch(cardId: string, rate: UserRateRef | null): Promise<void> {
-        lastSearchSync = lastSearchSync.then(() => writeLastSearch(cardId, rate));
+    function syncLastSearch(card: TitleCard, rate: UserRateRef | null): Promise<void> {
+        lastSearchSync = lastSearchSync.then(() => writeLastSearch(card, rate));
         return lastSearchSync;
     }
 
     // Never rejects, so the chain above survives any failure.
-    async function writeLastSearch(cardId: string, rate: UserRateRef | null): Promise<void> {
+    async function writeLastSearch(card: TitleCard, rate: UserRateRef | null): Promise<void> {
         try {
             const cached = await getSession('lastSearch');
             if (!cached) {
                 return;
             }
-            const index = cached.items.findIndex((item) => item.id === cardId);
+            const index = cached.items.findIndex(
+                (item) => item.id === card.id && item.targetType === card.targetType,
+            );
             if (index === -1) {
                 return;
             }
@@ -177,8 +187,8 @@ export function useRates(items: Ref<TitleCard[]>, showToast: (text: string) => v
     }
 
     async function performAction(card: TitleCard, action: RateAction): Promise<void> {
-        const cardId = card.id;
-        if (busyIds.value.has(cardId)) {
+        const key = rateKey(card);
+        if (busyIds.value.has(key)) {
             return; // one in-flight write per card
         }
         const rateId = card.userRate?.id ?? OPTIMISTIC_RATE_ID;
@@ -186,36 +196,36 @@ export function useRates(items: Ref<TitleCard[]>, showToast: (text: string) => v
             return; // nothing to address on the server; busy-lock normally prevents this
         }
         const { card: optimistic, snapshot } = applyRateAction(card, action);
-        busyIds.value.add(cardId);
-        warnings.value.delete(cardId); // a new attempt clears the previous warning
-        setUserRate(cardId, optimistic.userRate);
+        busyIds.value.add(key);
+        warnings.value.delete(key); // a new attempt clears the previous warning
+        setUserRate(card, optimistic.userRate);
         try {
             const result = await dispatchAction(card, action, rateId);
             if (result.ok) {
-                setUserRate(cardId, result.rate);
-                await syncLastSearch(cardId, result.rate);
+                setUserRate(card, result.rate);
+                await syncLastSearch(card, result.rate);
                 return;
             }
             const { error } = result;
             if (isEditForbidden(error)) {
                 // Lazy revoke detection (docs/04 §3): inline warning only — no
                 // toast, no auth state re-read, no automatic retry.
-                setUserRate(cardId, rollbackRateAction(snapshot).userRate);
-                warnings.value.set(cardId, i18n.errors.editForbidden);
+                setUserRate(card, rollbackRateAction(snapshot).userRate);
+                warnings.value.set(key, i18n.errors.editForbidden);
                 return;
             }
             if (error.kind === 'api' && error.status === 404 && action.type !== 'create') {
                 // The rate is already gone on the site: the title is simply not
                 // in the list anymore — accept that instead of rolling back.
-                setUserRate(cardId, null);
-                await syncLastSearch(cardId, null);
+                setUserRate(card, null);
+                await syncLastSearch(card, null);
                 showToast(i18n.rates.alreadyRemoved);
                 return;
             }
-            setUserRate(cardId, rollbackRateAction(snapshot).userRate);
+            setUserRate(card, rollbackRateAction(snapshot).userRate);
             showToast(failureToast(error));
         } finally {
-            busyIds.value.delete(cardId);
+            busyIds.value.delete(key);
         }
     }
 

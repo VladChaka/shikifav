@@ -50,7 +50,8 @@ export interface UseLists {
     dismissSuggest: (row: RateRow) => void;
 }
 
-// Phase 3 is anime-only; the Манга/Ранобэ options are disabled in MyListsTab.
+// Lists open on anime by default; Манга/Ранобэ are selectable in MyListsTab and
+// listRates routes reads by the active filter type.
 const DEFAULT_TYPE: SearchType = 'anime';
 // docs/05: the status filter defaults to «Смотрю».
 const DEFAULT_STATUS: UserRateStatus = 'watching';

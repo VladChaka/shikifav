@@ -110,7 +110,7 @@
                         class="dot"
                         aria-hidden="true"
                     ></span>
-                    {{ statusLabel(card.userRate.status) }}
+                    {{ statusLabel(card.userRate.status, media) }}
                     <span
                         class="car"
                         aria-hidden="true"
@@ -121,6 +121,7 @@
                 <StatusMenu
                     v-if="menuOpen"
                     :current="card.userRate?.status ?? null"
+                    :media="media"
                     @select="onSelect"
                     @remove="onRemove"
                     @close="emit('update:menuOpen', false)"
@@ -143,7 +144,7 @@
 import { computed } from 'vue';
 import StatusMenu from '@/src/components/StatusMenu.vue';
 import type { TitleCard, UserRateStatus } from '@/src/lib/api/types';
-import { i18n, kindLabel, statusLabel, titleStatusLabel } from '@/src/lib/i18n';
+import { i18n, kindLabel, mediaOf, statusLabel, titleStatusLabel } from '@/src/lib/i18n';
 
 // Search result card (US-2/US-3). Presentational only: mutations are emitted
 // upwards, `busy`, `warning` and `menuOpen` are controlled by the owner of the
@@ -176,6 +177,10 @@ const title = computed(() => props.card.russian || props.card.name);
 // Original name goes second and only when the first row is the Russian one.
 const original = computed(() => (props.card.russian ? props.card.name : null));
 
+// Wording/meta variant (phase 4): anime cards show episodes and «Смотрю…»
+// labels, manga/ranobe cards show volumes/chapters and «Читаю…» labels.
+const media = computed(() => mediaOf(props.card.targetType));
+
 // 0.0 means "no score yet" (announcements) — hidden.
 const scoreText = computed(() =>
     props.card.score && props.card.score > 0 ? props.card.score.toFixed(1) : null,
@@ -200,14 +205,14 @@ const meta = computed(() => {
     if (status) {
         parts.push(status);
     }
-    const episodes = episodesText();
-    if (episodes) {
-        parts.push(episodes);
+    const amount = media.value === 'book' ? volumesChaptersText() : episodesText();
+    if (amount) {
+        parts.push(amount);
     }
     return parts.join(' · ');
 });
 
-// "5 / 24 эп." for ongoings, "28 эп." otherwise; chapters/volumes — phase 4.
+// "5 / 24 эп." for ongoings, "28 эп." otherwise (anime cards).
 function episodesText(): string | null {
     const { episodes, episodesAired, status } = props.card;
     if (status === 'ongoing' && episodesAired !== undefined) {
@@ -218,6 +223,19 @@ function episodesText(): string | null {
         return `${episodes} ${i18n.card.episodesShort}`;
     }
     return null;
+}
+
+// "27 т. · 240 гл." for manga/ranobe cards; zero counters (ongoings,
+// announcements) are simply omitted.
+function volumesChaptersText(): string | null {
+    const parts: string[] = [];
+    if (props.card.volumes && props.card.volumes > 0) {
+        parts.push(`${props.card.volumes} ${i18n.card.volumesShort}`);
+    }
+    if (props.card.chapters && props.card.chapters > 0) {
+        parts.push(`${props.card.chapters} ${i18n.card.chaptersShort}`);
+    }
+    return parts.length > 0 ? parts.join(' · ') : null;
 }
 
 function toggleMenu(): void {

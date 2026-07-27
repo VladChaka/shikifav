@@ -10,10 +10,13 @@ export type SearchStatus = 'idle' | 'loading' | 'data' | 'empty' | 'error';
 
 export interface UseSearch {
     query: Ref<string>;
+    // Аниме/Манга/Ранобэ selector (US-7); change via setType only.
+    searchType: Ref<SearchType>;
     status: Ref<SearchStatus>;
     items: Ref<TitleCard[]>;
     error: Ref<ApiError | undefined>;
     setQuery: (value: string) => void;
+    setType: (type: SearchType) => void;
     retry: () => void;
 }
 
@@ -22,12 +25,10 @@ export const SEARCH_DEBOUNCE_MS = 300;
 // rate budget, so searching starts at 2 characters (Ф2-6 decision).
 export const MIN_QUERY_LENGTH = 2;
 
-// Fixed until the Аниме/Манга/Ранобэ selector arrives (phase 4).
-const SEARCH_TYPE: SearchType = 'anime';
-
 // Module-level state: the popup is a single short-lived instance, so every
 // component shares one search session (same pattern as use-auth).
 const query = ref('');
+const searchType = ref<SearchType>('anime');
 const status = ref<SearchStatus>('idle');
 const items = ref<TitleCard[]>([]);
 const error = ref<ApiError | undefined>(undefined);
@@ -69,8 +70,36 @@ function setQuery(value: string): void {
     }, SEARCH_DEBOUNCE_MS);
 }
 
+// US-7: switching Аниме/Манга/Ранобэ. Results of the previous type are wrong
+// for the new one, so they are dropped immediately (no stale cards under the
+// new selector) and any in-flight response of the old type is invalidated.
+// No debounce: a selector click is a discrete action, not a keystroke burst.
+function setType(type: SearchType): void {
+    if (type === searchType.value) {
+        return;
+    }
+    touched = true;
+    searchType.value = type;
+    if (debounceTimer !== undefined) {
+        clearTimeout(debounceTimer);
+        debounceTimer = undefined;
+    }
+    requestSeq += 1;
+    items.value = [];
+    error.value = undefined;
+    const trimmed = query.value.trim();
+    if (trimmed.length < MIN_QUERY_LENGTH) {
+        status.value = 'idle';
+        return;
+    }
+    void dispatch(trimmed);
+}
+
 async function dispatch(searchQuery: string): Promise<void> {
     lastQuery = searchQuery;
+    // Captured before the await: a setType during the request bumps requestSeq,
+    // so this response is dropped and cannot write a mismatched cache entry.
+    const type = searchType.value;
     const requestId = ++requestSeq;
     error.value = undefined;
     // Skeleton only when there is nothing on screen: a repeat search keeps the
@@ -80,7 +109,7 @@ async function dispatch(searchQuery: string): Promise<void> {
 
     const response = await sendMessage('search.titles', {
         query: searchQuery,
-        type: SEARCH_TYPE,
+        type,
     });
     if (requestId !== requestSeq) {
         return; // stale response of an older request
@@ -92,7 +121,7 @@ async function dispatch(searchQuery: string): Promise<void> {
         // (docs/02); fire-and-forget, a write failure only loses the cache.
         void setSession('lastSearch', {
             query: searchQuery,
-            type: SEARCH_TYPE,
+            type,
             items: response.data.items,
         });
     } else {
@@ -117,6 +146,7 @@ async function restoreFromCache(): Promise<void> {
         return;
     }
     query.value = cached.query;
+    searchType.value = cached.type;
     items.value = cached.items;
     status.value = cached.items.length > 0 ? 'data' : 'empty';
     lastQuery = cached.query;
@@ -127,5 +157,5 @@ export function useSearch(): UseSearch {
         initialized = true;
         void restoreFromCache();
     }
-    return { query, status, items, error, setQuery, retry };
+    return { query, searchType, status, items, error, setQuery, setType, retry };
 }

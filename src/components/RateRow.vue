@@ -82,8 +82,8 @@
                     class="rate__inc"
                     type="button"
                     :disabled="busy"
-                    :aria-label="i18n.rates.increment"
-                    :title="i18n.rates.increment"
+                    :aria-label="incrementLabel"
+                    :title="incrementLabel"
                     @click="emit('increment')"
                 >
                     +1
@@ -102,7 +102,7 @@
                         class="dot"
                         aria-hidden="true"
                     ></span>
-                    {{ statusLabel(rate.status) }}
+                    {{ statusLabel(rate.status, media) }}
                     <span
                         class="car"
                         aria-hidden="true"
@@ -112,6 +112,7 @@
                 <StatusMenu
                     v-if="statusOpen"
                     :current="rate.status"
+                    :media="media"
                     @select="onStatus"
                     @remove="onRemove"
                     @close="emit('update:statusOpen', false)"
@@ -126,7 +127,7 @@
                 class="rate__suggest"
                 role="status"
             >
-                <span class="rate__suggest-text">{{ i18n.rates.markCompletedQuestion }}</span>
+                <span class="rate__suggest-text">{{ suggestQuestion }}</span>
                 <button
                     class="rate__suggest-btn rate__suggest-btn--yes"
                     type="button"
@@ -163,7 +164,7 @@ import { computed } from 'vue';
 import ScorePicker from '@/src/components/ScorePicker.vue';
 import StatusMenu from '@/src/components/StatusMenu.vue';
 import type { RateRow, UserRateStatus } from '@/src/lib/api/types';
-import { i18n, statusLabel } from '@/src/lib/i18n';
+import { i18n, mediaOf, statusLabel } from '@/src/lib/i18n';
 
 // "Мои списки" list row (US-4/5/6 + Ф3-7 status badge). Presentational only:
 // progress, +1, score, status change/removal and the "completed?" suggestion
@@ -214,18 +215,34 @@ const emit = defineEmits<{
 
 const title = computed(() => props.rate.russian || props.rate.name);
 
+// Wording follows the row media (phase 4): anime counts episodes
+// («эп.», «+1 эпизод», «Просмотрено»), manga/ranobe count chapters
+// («гл.», «+1 глава», «Прочитано»).
+const media = computed(() => mediaOf(props.rate.targetType));
+
 const posterSrcset = computed(() =>
     props.rate.posterUrl && props.rate.posterUrl2x
         ? `${props.rate.posterUrl} 1x, ${props.rate.posterUrl2x} 2x`
         : undefined,
 );
 
-// "7 / 12 эп." when the total is known; "7 эп." when total == 0 (unknown/ongoing).
+// "7 / 12 эп." (or "гл.") when the total is known; "7 эп." when total == 0
+// (unknown/ongoing).
 const progressText = computed(() => {
     const { progress, total } = props.rate;
-    const unit = i18n.card.episodesShort;
+    const unit = media.value === 'book' ? i18n.card.chaptersShort : i18n.card.episodesShort;
     return total > 0 ? `${progress} / ${total} ${unit}` : `${progress} ${unit}`;
 });
+
+// aria/title of the [+1] button: «+1 эпизод» / «+1 глава».
+const incrementLabel = computed(() =>
+    media.value === 'book' ? i18n.rates.incrementChapter : i18n.rates.increment,
+);
+
+// US-6 inline offer wording: «Просмотрено?» / «Прочитано?».
+const suggestQuestion = computed(() =>
+    media.value === 'book' ? i18n.rates.markReadQuestion : i18n.rates.markCompletedQuestion,
+);
 
 // [+1] only while actively watching and below the known maximum (docs/05, US-6).
 // total == 0 means the maximum is unknown, so incrementing is always allowed.
