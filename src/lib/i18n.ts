@@ -1,4 +1,4 @@
-import type { ApiError, UserRateStatus } from './api/types';
+import type { ApiError, RateTargetType, UserRateStatus } from './api/types';
 
 // Every UI string lives in this single object (docs/05-ui.md, principle 4).
 // No i18n libraries: the extension is single-user and Russian-only.
@@ -21,7 +21,7 @@ export const i18n = {
         myLists: 'Мои списки',
     },
     search: {
-        placeholder: 'Название аниме…',
+        placeholder: 'Поиск',
         emptyHint: 'Введите название аниме, манги или ранобэ',
         noResults: 'Ничего не найдено',
     },
@@ -49,8 +49,11 @@ export const i18n = {
     },
     card: {
         episodesShort: 'эп.',
+        chaptersShort: 'гл.',
+        volumesShort: 'т.',
     },
-    // AnimeKindEnum values (docs/03); unknown kinds fall back to the raw value.
+    // AnimeKindEnum / MangaKindEnum values (docs/03); unknown kinds fall back
+    // to the raw value.
     kinds: {
         tv: 'TV',
         movie: 'Фильм',
@@ -61,6 +64,13 @@ export const i18n = {
         music: 'Клип',
         pv: 'PV',
         cm: 'CM',
+        manga: 'Манга',
+        manhwa: 'Манхва',
+        manhua: 'Маньхуа',
+        light_novel: 'Ранобэ',
+        novel: 'Новелла',
+        one_shot: 'Ваншот',
+        doujin: 'Додзинси',
     },
     // AnimeStatusEnum / MangaStatusEnum values (docs/03).
     titleStatuses: {
@@ -70,7 +80,7 @@ export const i18n = {
         paused: 'Приостановлено',
         discontinued: 'Прекращено',
     },
-    // Anime-variant labels (docs/03 status table); manga variants come in phase 4.
+    // Anime-variant labels (docs/03 status table).
     // Keys = UserRateStatus values, exhaustiveness is checked by statusLabel below.
     statuses: {
         planned: 'Запланировано',
@@ -79,6 +89,13 @@ export const i18n = {
         completed: 'Просмотрено',
         on_hold: 'Отложено',
         dropped: 'Брошено',
+    },
+    // Book-variant (manga/ranobe) overrides; statuses missing here reuse the
+    // shared labels above (docs/03 status table).
+    statusesBook: {
+        watching: 'Читаю',
+        rewatching: 'Перечитываю',
+        completed: 'Прочитано',
     },
     actions: {
         addPlanned: '+ Запланировано',
@@ -91,8 +108,12 @@ export const i18n = {
         alreadyRemoved: 'Запись уже удалена',
         // aria/title of the "+1 episode" button in a list row (US-6).
         increment: '+1 эпизод',
+        // Book-variant of the increment button (phase 4).
+        incrementChapter: '+1 глава',
         // Inline suggestion after progress reaches the total (US-6, not automatic).
         markCompletedQuestion: 'Перевести в «Просмотрено»?',
+        // Book-variant of the completion suggestion (phase 4).
+        markReadQuestion: 'Перевести в «Прочитано»?',
     },
     errors: {
         network: 'Нет соединения с Shikimori. Проверьте интернет и повторите.',
@@ -105,10 +126,27 @@ export const i18n = {
     },
 } as const;
 
-// Russian label of a user rate status (anime variant). Indexing i18n.statuses
-// with the full UserRateStatus union makes the label set compile-checked:
-// a status without a label fails here.
-export function statusLabel(status: UserRateStatus): string {
+// UI wording variant: anime uses "смотрю/просмотрено", books (manga/ranobe)
+// use "читаю/прочитано".
+export type MediaKind = 'anime' | 'book';
+
+// GraphQL/REST expose the list target as 'Anime' | 'Manga'; ranobe is a Manga
+// subtype, so both map to the book wording.
+export function mediaOf(targetType: RateTargetType): MediaKind {
+    return targetType === 'Anime' ? 'anime' : 'book';
+}
+
+// Russian label of a user rate status. Indexing i18n.statuses with the full
+// UserRateStatus union makes the label set compile-checked: a status without
+// a label fails here. Book overrides are partial and fall back to the shared
+// labels.
+export function statusLabel(status: UserRateStatus, media: MediaKind = 'anime'): string {
+    if (media === 'book') {
+        const override = (i18n.statusesBook as Partial<Record<UserRateStatus, string>>)[status];
+        if (override !== undefined) {
+            return override;
+        }
+    }
     return i18n.statuses[status];
 }
 
