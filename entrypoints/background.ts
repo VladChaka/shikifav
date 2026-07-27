@@ -1,5 +1,5 @@
 import { ensureToken, getAuthState, login, logout } from '@/src/lib/api/auth';
-import { listAnimeRates, searchTitles } from '@/src/lib/api/graphql';
+import { listRates, searchTitles } from '@/src/lib/api/graphql';
 import { setTokenProvider } from '@/src/lib/api/http';
 import { createRate, deleteRate, incrementRate, updateRate } from '@/src/lib/api/rates';
 import { registerUserAgentRule } from '@/src/lib/api/user-agent-rule';
@@ -30,7 +30,7 @@ export default defineBackground(() => {
         'rates.list': async ({ type, status, page }) => {
             // hasMore is computed in the read layer from the raw page length, so
             // a dropped userRate==null row cannot cut paging short (docs/06).
-            const { items, hasMore } = await listAnimeRates(type, status, page);
+            const { items, hasMore } = await listRates(type, status, page);
             return { items, hasMore };
         },
         'rates.create': async ({ targetId, targetType, status }) => ({

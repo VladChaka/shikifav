@@ -74,32 +74,33 @@ export interface RateState {
 }
 
 // A row of "My lists" (US-4): a title joined with my user_rate, read via
-// animes(mylist:) (variant A). total = title episodes (0 = unknown/ongoing).
+// animes(mylist:) / mangas(mylist:) (variant A).
 export interface RateRow {
     rateId: string; // user_rate id — PATCH/increment target
     targetId: string; // title id (Number() for REST)
-    targetType: RateTargetType; // 'Anime' in phase 3
+    targetType: RateTargetType;
     name: string;
     russian: string | null;
     posterUrl: string | null;
     posterUrl2x: string | null;
     status: UserRateStatus;
     score: number; // 0 = no score
-    progress: number; // my episodes (anime)
-    total: number; // total episodes, 0 = unknown
+    progress: number; // my episodes (anime) or chapters (manga/ranobe)
+    total: number; // total episodes/chapters, 0 = unknown
 }
 
 // Search result card (US-2). Nullability mirrors the GraphQL schema per the
 // docs/03 introspection results (2026-07-23).
 export interface TitleCard {
     id: string; // GraphQL ID! serializes as a numeric string; REST target_id = Number(id)
+    targetType: RateTargetType; // REST write target; ranobe cards carry 'Manga'
     name: string; // romaji, non-null
     russian: string | null;
     kind: string | null; // AnimeKindEnum / MangaKindEnum value
     score: number | null; // 0.0 = no score yet (announcements)
     status: string | null; // AnimeStatusEnum / MangaStatusEnum value
     // Progress totals depend on the media: the anime mapper fills episodes*,
-    // the manga/ranobe mapper (phase 4) fills chapters/volumes.
+    // the manga/ranobe mapper fills chapters/volumes.
     episodes?: number;
     episodesAired?: number;
     chapters?: number;
@@ -108,6 +109,34 @@ export interface TitleCard {
     posterUrl: string | null; // poster.miniUrl, 60×94 webp
     posterUrl2x: string | null; // poster.mini2xUrl, retina
     userRate: UserRateRef | null; // null without Bearer or when not in my list
+}
+
+// Raw wire shape of a mangas() search item (SEARCH_MANGAS_QUERY); nullability
+// per the docs/03 introspection results (2026-07-24): chapters/volumes are
+// Int!, status is nullable. GraphQL ID! serializes as a numeric string.
+export interface RawManga {
+    id: string;
+    name: string;
+    russian: string | null;
+    kind: string | null;
+    score: number | null;
+    status: string | null;
+    volumes: number;
+    chapters: number;
+    airedOn: { year: number | null } | null;
+    poster: { miniUrl: string; mini2xUrl: string } | null;
+    userRate: { id: string; status: UserRateStatus } | null;
+}
+
+// Raw wire shape of a mangas(mylist:) item (MYLIST_MANGAS_QUERY): only the
+// fields mapMangaToRateRow consumes; userRate carries progress + score.
+export interface RawMylistManga {
+    id: string;
+    name: string;
+    russian: string | null;
+    chapters: number;
+    poster: { miniUrl: string; mini2xUrl: string } | null;
+    userRate: { id: string; status: UserRateStatus; chapters: number; score: number } | null;
 }
 
 // Params of REST v2 user_rates writes (docs/03). rates.ts maps them to the

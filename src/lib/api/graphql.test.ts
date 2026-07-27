@@ -6,15 +6,18 @@ import { setLocal } from '../storage';
 import type { LocalState } from '../storage';
 import {
     LIST_LIMIT,
-    listAnimeRates,
+    SEARCH_TYPE_TO_KIND,
+    listRates,
     mapAnimeToRateRow,
     mapAnimeToTitleCard,
+    mapMangaToRateRow,
+    mapMangaToTitleCard,
     searchTitles,
 } from './graphql';
 import type { RawAnime, RawMylistAnime } from './graphql';
 import { ensureToken } from './auth';
 import { rateLimiter, setTokenProvider } from './http';
-import type { ApiError, RateRow, TitleCard, User } from './types';
+import type { ApiError, RateRow, RawManga, RawMylistManga, TitleCard, User } from './types';
 
 const fetchMock = vi.fn<typeof fetch>();
 
@@ -80,6 +83,7 @@ const fullRawAnime: RawAnime = {
 
 const fullTitleCard: TitleCard = {
     id: '52991',
+    targetType: 'Anime',
     name: 'Sousou no Frieren',
     russian: 'Провожающая в последний путь Фрирен',
     kind: 'tv',
@@ -111,6 +115,71 @@ const fullRateRow: RateRow = {
     score: 9,
     progress: 27,
     total: 28,
+};
+
+// Realistic manga wire fixture: shape from the docs/03 SearchMangas template
+// (introspection 2026-07-24). A ranobe item has the same shape — only kind differs.
+const fullRawManga: RawManga = {
+    id: '25',
+    name: 'Fullmetal Alchemist',
+    russian: 'Стальной алхимик',
+    kind: 'manga',
+    score: 9.03,
+    status: 'released',
+    volumes: 27,
+    chapters: 116,
+    airedOn: { year: 2001 },
+    poster: {
+        miniUrl: 'https://desu.shikimori.one/uploads/poster/mangas/25/mini.webp',
+        mini2xUrl: 'https://desu.shikimori.one/uploads/poster/mangas/25/mini@2x.webp',
+    },
+    userRate: { id: '512', status: 'watching' },
+};
+
+// The manga card carries chapters/volumes and NO episode fields; ranobe cards
+// also get targetType 'Manga' (REST writes do not distinguish the subtypes).
+const fullMangaCard: TitleCard = {
+    id: '25',
+    targetType: 'Manga',
+    name: 'Fullmetal Alchemist',
+    russian: 'Стальной алхимик',
+    kind: 'manga',
+    score: 9.03,
+    status: 'released',
+    chapters: 116,
+    volumes: 27,
+    year: 2001,
+    posterUrl: 'https://desu.shikimori.one/uploads/poster/mangas/25/mini.webp',
+    posterUrl2x: 'https://desu.shikimori.one/uploads/poster/mangas/25/mini@2x.webp',
+    userRate: { id: '512', status: 'watching' },
+};
+
+// The same title as read by MYLIST_MANGAS_QUERY: userRate carries the chapters
+// progress + score, the title itself only what mapMangaToRateRow consumes.
+const fullRawMylistManga: RawMylistManga = {
+    id: '25',
+    name: 'Fullmetal Alchemist',
+    russian: 'Стальной алхимик',
+    chapters: 116,
+    poster: {
+        miniUrl: 'https://desu.shikimori.one/uploads/poster/mangas/25/mini.webp',
+        mini2xUrl: 'https://desu.shikimori.one/uploads/poster/mangas/25/mini@2x.webp',
+    },
+    userRate: { id: '512', status: 'watching', chapters: 58, score: 9 },
+};
+
+const fullMangaRateRow: RateRow = {
+    rateId: '512',
+    targetId: '25',
+    targetType: 'Manga',
+    name: 'Fullmetal Alchemist',
+    russian: 'Стальной алхимик',
+    posterUrl: 'https://desu.shikimori.one/uploads/poster/mangas/25/mini.webp',
+    posterUrl2x: 'https://desu.shikimori.one/uploads/poster/mangas/25/mini@2x.webp',
+    status: 'watching',
+    score: 9,
+    progress: 58,
+    total: 116,
 };
 
 // Compact mylist item generator for page-size fixtures (hasMore cases).
@@ -202,14 +271,74 @@ describe('graphql', () => {
         });
     });
 
-    describe('listAnimeRates', () => {
+    describe('mapMangaToTitleCard', () => {
+        it('maps a full manga title with chapters/volumes and targetType Manga', () => {
+            expect(mapMangaToTitleCard(fullRawManga)).toEqual(fullMangaCard);
+        });
+
+        it('maps userRate: null (anonymous or not in my list) to null', () => {
+            expect(mapMangaToTitleCard({ ...fullRawManga, userRate: null }).userRate).toBeNull();
+        });
+
+        it('survives a null title status and null score/poster/airedOn (announcement)', () => {
+            const announcement = mapMangaToTitleCard({
+                ...fullRawManga,
+                status: null,
+                score: null,
+                poster: null,
+                airedOn: null,
+                userRate: null,
+            });
+            expect(announcement).toEqual({
+                ...fullMangaCard,
+                status: null,
+                score: null,
+                posterUrl: null,
+                posterUrl2x: null,
+                year: null,
+                userRate: null,
+            });
+        });
+    });
+
+    describe('mapMangaToRateRow', () => {
+        it('maps progress from userRate.chapters and total from the title chapters', () => {
+            expect(mapMangaToRateRow(fullRawMylistManga)).toEqual(fullMangaRateRow);
+        });
+
+        it('returns null for an item without userRate (dropped by the caller)', () => {
+            expect(mapMangaToRateRow({ ...fullRawMylistManga, userRate: null })).toBeNull();
+        });
+
+        it('keeps total = 0 for a manga with an unknown chapter count', () => {
+            const row = mapMangaToRateRow({ ...fullRawMylistManga, chapters: 0 });
+            expect(row?.total).toBe(0);
+            expect(row?.progress).toBe(58); // the progress unit stays chapters
+        });
+    });
+
+    describe('SEARCH_TYPE_TO_KIND', () => {
+        it('maps exactly: anime — no kind, manga excludes ranobe kinds, ranobe selects them', () => {
+            // toEqual ignores undefined-valued keys, so the shape is pinned first.
+            expect(Object.keys(SEARCH_TYPE_TO_KIND).sort()).toEqual([
+                'anime',
+                'manga',
+                'ranobe',
+            ]);
+            expect(SEARCH_TYPE_TO_KIND.anime).toBeUndefined();
+            expect(SEARCH_TYPE_TO_KIND.manga).toBe('!light_novel,!novel');
+            expect(SEARCH_TYPE_TO_KIND.ranobe).toBe('light_novel,novel');
+        });
+    });
+
+    describe('listRates', () => {
         it('POSTs MylistAnimes with mylist/limit/page variables', async () => {
             await setLocal('auth', storedAuth());
             fetchMock.mockResolvedValueOnce(
                 jsonResponse(200, { data: { animes: [fullRawMylistAnime] } }),
             );
 
-            await expect(listAnimeRates('anime', 'watching', 2)).resolves.toEqual({
+            await expect(listRates('anime', 'watching', 2)).resolves.toEqual({
                 items: [fullRateRow],
                 hasMore: false,
             });
@@ -237,7 +366,7 @@ describe('graphql', () => {
             rawPage[4] = mylistAnime(5, { userRate: null });
             fetchMock.mockResolvedValueOnce(jsonResponse(200, { data: { animes: rawPage } }));
 
-            const { items, hasMore } = await listAnimeRates('anime', 'watching', 1);
+            const { items, hasMore } = await listRates('anime', 'watching', 1);
             expect(items).toHaveLength(LIST_LIMIT - 1);
             expect(items.some((row) => row.targetId === '5')).toBe(false);
             expect(hasMore).toBe(true);
@@ -248,7 +377,7 @@ describe('graphql', () => {
             const rawPage = Array.from({ length: LIST_LIMIT - 1 }, (_, i) => mylistAnime(i + 1));
             fetchMock.mockResolvedValueOnce(jsonResponse(200, { data: { animes: rawPage } }));
 
-            const { items, hasMore } = await listAnimeRates('anime', 'watching', 1);
+            const { items, hasMore } = await listRates('anime', 'watching', 1);
             expect(items).toHaveLength(LIST_LIMIT - 1);
             expect(hasMore).toBe(false);
         });
@@ -257,19 +386,77 @@ describe('graphql', () => {
             await setLocal('auth', storedAuth());
             fetchMock.mockResolvedValueOnce(jsonResponse(200, { data: { animes: [] } }));
 
-            await expect(listAnimeRates('anime', 'watching', 3)).resolves.toEqual({
+            await expect(listRates('anime', 'watching', 3)).resolves.toEqual({
                 items: [],
                 hasMore: false,
             });
         });
 
-        it('throws internal "not implemented" for manga and ranobe without network', async () => {
-            for (const type of ['manga', 'ranobe'] as const) {
-                const error = await expectApiErrorThrow(listAnimeRates(type, 'watching', 1));
-                expect(error).toMatchObject({ kind: 'internal' });
-                expect((error as { message: string }).message).toContain('not implemented');
-            }
-            expect(fetchMock).not.toHaveBeenCalled();
+        it('routes manga and ranobe to MylistMangas with the kind filter', async () => {
+            await setLocal('auth', storedAuth());
+            fetchMock
+                .mockResolvedValueOnce(jsonResponse(200, { data: { mangas: [] } }))
+                .mockResolvedValueOnce(jsonResponse(200, { data: { mangas: [] } }));
+
+            await expect(listRates('manga', 'watching', 1)).resolves.toEqual({
+                items: [],
+                hasMore: false,
+            });
+            await expect(listRates('ranobe', 'completed', 2)).resolves.toEqual({
+                items: [],
+                hasMore: false,
+            });
+
+            const [mangaRequest, ranobeRequest] = capturedRequests();
+            const mangaBody = mangaRequest.body as {
+                query: string;
+                variables: Record<string, unknown>;
+            };
+            expect(mangaBody.query).toContain('query MylistMangas');
+            expect(mangaBody.query).toContain('$kind: MangaKindString');
+            // The trimmed userRate still drives RateRow progress/score.
+            expect(mangaBody.query).toContain('userRate { id status chapters score }');
+            expect(mangaBody.variables).toEqual({
+                mylist: 'watching',
+                limit: LIST_LIMIT,
+                page: 1,
+                kind: '!light_novel,!novel',
+            });
+
+            const ranobeBody = ranobeRequest.body as { variables: Record<string, unknown> };
+            expect(ranobeBody.variables).toEqual({
+                mylist: 'completed',
+                limit: LIST_LIMIT,
+                page: 2,
+                kind: 'light_novel,novel',
+            });
+        });
+
+        it('maps mylist manga items through mapMangaToRateRow', async () => {
+            await setLocal('auth', storedAuth());
+            fetchMock.mockResolvedValueOnce(
+                jsonResponse(200, { data: { mangas: [fullRawMylistManga] } }),
+            );
+
+            await expect(listRates('manga', 'watching', 1)).resolves.toEqual({
+                items: [fullMangaRateRow],
+                hasMore: false,
+            });
+        });
+
+        it('anime mylist routes to animes() without a kind variable', async () => {
+            await setLocal('auth', storedAuth());
+            fetchMock.mockResolvedValueOnce(jsonResponse(200, { data: { animes: [] } }));
+
+            await listRates('anime', 'watching', 1);
+
+            const body = capturedRequests()[0].body as {
+                query: string;
+                variables: Record<string, unknown>;
+            };
+            expect(body.query).toContain('query MylistAnimes');
+            expect(body.query).not.toContain('$kind');
+            expect(body.variables).not.toHaveProperty('kind');
         });
     });
 
@@ -380,13 +567,62 @@ describe('graphql', () => {
             expect(error).toEqual({ kind: 'api', status: 502, message: 'Bad gateway' });
         });
 
-        it('throws internal "not implemented" for manga and ranobe without network', async () => {
-            for (const type of ['manga', 'ranobe'] as const) {
-                const error = await expectApiErrorThrow(searchTitles('overlord', type));
-                expect(error).toMatchObject({ kind: 'internal' });
-                expect((error as { message: string }).message).toContain('not implemented');
-            }
-            expect(fetchMock).not.toHaveBeenCalled();
+        it('routes manga and ranobe to SearchMangas with the kind filter', async () => {
+            await setLocal('auth', storedAuth());
+            fetchMock
+                .mockResolvedValueOnce(jsonResponse(200, { data: { mangas: [] } }))
+                .mockResolvedValueOnce(jsonResponse(200, { data: { mangas: [] } }));
+
+            await expect(searchTitles('overlord', 'manga')).resolves.toEqual([]);
+            await expect(searchTitles('overlord', 'ranobe', 2)).resolves.toEqual([]);
+
+            const [mangaRequest, ranobeRequest] = capturedRequests();
+            const mangaBody = mangaRequest.body as {
+                query: string;
+                variables: Record<string, unknown>;
+            };
+            expect(mangaBody.query).toContain('query SearchMangas');
+            expect(mangaBody.query).toContain('$kind: MangaKindString');
+            expect(mangaBody.query).toContain('volumes');
+            expect(mangaBody.query).toContain('chapters');
+            expect(mangaBody.variables).toEqual({
+                search: 'overlord',
+                limit: 10,
+                page: 1,
+                kind: '!light_novel,!novel',
+            });
+
+            const ranobeBody = ranobeRequest.body as { variables: Record<string, unknown> };
+            expect(ranobeBody.variables).toEqual({
+                search: 'overlord',
+                limit: 10,
+                page: 2,
+                kind: 'light_novel,novel',
+            });
+        });
+
+        it('maps a manga search response through mapMangaToTitleCard', async () => {
+            await setLocal('auth', storedAuth());
+            fetchMock.mockResolvedValueOnce(
+                jsonResponse(200, { data: { mangas: [fullRawManga] } }),
+            );
+
+            await expect(searchTitles('fullmetal', 'manga')).resolves.toEqual([fullMangaCard]);
+        });
+
+        it('anime search routes to animes() without a kind variable', async () => {
+            await setLocal('auth', storedAuth());
+            fetchMock.mockResolvedValueOnce(jsonResponse(200, { data: { animes: [] } }));
+
+            await searchTitles('frieren', 'anime');
+
+            const body = capturedRequests()[0].body as {
+                query: string;
+                variables: Record<string, unknown>;
+            };
+            expect(body.query).toContain('query SearchAnimes');
+            expect(body.query).not.toContain('$kind');
+            expect(body.variables).not.toHaveProperty('kind');
         });
     });
 

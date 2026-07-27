@@ -1,5 +1,13 @@
 import { apiRequest } from './http';
-import type { ApiError, RateRow, SearchType, TitleCard, UserRateStatus } from './types';
+import type {
+    ApiError,
+    RateRow,
+    RawManga,
+    RawMylistManga,
+    SearchType,
+    TitleCard,
+    UserRateStatus,
+} from './types';
 
 // GraphQL read layer (docs/03-shikimori-api.md). Reads travel as HTTP POST, so
 // the 429-retry allowed for reads is opted in explicitly (docs/02, limiter).
@@ -25,7 +33,37 @@ query SearchAnimes($search: String, $limit: PositiveInt, $page: PositiveInt) {
   }
 }`;
 
+// Verbatim from the docs/03 SearchMangas template (fields confirmed by the live
+// request of 2026-07-23 and introspection of 2026-07-24), except userRate is
+// trimmed to the UserRateRef fields — same as SEARCH_ANIMES_QUERY.
+const SEARCH_MANGAS_QUERY = `
+query SearchMangas($search: String, $limit: PositiveInt, $page: PositiveInt, $kind: MangaKindString) {
+  mangas(search: $search, limit: $limit, page: $page, kind: $kind) {
+    id
+    name
+    russian
+    kind
+    score
+    status
+    volumes
+    chapters
+    airedOn { year }
+    poster { miniUrl mini2xUrl }
+    userRate { id status }
+  }
+}`;
+
 const SEARCH_LIMIT = 10;
+
+// Maps the UI type selector to the mangas() kind filter (docs/03, confirmed by
+// live requests 2026-07-23/24): ranobe is a Manga subtype selected by kind, the
+// manga tab excludes it with the negative filter. Anime routes to animes() and
+// needs no kind.
+export const SEARCH_TYPE_TO_KIND: Record<SearchType, string | undefined> = {
+    anime: undefined,
+    manga: '!light_novel,!novel',
+    ranobe: 'light_novel,novel',
+};
 
 // "My lists" read (variant A, docs/03): same card fields as SEARCH_ANIMES_QUERY,
 // but userRate is expanded to { id status episodes score } for the RateRow
@@ -48,6 +86,21 @@ query MylistAnimes($mylist: MylistString, $limit: PositiveInt, $page: PositiveIn
     airedOn { year }
     poster { miniUrl mini2xUrl }
     userRate { id status episodes score }
+  }
+}`;
+
+// Manga/ranobe counterpart of MYLIST_ANIMES_QUERY, trimmed to what
+// mapMangaToRateRow consumes (the anime variant over-fetches malId/kind/score
+// of the title — not copied here). kind separates the manga and ranobe tabs.
+const MYLIST_MANGAS_QUERY = `
+query MylistMangas($mylist: MylistString, $limit: PositiveInt, $page: PositiveInt, $kind: MangaKindString) {
+  mangas(mylist: $mylist, limit: $limit, page: $page, kind: $kind) {
+    id
+    name
+    russian
+    chapters
+    poster { miniUrl mini2xUrl }
+    userRate { id status chapters score }
   }
 }`;
 
@@ -82,11 +135,12 @@ interface GraphqlResponse<T> {
     errors?: { message?: string }[];
 }
 
-// Pure mapper, exported for tests. The manga/ranobe counterpart (phase 4)
-// fills chapters/volumes instead of episodes/episodesAired.
+// Pure mapper, exported for tests. mapMangaToTitleCard is the manga/ranobe
+// counterpart: chapters/volumes instead of episodes/episodesAired.
 export function mapAnimeToTitleCard(raw: RawAnime): TitleCard {
     return {
         id: raw.id,
+        targetType: 'Anime',
         name: raw.name,
         russian: raw.russian,
         kind: raw.kind,
@@ -102,30 +156,52 @@ export function mapAnimeToTitleCard(raw: RawAnime): TitleCard {
     };
 }
 
+// Pure mapper, exported for tests. Ranobe cards also carry targetType 'Manga':
+// REST writes and the book wording do not distinguish the subtypes.
+export function mapMangaToTitleCard(raw: RawManga): TitleCard {
+    return {
+        id: raw.id,
+        targetType: 'Manga',
+        name: raw.name,
+        russian: raw.russian,
+        kind: raw.kind,
+        score: raw.score,
+        status: raw.status,
+        chapters: raw.chapters,
+        volumes: raw.volumes,
+        year: raw.airedOn?.year ?? null,
+        posterUrl: raw.poster?.miniUrl ?? null,
+        posterUrl2x: raw.poster?.mini2xUrl ?? null,
+        userRate:
+            raw.userRate === null ? null : { id: raw.userRate.id, status: raw.userRate.status },
+    };
+}
+
 export async function searchTitles(
     query: string,
     type: SearchType,
     page?: number,
 ): Promise<TitleCard[]> {
-    if (type !== 'anime') {
-        // Manga/ranobe search (SearchMangas + kind filter) is phase 4; the
-        // signature and the card shape are already final.
-        throw {
-            kind: 'internal',
-            message: `Search type "${type}" is not implemented`,
-        } satisfies ApiError;
+    if (type === 'anime') {
+        const data = await graphqlRequest<{ animes: RawAnime[] }>(SEARCH_ANIMES_QUERY, {
+            search: query,
+            limit: SEARCH_LIMIT,
+            page: page ?? 1,
+        });
+        return data.animes.map(mapAnimeToTitleCard);
     }
-    const data = await graphqlRequest<{ animes: RawAnime[] }>(SEARCH_ANIMES_QUERY, {
+    const data = await graphqlRequest<{ mangas: RawManga[] }>(SEARCH_MANGAS_QUERY, {
         search: query,
         limit: SEARCH_LIMIT,
         page: page ?? 1,
+        kind: SEARCH_TYPE_TO_KIND[type],
     });
-    return data.animes.map(mapAnimeToTitleCard);
+    return data.mangas.map(mapMangaToTitleCard);
 }
 
 // Pure mapper, exported for tests. Returns null for a userRate-less item so the
 // caller can drop it: mylist never returns such rows by contract, this is a
-// guard. The manga/ranobe counterpart (phase 4) fills chapters/volumes instead.
+// guard. mapMangaToRateRow is the manga/ranobe counterpart (chapters progress).
 export function mapAnimeToRateRow(raw: RawMylistAnime): RateRow | null {
     if (raw.userRate === null) {
         return null;
@@ -145,29 +221,55 @@ export function mapAnimeToRateRow(raw: RawMylistAnime): RateRow | null {
     };
 }
 
-export async function listAnimeRates(
+// Pure mapper, exported for tests; same userRate==null guard as the anime one.
+// Progress unit is chapters (docs/03 status: increment-for-manga pending).
+export function mapMangaToRateRow(raw: RawMylistManga): RateRow | null {
+    if (raw.userRate === null) {
+        return null;
+    }
+    return {
+        rateId: raw.userRate.id,
+        targetId: raw.id,
+        targetType: 'Manga',
+        name: raw.name,
+        russian: raw.russian,
+        posterUrl: raw.poster?.miniUrl ?? null,
+        posterUrl2x: raw.poster?.mini2xUrl ?? null,
+        status: raw.userRate.status,
+        score: raw.userRate.score,
+        progress: raw.userRate.chapters,
+        total: raw.chapters,
+    };
+}
+
+export async function listRates(
     type: SearchType,
     status: UserRateStatus,
     page: number,
 ): Promise<{ items: RateRow[]; hasMore: boolean }> {
-    if (type !== 'anime') {
-        // Manga/ranobe lists are phase 4; the signature and RateRow shape are
-        // already final (same reasoning as searchTitles).
-        throw {
-            kind: 'internal',
-            message: `List type "${type}" is not implemented`,
-        } satisfies ApiError;
-    }
-    const data = await graphqlRequest<{ animes: RawMylistAnime[] }>(MYLIST_ANIMES_QUERY, {
-        mylist: status,
-        limit: LIST_LIMIT,
-        page,
-    });
     // hasMore is derived from the RAW page length, before the userRate==null
     // filter: a full page with a dropped row would otherwise cut paging short
     // and lose titles.
-    const hasMore = data.animes.length === LIST_LIMIT;
-    const items = data.animes.map(mapAnimeToRateRow).filter((row): row is RateRow => row !== null);
+    if (type === 'anime') {
+        const data = await graphqlRequest<{ animes: RawMylistAnime[] }>(MYLIST_ANIMES_QUERY, {
+            mylist: status,
+            limit: LIST_LIMIT,
+            page,
+        });
+        const hasMore = data.animes.length === LIST_LIMIT;
+        const items = data.animes
+            .map(mapAnimeToRateRow)
+            .filter((row): row is RateRow => row !== null);
+        return { items, hasMore };
+    }
+    const data = await graphqlRequest<{ mangas: RawMylistManga[] }>(MYLIST_MANGAS_QUERY, {
+        mylist: status,
+        limit: LIST_LIMIT,
+        page,
+        kind: SEARCH_TYPE_TO_KIND[type],
+    });
+    const hasMore = data.mangas.length === LIST_LIMIT;
+    const items = data.mangas.map(mapMangaToRateRow).filter((row): row is RateRow => row !== null);
     return { items, hasMore };
 }
 
