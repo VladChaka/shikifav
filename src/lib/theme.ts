@@ -34,9 +34,15 @@ function subscribe(root: ThemeRoot): void {
         if (!('settings' in changes)) {
             return;
         }
-        void getSettings().then((settings) => {
-            applyTheme(settings.theme, root);
-        });
+        void getSettings()
+            .then((settings) => {
+                applyTheme(settings.theme, root);
+            })
+            // Never rejects, same as initTheme. Here the fallback is to change
+            // nothing: unlike the first apply, a theme is already on <html> and
+            // repainting the page as 'system' because of a failed read would be
+            // a worse answer than keeping the last known one.
+            .catch(() => {});
     });
 }
 

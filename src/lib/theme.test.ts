@@ -168,6 +168,27 @@ describe('theme', () => {
             reads.mockRestore();
         });
 
+        // Ф6-23: the listener is fire-and-forget, so a rejected re-read would be
+        // an unhandled rejection. Here the fallback is to change nothing — the
+        // page keeps the theme it already shows instead of blinking to system.
+        it('keeps the applied theme when the re-read fails', async () => {
+            await setSettings({ theme: 'dark' });
+            const { initTheme } = await importTheme();
+            const root = createRoot();
+            await initTheme(root);
+            const read = vi
+                .spyOn(fakeBrowser.storage.local, 'get')
+                .mockRejectedValue(new Error('storage unavailable'));
+
+            // Raw write: setSettings() itself reads, and the read is broken.
+            // set() awaits the listeners, so the failed re-read is over here.
+            await fakeBrowser.storage.local.set({ settings: { theme: 'light' } });
+
+            expect(read).toHaveBeenCalled();
+            expect(root.attrs.get('data-theme')).toBe('dark');
+            read.mockRestore();
+        });
+
         it('subscribes once even if initTheme runs twice', async () => {
             const listeners = vi.spyOn(fakeBrowser.storage.local.onChanged, 'addListener');
             const { initTheme } = await importTheme();

@@ -130,6 +130,9 @@ describe('popup start state from the settings (Ф6-20)', () => {
         }
         cleanups = [];
         vi.unstubAllGlobals();
+        // fakeBrowser.reset() does not undo a spy, and a storage stub left in
+        // place would break every later case in the file.
+        vi.restoreAllMocks();
     });
 
     describe('startTab', () => {
@@ -189,6 +192,48 @@ describe('popup start state from the settings (Ф6-20)', () => {
 
             const { getSession } = await import('@/src/lib/storage');
             await vi.waitFor(async () => expect(await getSession('lastTab')).toBe('lists'));
+        });
+    });
+
+    // Ф6-23: every read at open (App.vue, use-settings, use-search, use-lists) is
+    // fire-and-forget, so a rejected chrome.storage call used to surface as an
+    // unhandled rejection instead of a fallback. The popup must still open.
+    describe('a failing chrome.storage', () => {
+        function breakStorage(): void {
+            const fail = (): Promise<never> => Promise.reject(new Error('storage unavailable'));
+            vi.spyOn(fakeBrowser.storage.local, 'get').mockImplementation(fail);
+            vi.spyOn(fakeBrowser.storage.session, 'get').mockImplementation(fail);
+        }
+
+        it('opens the popup on the defaults and keeps it usable', async () => {
+            const listCalls: string[] = [];
+            const container = await mountPopup(
+                async () => {
+                    breakStorage();
+                },
+                {
+                    'rates.list': async ({ status }) => {
+                        listCalls.push(status);
+                        return { items: [], hasMore: false };
+                    },
+                },
+            );
+
+            // The shell is up: auth comes from background, not from storage.
+            await vi.waitFor(() => expect(findAll(container, 'header')).toHaveLength(1));
+            await settle();
+            // Nothing restored and no setting read — the documented default view.
+            expect(activeTabLabel(container)).toContain('Поиск');
+            expect(findAll(container, 'card')).toHaveLength(0);
+
+            // And it still works: the lists tab loads its default filter.
+            const listsTab = findAll(container, 'tabs__tab').find((el) =>
+                textOf(el).includes('Мои списки'),
+            );
+            clickOn(listsTab as FakeElement);
+
+            await vi.waitFor(() => expect(listCalls).toEqual(['watching']));
+            await settle();
         });
     });
 

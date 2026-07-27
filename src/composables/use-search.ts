@@ -1,7 +1,7 @@
 import { ref } from 'vue';
 import type { Ref } from 'vue';
 import { sendMessage } from '../lib/messaging';
-import { getSession, getSettings, setSession } from '../lib/storage';
+import { DEFAULT_SETTINGS, getSession, getSettings, setSession } from '../lib/storage';
 import type { ApiError, SearchType, TitleCard } from '../lib/api/types';
 
 // Search list states (docs/05): 'idle' is the "type a title" hint shown for an
@@ -174,8 +174,15 @@ function retry(): void {
 // Both reads are awaited together, so the outcome cannot depend on which
 // storage promise settles first. No automatic refetch — the network catches up
 // after the next input or retry.
+//
+// Never rejects (same rule as src/lib/theme.ts): this runs fire-and-forget while
+// the screen initialises, and a failed read only costs the instant first render
+// — the search opens on its defaults instead of dying on an unhandled rejection.
 async function restoreStartState(): Promise<void> {
-    const [settings, cached] = await Promise.all([getSettings(), getSession('lastSearch')]);
+    const [settings, cached] = await Promise.all([
+        getSettings(),
+        getSession('lastSearch'),
+    ]).catch(() => [DEFAULT_SETTINGS, undefined] as const);
     if (touched) {
         return;
     }
