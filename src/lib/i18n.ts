@@ -1,5 +1,16 @@
 import type { ApiError, RateTargetType, UserRateStatus } from './api/types';
 
+// Book-variant (manga/ranobe) overrides; statuses missing here reuse the shared
+// anime labels (docs/03 status table). Declared apart from the i18n literal so
+// `satisfies` can check the keys against UserRateStatus while keeping the set
+// partial: a typo would otherwise pass as an extra key and silently fall back
+// to the anime wording.
+const statusesBook = {
+    watching: 'Читаю',
+    rewatching: 'Перечитываю',
+    completed: 'Прочитано',
+} satisfies Partial<Record<UserRateStatus, string>>;
+
 // Every UI string lives in this single object (docs/05-ui.md, principle 4).
 // No i18n libraries: the extension is single-user and Russian-only.
 export const i18n = {
@@ -25,6 +36,8 @@ export const i18n = {
         emptyHint: 'Введите название аниме, манги или ранобэ',
         noResults: 'Ничего не найдено',
         clear: 'Очистить',
+        // aria-label of the chip row that picks what is being searched.
+        typeFilterLabel: 'Тип поиска',
     },
     // "Мои списки" tab: type/status filters, pagination, empty state (docs/05).
     lists: {
@@ -91,13 +104,7 @@ export const i18n = {
         on_hold: 'Отложено',
         dropped: 'Брошено',
     },
-    // Book-variant (manga/ranobe) overrides; statuses missing here reuse the
-    // shared labels above (docs/03 status table).
-    statusesBook: {
-        watching: 'Читаю',
-        rewatching: 'Перечитываю',
-        completed: 'Прочитано',
-    },
+    statusesBook,
     actions: {
         // The one-click add button has no constant label: it is built as
         // '+ ' + statusLabel(quickStatus, media) (Ф6-20).
@@ -166,7 +173,11 @@ export function mediaOf(targetType: RateTargetType): MediaKind {
 // labels.
 export function statusLabel(status: UserRateStatus, media: MediaKind = 'anime'): string {
     if (media === 'book') {
-        const override = (i18n.statusesBook as Partial<Record<UserRateStatus, string>>)[status];
+        // Widening assignment, not a cast: statusesBook is key-checked at its
+        // declaration, and the partial view makes it indexable by a status it
+        // does not override.
+        const overrides: Partial<Record<UserRateStatus, string>> = statusesBook;
+        const override = overrides[status];
         if (override !== undefined) {
             return override;
         }

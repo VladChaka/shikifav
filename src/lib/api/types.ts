@@ -111,33 +111,9 @@ export interface TitleCard {
     userRate: UserRateRef | null; // null without Bearer or when not in my list
 }
 
-// Raw wire shape of a mangas() search item (SEARCH_MANGAS_QUERY); nullability
-// per the docs/03 introspection results (2026-07-24): chapters/volumes are
-// Int!, status is nullable. GraphQL ID! serializes as a numeric string.
-export interface RawManga {
-    id: string;
-    name: string;
-    russian: string | null;
-    kind: string | null;
-    score: number | null;
-    status: string | null;
-    volumes: number;
-    chapters: number;
-    airedOn: { year: number | null } | null;
-    poster: { miniUrl: string; mini2xUrl: string } | null;
-    userRate: { id: string; status: UserRateStatus } | null;
-}
-
-// Raw wire shape of a mangas(mylist:) item (MYLIST_MANGAS_QUERY): only the
-// fields mapMangaToRateRow consumes; userRate carries progress + score.
-export interface RawMylistManga {
-    id: string;
-    name: string;
-    russian: string | null;
-    chapters: number;
-    poster: { miniUrl: string; mini2xUrl: string } | null;
-    userRate: { id: string; status: UserRateStatus; chapters: number; score: number } | null;
-}
+// Raw wire shapes of the GraphQL responses (Raw*) live next to their queries in
+// api/graphql.ts: this file is the surface shared with background, messaging and
+// UI, while the wire shapes stay internal to the read layer (docs/02, module tree).
 
 // Params of REST v2 user_rates writes (docs/03). rates.ts maps them to the
 // snake_case wire body; user_id is never part of these params — background

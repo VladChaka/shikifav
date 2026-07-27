@@ -1,13 +1,5 @@
 import { apiRequest } from './http';
-import type {
-    ApiError,
-    RateRow,
-    RawManga,
-    RawMylistManga,
-    SearchType,
-    TitleCard,
-    UserRateStatus,
-} from './types';
+import type { ApiError, RateRow, SearchType, TitleCard, UserRateStatus } from './types';
 
 // GraphQL read layer (docs/03-shikimori-api.md). Reads travel as HTTP POST, so
 // the 429-retry allowed for reads is opted in explicitly (docs/02, limiter).
@@ -127,6 +119,34 @@ export interface RawAnime {
 // Same item under MYLIST_ANIMES_QUERY: userRate carries progress + score.
 export interface RawMylistAnime extends Omit<RawAnime, 'userRate'> {
     userRate: { id: string; status: UserRateStatus; episodes: number; score: number } | null;
+}
+
+// Raw wire shape of a mangas() search item (SEARCH_MANGAS_QUERY); nullability
+// per the docs/03 introspection results (2026-07-24): chapters/volumes are
+// Int!, status is nullable. GraphQL ID! serializes as a numeric string.
+export interface RawManga {
+    id: string;
+    name: string;
+    russian: string | null;
+    kind: string | null;
+    score: number | null;
+    status: string | null;
+    volumes: number;
+    chapters: number;
+    airedOn: { year: number | null } | null;
+    poster: { miniUrl: string; mini2xUrl: string } | null;
+    userRate: { id: string; status: UserRateStatus } | null;
+}
+
+// Raw wire shape of a mangas(mylist:) item (MYLIST_MANGAS_QUERY): only the
+// fields mapMangaToRateRow consumes; userRate carries progress + score.
+export interface RawMylistManga {
+    id: string;
+    name: string;
+    russian: string | null;
+    chapters: number;
+    poster: { miniUrl: string; mini2xUrl: string } | null;
+    userRate: { id: string; status: UserRateStatus; chapters: number; score: number } | null;
 }
 
 // GraphQL transport envelope: HTTP 200 may still carry errors[] without data.

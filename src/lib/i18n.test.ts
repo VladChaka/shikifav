@@ -9,9 +9,9 @@ describe('mediaOf', () => {
 });
 
 describe('statusLabel', () => {
-    // The statusesBook section is partial and read through a cast, so a typo in
-    // one of its keys would silently fall back to the anime label — each of the
-    // three overrides is pinned to its exact Russian text here.
+    // The statusesBook section is partial: a wrong (even if type-valid) key
+    // would silently fall back to the anime label — each of the three overrides
+    // is pinned to its exact Russian text here.
     it('uses the book override for watching', () => {
         expect(statusLabel('watching', 'book')).toBe('Читаю');
     });

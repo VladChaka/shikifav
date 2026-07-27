@@ -50,7 +50,7 @@
             <ChipGroup
                 :options="TYPE_OPTIONS"
                 :model-value="searchType"
-                :aria-label="i18n.lists.typeFilterLabel"
+                :aria-label="i18n.search.typeFilterLabel"
                 @update:model-value="emit('update:searchType', $event)"
             />
         </div>

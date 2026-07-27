@@ -82,7 +82,7 @@ describe('SearchTab clear button (UX-1)', () => {
 describe('SearchTab type filter (UX-1)', () => {
     it('renders the three types in a labelled chip row, checking the selected one', () => {
         const { container } = mountSearch('', 'ranobe');
-        expect(find(container, 'chips').props['aria-label']).toBe(i18n.lists.typeFilterLabel);
+        expect(find(container, 'chips').props['aria-label']).toBe(i18n.search.typeFilterLabel);
 
         const chips = findAll(container, 'chip');
         expect(chips.map((chip) => textOf(chip).trim())).toEqual(['Аниме', 'Манга', 'Ранобэ']);

@@ -14,10 +14,10 @@ import {
     mapMangaToTitleCard,
     searchTitles,
 } from './graphql';
-import type { RawAnime, RawMylistAnime } from './graphql';
+import type { RawAnime, RawManga, RawMylistAnime, RawMylistManga } from './graphql';
 import { ensureToken } from './auth';
 import { rateLimiter, setTokenProvider } from './http';
-import type { ApiError, RateRow, RawManga, RawMylistManga, TitleCard, User } from './types';
+import type { ApiError, RateRow, TitleCard, User } from './types';
 
 const fetchMock = vi.fn<typeof fetch>();
 
