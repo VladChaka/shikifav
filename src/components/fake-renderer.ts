@@ -26,6 +26,11 @@ export interface FakeElement extends FakeNode {
     // The built-in vShow directive assigns el.style.display directly, so every
     // element carries a mutable style bag (v-show is used by App.vue tabs).
     style: Record<string, string>;
+    // HTMLElement.focus() stand-in: components reach for it through template
+    // refs (SearchTab clear button, search-page autofocus). It only records the
+    // call, and tests may still overwrite it with a spy.
+    focus(): void;
+    focused: boolean;
 }
 
 export function createFakeElement(tag: string): FakeElement {
@@ -38,6 +43,10 @@ export function createFakeElement(tag: string): FakeElement {
         listeners: {},
         children: [],
         style: {},
+        focused: false,
+        focus(): void {
+            el.focused = true;
+        },
         contains(other: unknown): boolean {
             let node = other as FakeNode | null;
             while (node) {

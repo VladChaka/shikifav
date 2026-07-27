@@ -16,6 +16,8 @@ export interface UseSearch {
     items: Ref<TitleCard[]>;
     error: Ref<ApiError | undefined>;
     setQuery: (value: string) => void;
+    // Same as setQuery but fires the request immediately (search page, ф.5).
+    startQuery: (value: string) => void;
     setType: (type: SearchType) => void;
     retry: () => void;
 }
@@ -68,6 +70,30 @@ function setQuery(value: string): void {
         debounceTimer = undefined;
         void dispatch(trimmed);
     }, SEARCH_DEBOUNCE_MS);
+}
+
+// Query handed over from outside the field (search page opened from the context
+// menu with ?q=…): the user already "typed", so the 300 ms debounce would only
+// delay the first render. `touched` additionally guards the value against a
+// late restoreFromCache() overwriting it with the previous session's search.
+function startQuery(value: string): void {
+    touched = true;
+    query.value = value;
+    if (debounceTimer !== undefined) {
+        clearTimeout(debounceTimer);
+        debounceTimer = undefined;
+    }
+    const trimmed = value.trim();
+    if (trimmed.length < MIN_QUERY_LENGTH) {
+        // Same as setQuery: bumping the seq invalidates any in-flight response
+        // so it cannot resurrect stale results.
+        requestSeq += 1;
+        status.value = 'idle';
+        items.value = [];
+        error.value = undefined;
+        return;
+    }
+    void dispatch(trimmed);
 }
 
 // US-7: switching Аниме/Манга/Ранобэ. Results of the previous type are wrong
@@ -157,5 +183,5 @@ export function useSearch(): UseSearch {
         initialized = true;
         void restoreFromCache();
     }
-    return { query, searchType, status, items, error, setQuery, setType, retry };
+    return { query, searchType, status, items, error, setQuery, startQuery, setType, retry };
 }

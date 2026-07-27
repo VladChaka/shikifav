@@ -289,6 +289,154 @@ describe('use-search', () => {
         await vi.waitFor(() => expect(queries).toEqual(['frieren']));
     });
 
+    // Ф5: the search page opens with ?q=… already filled in, so the query comes
+    // from outside the input field and must not wait for the typing debounce.
+    describe('startQuery (search page, ф.5)', () => {
+        it('dispatches immediately, without the 300 ms debounce', async () => {
+            const queries: string[] = [];
+            const { search } = await setup({
+                'search.titles': async ({ query }) => {
+                    queries.push(query);
+                    return { items: [card('1', 'Frieren')] };
+                },
+            });
+
+            search.startQuery('frieren');
+            // Synchronous part of the dispatch: no timer has been advanced.
+            expect(search.query.value).toBe('frieren');
+            expect(search.status.value).toBe('loading');
+
+            await vi.advanceTimersByTimeAsync(0); // microtasks only
+            expect(queries).toEqual(['frieren']);
+            await vi.waitFor(() => expect(search.status.value).toBe('data'));
+            expect(search.items.value).toEqual([card('1', 'Frieren')]);
+        });
+
+        it('unlike setQuery, which still waits for the debounce', async () => {
+            const queries: string[] = [];
+            const { search } = await setup({
+                'search.titles': async ({ query }) => {
+                    queries.push(query);
+                    return { items: [] };
+                },
+            });
+
+            search.setQuery('frieren');
+            await vi.advanceTimersByTimeAsync(0);
+            expect(queries).toEqual([]); // same wait, nothing dispatched yet
+            await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+            expect(queries).toEqual(['frieren']);
+        });
+
+        it('cancels a pending debounced input instead of running both queries', async () => {
+            const queries: string[] = [];
+            const { search } = await setup({
+                'search.titles': async ({ query }) => {
+                    queries.push(query);
+                    return { items: [] };
+                },
+            });
+
+            search.setQuery('typed');
+            search.startQuery('from menu');
+            await vi.advanceTimersByTimeAsync(DEBOUNCE_MS * 3);
+
+            expect(queries).toEqual(['from menu']);
+            expect(search.query.value).toBe('from menu');
+        });
+
+        it('stays idle without a request for a query shorter than 2 characters', async () => {
+            const queries: string[] = [];
+            const { search } = await setup({
+                'search.titles': async ({ query }) => {
+                    queries.push(query);
+                    return { items: [] };
+                },
+            });
+
+            search.startQuery('f');
+            await vi.advanceTimersByTimeAsync(DEBOUNCE_MS * 3);
+            expect(search.status.value).toBe('idle');
+            expect(search.query.value).toBe('f'); // shown in the field, just not searched
+
+            search.startQuery('  x  '); // trimmed length 1
+            await vi.advanceTimersByTimeAsync(DEBOUNCE_MS * 3);
+
+            expect(queries).toEqual([]);
+            expect(search.status.value).toBe('idle');
+            expect(search.items.value).toEqual([]);
+        });
+
+        it('is not overwritten by a late session-cache restore', async () => {
+            // The restore resolves asynchronously; the ?q= query is already on
+            // screen by then, so the previous session's search must be ignored.
+            const gate = deferred<Record<string, unknown>>();
+            const sessionGet = fakeBrowser.storage.session.get;
+            fakeBrowser.storage.session.get = (() => gate.promise) as typeof sessionGet;
+            try {
+                const { search } = await setup({
+                    'search.titles': async () => ({ items: [card('2', 'Berserk')] }),
+                });
+
+                search.startQuery('berserk');
+                await vi.waitFor(() => expect(search.status.value).toBe('data'));
+
+                gate.resolve({
+                    lastSearch: {
+                        query: 'frieren',
+                        type: 'manga',
+                        items: [mangaCard('1', 'Frieren')],
+                    },
+                });
+                await vi.advanceTimersByTimeAsync(0);
+
+                expect(search.query.value).toBe('berserk');
+                expect(search.searchType.value).toBe('anime');
+                expect(search.items.value).toEqual([card('2', 'Berserk')]);
+                expect(search.status.value).toBe('data');
+            } finally {
+                fakeBrowser.storage.session.get = sessionGet;
+            }
+        });
+
+        it('drops the response of a superseded startQuery', async () => {
+            const first = deferred<{ items: TitleCard[] }>();
+            let call = 0;
+            const { search } = await setup({
+                'search.titles': async () => {
+                    call += 1;
+                    return call === 1 ? first.promise : { items: [card('2', 'Two')] };
+                },
+            });
+
+            search.startQuery('one'); // hangs
+            search.startQuery('two');
+            await vi.waitFor(() => expect(search.items.value).toEqual([card('2', 'Two')]));
+
+            first.resolve({ items: [card('1', 'One')] }); // stale, must be dropped
+            await vi.advanceTimersByTimeAsync(0);
+            expect(search.items.value).toEqual([card('2', 'Two')]);
+            expect(search.status.value).toBe('data');
+        });
+
+        it('drops the in-flight response when the query is cleared right after', async () => {
+            const pending = deferred<{ items: TitleCard[] }>();
+            const { search } = await setup({
+                'search.titles': async () => pending.promise,
+            });
+
+            search.startQuery('frieren');
+            expect(search.status.value).toBe('loading');
+            search.startQuery('');
+            expect(search.status.value).toBe('idle');
+
+            pending.resolve({ items: [card('1', 'Frieren')] });
+            await vi.advanceTimersByTimeAsync(0);
+            expect(search.status.value).toBe('idle');
+            expect(search.items.value).toEqual([]);
+        });
+    });
+
     describe('type switching (US-7)', () => {
         it('setType drops the old results synchronously and re-dispatches with the new type', async () => {
             const requests: { query: string; type: string }[] = [];

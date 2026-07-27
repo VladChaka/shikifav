@@ -97,6 +97,14 @@ function clearQuery(): void {
     emit('update:modelValue', '');
     inputEl.value?.focus();
 }
+
+// The input ref stays private; the search page (opened without ?q=) needs a way
+// to put the caret in the field, so only this method is public.
+function focus(): void {
+    inputEl.value?.focus();
+}
+
+defineExpose({ focus });
 </script>
 
 <style scoped lang="scss">
