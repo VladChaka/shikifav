@@ -241,7 +241,7 @@ import type { LocalState, StartTab, Theme } from '@/src/lib/storage';
 
 // Options page (design card screens/options): seven settings behind three
 // vertical tabs. Opened in its own tab, so the page owns no shell — the header
-// is a full-width bar and everything lines up in one 880px column.
+// is a full-width bar and everything lines up in one 1400px column.
 //
 // The version comes from the entrypoint as a prop: the component never touches
 // the extension runtime, which keeps it mountable in tests.
@@ -417,9 +417,12 @@ async function clearCache(): Promise<void> {
 
 <style scoped lang="scss">
 /* Design card screens/options. The page fills the tab; the header bar spans the
-   full width while its content, the tab list and the panel share one 880px
-   column. 880, not the 720 of the search page: the reading measure of the panel
-   must stay ~560px, and 216 (sidebar) + 28 + 560 lands exactly there. */
+   full width while its content, the tab list and the panel share one 1400px
+   column. The computed 880 (216 sidebar + 28 + 560 reading measure) was tried
+   and rejected by the owner: on a desktop monitor it reads as a narrow strip
+   stranded in a wide window. The 560px measure did not go anywhere — it lives
+   on the settings blocks themselves (.opt__hint, the chip rows), so the panel
+   is wider than the measure but its text never stretches. */
 .options {
     /* Toast: fixed 12px off both edges reads as a full-screen band on a wide
        tab, so here it is clamped to the content column and centred with it. */
