@@ -305,15 +305,16 @@ function onRemove(): void {
 /* Hover of the poster link (Ф6-26): a fade, not a fixed color — the poster
    blends toward the page background, which reads as lighter on the light theme
    and as darker on the dark one. */
-a.card__poster-box:hover /* Placeholder only: dimmed on the dark theme through the foundation
-   variable (default 1 elsewhere), so a white sheet of paper does not
-   glow in a dark list. */
-.card__poster--placeholder {
-    opacity: var(--poster-placeholder-opacity, 1);
+a.card__poster-box:hover .card__poster {
+    opacity: 0.75;
 }
 
-.card__poster {
-    opacity: 0.75;
+/* Placeholder only: dimmed on the dark theme through the foundation
+   variable (default 1 elsewhere), so a white sheet of paper does not
+   glow in a dark list. Hover keeps its own fade above — the two never
+   apply to the same element at once, so they do not compound. */
+.card__poster--placeholder {
+    opacity: var(--poster-placeholder-opacity, 1);
 }
 
 .card__poster {

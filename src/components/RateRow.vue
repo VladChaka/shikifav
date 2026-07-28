@@ -315,15 +315,16 @@ function onRemove(): void {
 
 /* Hover of the poster link: the same fade toward the page background as in
    TitleCard. */
-a.rate__poster-box:hover /* Placeholder only: dimmed on the dark theme through the foundation
-   variable (default 1 elsewhere), so a white sheet of paper does not
-   glow in a dark list. */
-.rate__poster--placeholder {
-    opacity: var(--poster-placeholder-opacity, 1);
+a.rate__poster-box:hover .rate__poster {
+    opacity: 0.75;
 }
 
-.rate__poster {
-    opacity: 0.75;
+/* Placeholder only: dimmed on the dark theme through the foundation
+   variable (default 1 elsewhere), so a white sheet of paper does not
+   glow in a dark list. Hover keeps its own fade above — the two never
+   apply to the same element at once, so they do not compound. */
+.rate__poster--placeholder {
+    opacity: var(--poster-placeholder-opacity, 1);
 }
 
 .rate__poster {
