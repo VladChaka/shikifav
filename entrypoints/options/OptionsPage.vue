@@ -1,7 +1,7 @@
 <template>
     <div class="options">
-        <!-- Full-width bar, content aligned to the 880px column (same rhythm as
-             UserHeader on the search page). -->
+        <!-- Full-width bar, content aligned to the same column as the grid
+             below it. -->
         <div class="options__bar">
             <div class="options__bar-inner">
                 <img
@@ -440,7 +440,7 @@ async function clearCache(): Promise<void> {
     align-items: center;
     gap: 10px;
     width: 100%;
-    max-width: 880px;
+    max-width: 1400px;
     margin: 0 auto;
     padding: 10px 24px;
 }
@@ -482,7 +482,7 @@ async function clearCache(): Promise<void> {
     flex: 1;
     min-height: 0;
     width: 100%;
-    max-width: 880px;
+    max-width: 1400px;
     margin: 0 auto;
     padding: 20px 24px 28px;
 }
