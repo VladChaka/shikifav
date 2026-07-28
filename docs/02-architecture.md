@@ -43,7 +43,7 @@
 | `search.titles` | `{ query, type: 'anime'\|'manga'\|'ranobe', page? }` | `{ items: TitleCard[] }` |
 | `rates.list` | `{ type, status, page }` | `{ items: RateRow[], hasMore }` |
 | `calendar.list` | — | `{ items: CalendarItem[] }` (календарь онгоингов, фаза 7) |
-| `posters.fetch` | `{ type, ids: string[] }` | `{ posters: Record<string, string> }` (добор постеров, пустых в GraphQL: id → url, один батч на страницу выдачи, Ф6-27) |
+| `posters.fetch` | `{ type, ids: string[] }` | `{ posters: Record<string, string> }` (добор постеров, пустых в GraphQL: id → url; одно сообщение на страницу выдачи, внутри — REST-батчи по 50 id последовательно, Ф6-27, Ф7-14) |
 | `rates.create` | `{ targetId, targetType, status }` | `{ rate }` |
 | `rates.update` | `{ rateId, patch }` | `{ rate }` |
 | `rates.delete` | `{ rateId }` | `{}` |
