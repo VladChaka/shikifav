@@ -17,6 +17,12 @@
    own — it is exactly the case where neither dark rule matches. */
 
 @mixin dark-tokens {
+    /* The poster placeholder is a pencil sketch on white paper, so it cannot be
+       made transparent (the lines vanish on dark) and cannot be inverted (a
+       shaded drawing turns into a negative). It is dimmed instead, which keeps
+       it legible without lighting up a white block in a dark list. */
+    --poster-placeholder-opacity: 0.6;
+
     --color-bg: #1c1a18;
     --color-fg: #e9e6e2;
     --color-fg-muted: #a49b93;

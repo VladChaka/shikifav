@@ -10,6 +10,7 @@
         >
             <img
                 class="card__poster"
+                :class="{ 'card__poster--placeholder': !card.posterUrl }"
                 :src="posterSrc"
                 :srcset="posterSrcset"
                 width="60"
@@ -304,7 +305,14 @@ function onRemove(): void {
 /* Hover of the poster link (Ф6-26): a fade, not a fixed color — the poster
    blends toward the page background, which reads as lighter on the light theme
    and as darker on the dark one. */
-a.card__poster-box:hover .card__poster {
+a.card__poster-box:hover /* Placeholder only: dimmed on the dark theme through the foundation
+   variable (default 1 elsewhere), so a white sheet of paper does not
+   glow in a dark list. */
+.card__poster--placeholder {
+    opacity: var(--poster-placeholder-opacity, 1);
+}
+
+.card__poster {
     opacity: 0.75;
 }
 

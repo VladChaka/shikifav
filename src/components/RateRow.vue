@@ -9,6 +9,7 @@
         >
             <img
                 class="rate__poster"
+                :class="{ 'rate__poster--placeholder': !rate.posterUrl }"
                 :src="posterSrc"
                 :srcset="posterSrcset"
                 width="42"
@@ -314,7 +315,14 @@ function onRemove(): void {
 
 /* Hover of the poster link: the same fade toward the page background as in
    TitleCard. */
-a.rate__poster-box:hover .rate__poster {
+a.rate__poster-box:hover /* Placeholder only: dimmed on the dark theme through the foundation
+   variable (default 1 elsewhere), so a white sheet of paper does not
+   glow in a dark list. */
+.rate__poster--placeholder {
+    opacity: var(--poster-placeholder-opacity, 1);
+}
+
+.rate__poster {
     opacity: 0.75;
 }
 
