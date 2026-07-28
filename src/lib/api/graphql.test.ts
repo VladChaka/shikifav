@@ -5,19 +5,31 @@ import { sendMessage } from '../messaging';
 import { setLocal } from '../storage';
 import type { LocalState } from '../storage';
 import {
+    CALENDAR_LIMIT,
+    CALENDAR_MAX_PAGES,
     LIST_LIMIT,
     SEARCH_TYPE_TO_KIND,
+    listCalendar,
     listRates,
+    mapAnimeToCalendarItem,
     mapAnimeToRateRow,
     mapAnimeToTitleCard,
     mapMangaToRateRow,
     mapMangaToTitleCard,
     searchTitles,
 } from './graphql';
-import type { RawAnime, RawManga, RawMylistAnime, RawMylistManga } from './graphql';
+import type {
+    RawAnime,
+    RawCalendarAnime,
+    RawManga,
+    RawMylistAnime,
+    RawMylistManga,
+} from './graphql';
+import { buildSchedule } from '../calendar-schedule';
+import type { ScheduleItem } from '../calendar-schedule';
 import { ensureToken } from './auth';
 import { rateLimiter, setTokenProvider } from './http';
-import type { ApiError, RateRow, TitleCard, User } from './types';
+import type { ApiError, CalendarItem, RateRow, TitleCard, User, UserRateStatus } from './types';
 
 const fetchMock = vi.fn<typeof fetch>();
 
@@ -189,6 +201,51 @@ const fullMangaRateRow: RateRow = {
     total: 116,
     url: 'https://shikimori.io/mangas/25-fullmetal-alchemist',
 };
+
+// Realistic calendar wire fixture (Ф7-5): shape from the docs/03 reference
+// query, values from the live request of 2026-07-28 — episodes: 0 (unknown
+// total) and a date with an offset, i.e. an instant rather than a wall date.
+const fullRawCalendarAnime: RawCalendarAnime = {
+    id: '21',
+    name: 'One Piece',
+    russian: 'Ван-Пис',
+    status: 'ongoing',
+    episodes: 0,
+    episodesAired: 1147,
+    nextEpisodeAt: '2026-08-02T17:15:00+03:00',
+    poster: {
+        miniUrl: 'https://desu.shikimori.one/uploads/poster/animes/21/mini.webp',
+        mini2xUrl: 'https://desu.shikimori.one/uploads/poster/animes/21/mini@2x.webp',
+    },
+    userRate: { id: '777', status: 'watching', episodes: 1140 },
+    url: 'https://shikimori.io/animes/21-one-piece',
+};
+
+const fullCalendarItem: CalendarItem = {
+    rateId: '777',
+    targetId: '21',
+    name: 'One Piece',
+    russian: 'Ван-Пис',
+    status: 'watching',
+    posterUrl: 'https://desu.shikimori.one/uploads/poster/animes/21/mini.webp',
+    posterUrl2x: 'https://desu.shikimori.one/uploads/poster/animes/21/mini@2x.webp',
+    nextEpisodeAt: '2026-08-02T17:15:00+03:00',
+    episodes: 0,
+    episodesAired: 1147,
+    progress: 1140,
+    url: 'https://shikimori.io/animes/21-one-piece',
+};
+
+// Compact calendar item generator for page-size fixtures.
+function calendarAnime(id: number, overrides: Partial<RawCalendarAnime> = {}): RawCalendarAnime {
+    return {
+        ...fullRawCalendarAnime,
+        id: String(id),
+        name: `Ongoing ${id}`,
+        userRate: { id: String(2000 + id), status: 'watching', episodes: 3 },
+        ...overrides,
+    };
+}
 
 // Compact mylist item generator for page-size fixtures (hasMore cases).
 function mylistAnime(id: number, overrides: Partial<RawMylistAnime> = {}): RawMylistAnime {
@@ -365,6 +422,256 @@ describe('graphql', () => {
                 'https://shikimori.io/mangas/25-fullmetal-alchemist',
             );
             expect(mapMangaToRateRow({ ...fullRawMylistManga, url: null })?.url).toBeNull();
+        });
+    });
+
+    describe('mapAnimeToCalendarItem', () => {
+        it('maps a full calendar row 1:1', () => {
+            expect(mapAnimeToCalendarItem(fullRawCalendarAnime)).toEqual(fullCalendarItem);
+        });
+
+        it('returns null for an item without userRate (dropped by the caller)', () => {
+            expect(mapAnimeToCalendarItem({ ...fullRawCalendarAnime, userRate: null })).toBeNull();
+        });
+
+        it('keeps russian: null (the UI falls back to the romaji name)', () => {
+            const item = mapAnimeToCalendarItem({ ...fullRawCalendarAnime, russian: null });
+            expect(item?.russian).toBeNull();
+            expect(item?.name).toBe('One Piece');
+        });
+
+        it('maps a missing poster to null poster urls', () => {
+            const item = mapAnimeToCalendarItem({ ...fullRawCalendarAnime, poster: null });
+            expect(item?.posterUrl).toBeNull();
+            expect(item?.posterUrl2x).toBeNull();
+        });
+
+        it('carries the url of the title through, null included (Ф6-26)', () => {
+            expect(mapAnimeToCalendarItem(fullRawCalendarAnime)?.url).toBe(
+                'https://shikimori.io/animes/21-one-piece',
+            );
+            expect(mapAnimeToCalendarItem({ ...fullRawCalendarAnime, url: null })?.url).toBeNull();
+        });
+
+        // The raw string is the contract with the schedule layer: formatting it
+        // here would make the session cache go stale by the clock (Ф7-5).
+        it('keeps nextEpisodeAt as the raw ISO string, offset included', () => {
+            expect(mapAnimeToCalendarItem(fullRawCalendarAnime)?.nextEpisodeAt).toBe(
+                '2026-08-02T17:15:00+03:00',
+            );
+        });
+
+        it('keeps a null nextEpisodeAt (the ~8% of ongoings without a date)', () => {
+            const item = mapAnimeToCalendarItem({
+                ...fullRawCalendarAnime,
+                nextEpisodeAt: null,
+            });
+            expect(item?.nextEpisodeAt).toBeNull();
+        });
+
+        it('takes progress from userRate.episodes and the total from the title', () => {
+            const item = mapAnimeToCalendarItem({
+                ...fullRawCalendarAnime,
+                episodes: 24,
+                episodesAired: 12,
+                userRate: { id: '9', status: 'rewatching', episodes: 7 },
+            });
+            expect(item).toMatchObject({
+                progress: 7,
+                episodes: 24,
+                episodesAired: 12,
+                status: 'rewatching',
+            });
+        });
+
+        // Defensive filter: the server arguments are confirmed (docs/03,
+        // owner-verification 2026-07-28), this is the insurance layer.
+        describe('defensive client-side filter', () => {
+            it('drops a title that is no longer ongoing', () => {
+                for (const status of ['released', 'anons', null]) {
+                    expect(mapAnimeToCalendarItem({ ...fullRawCalendarAnime, status })).toBeNull();
+                }
+            });
+
+            it('keeps the three calendar list statuses', () => {
+                const kept: UserRateStatus[] = ['watching', 'rewatching', 'planned'];
+                for (const status of kept) {
+                    const item = mapAnimeToCalendarItem({
+                        ...fullRawCalendarAnime,
+                        userRate: { id: '777', status, episodes: 1140 },
+                    });
+                    expect(item?.status).toBe(status);
+                }
+            });
+
+            it('drops the other list statuses', () => {
+                const dropped: UserRateStatus[] = ['completed', 'on_hold', 'dropped'];
+                for (const status of dropped) {
+                    expect(
+                        mapAnimeToCalendarItem({
+                            ...fullRawCalendarAnime,
+                            userRate: { id: '777', status, episodes: 1140 },
+                        }),
+                    ).toBeNull();
+                }
+            });
+        });
+    });
+
+    // CalendarItem must stay assignable to ScheduleItem: the schedule layer is
+    // generic over it, so a renamed field would otherwise surface only in the
+    // UI. The assignment below is the actual check (pnpm compile covers the
+    // test files); the buildSchedule call proves it end to end.
+    describe('CalendarItem satisfies ScheduleItem', () => {
+        it('is accepted by buildSchedule and handed back by reference', () => {
+            const scheduleItem: ScheduleItem = fullCalendarItem;
+            expect(scheduleItem.nextEpisodeAt).toBe(fullCalendarItem.nextEpisodeAt);
+
+            // Local parts, then ISO: the expectation holds in any timezone.
+            const item = mapAnimeToCalendarItem({
+                ...fullRawCalendarAnime,
+                nextEpisodeAt: new Date(2026, 7, 2, 17, 15).toISOString(),
+                episodes: 12,
+                episodesAired: 4,
+                userRate: { id: '777', status: 'watching', episodes: 2 },
+            });
+            expect(item).not.toBeNull();
+
+            const days = buildSchedule([item as CalendarItem], new Date(2026, 7, 2, 12, 0));
+            expect(days).toHaveLength(1);
+            expect(days[0].label).toBe('Сегодня');
+            expect(days[0].entries[0].item).toBe(item);
+            expect(days[0].entries[0].episode).toBe(5); // episodesAired + 1
+            expect(days[0].entries[0].episodesTotal).toBe(12);
+            expect(days[0].entries[0].behind).toBe(2); // aired 4, watched 2
+        });
+    });
+
+    describe('listCalendar', () => {
+        it('POSTs CalendarAnimes with the reference-query arguments and maps the rows', async () => {
+            await setLocal('auth', storedAuth());
+            fetchMock.mockResolvedValueOnce(
+                jsonResponse(200, { data: { animes: [fullRawCalendarAnime] } }),
+            );
+
+            await expect(listCalendar()).resolves.toEqual([fullCalendarItem]);
+
+            const request = capturedRequests()[0];
+            expect(request.url).toBe('https://shikimori.io/api/graphql');
+            expect(request.method).toBe('POST');
+
+            const body = request.body as { query: string; variables: Record<string, unknown> };
+            expect(body.variables).toEqual({ limit: CALENDAR_LIMIT, page: 1 });
+            // 50 is the hard ceiling of animes(): above it the server clamps
+            // silently, so a bigger page size would look like a short page.
+            expect(CALENDAR_LIMIT).toBe(50);
+            expect(body.query).toContain('query CalendarAnimes');
+            // mylist/status are inline literals of the query, not variables.
+            expect(body.query).toContain(
+                'animes(mylist: "watching,rewatching,planned", status: "ongoing", limit: $limit, page: $page)',
+            );
+            // PositiveInt, not Int: the server rejects Int variables (docs/03).
+            expect(body.query).toContain('$limit: PositiveInt');
+            expect(body.query).toContain('$page: PositiveInt');
+            expect(body.query).toContain('nextEpisodeAt');
+            expect(body.query).toContain('poster { miniUrl mini2xUrl }');
+            expect(body.query).toContain('userRate { id status episodes }');
+            // Its own field line: `status` of the title feeds the client guard,
+            // and a plain substring check would also match userRate { … status }.
+            expect(body.query).toMatch(/^\s+status$/m);
+            expect(body.query).toMatch(/^\s+url$/m);
+        });
+
+        it('stops after one request when the first page is short', async () => {
+            await setLocal('auth', storedAuth());
+            const page = Array.from({ length: CALENDAR_LIMIT - 1 }, (_, i) =>
+                calendarAnime(i + 1),
+            );
+            fetchMock.mockResolvedValueOnce(jsonResponse(200, { data: { animes: page } }));
+
+            await expect(listCalendar()).resolves.toHaveLength(CALENDAR_LIMIT - 1);
+            expect(fetchMock).toHaveBeenCalledTimes(1);
+        });
+
+        it('asks for the next page while the previous one came back full', async () => {
+            await setLocal('auth', storedAuth());
+            const fullPage = Array.from({ length: CALENDAR_LIMIT }, (_, i) => calendarAnime(i + 1));
+            fetchMock
+                .mockResolvedValueOnce(jsonResponse(200, { data: { animes: fullPage } }))
+                .mockResolvedValueOnce(
+                    jsonResponse(200, { data: { animes: [calendarAnime(999)] } }),
+                );
+
+            const items = await listCalendar();
+            expect(items).toHaveLength(CALENDAR_LIMIT + 1);
+            expect(items[CALENDAR_LIMIT].targetId).toBe('999');
+            expect(fetchMock).toHaveBeenCalledTimes(2);
+            expect(
+                capturedRequests().map(
+                    (request) => (request.body as { variables: { page: number } }).variables.page,
+                ),
+            ).toEqual([1, 2]);
+        });
+
+        it('never goes past the hard page ceiling, even on full pages', async () => {
+            await setLocal('auth', storedAuth());
+            const fullPage = Array.from({ length: CALENDAR_LIMIT }, (_, i) => calendarAnime(i + 1));
+            // A fresh Response per call: a body can only be consumed once.
+            fetchMock.mockImplementation(async () =>
+                jsonResponse(200, { data: { animes: fullPage } }),
+            );
+
+            const items = await listCalendar();
+            expect(CALENDAR_MAX_PAGES).toBe(3);
+            expect(fetchMock).toHaveBeenCalledTimes(CALENDAR_MAX_PAGES);
+            expect(items).toHaveLength(CALENDAR_LIMIT * CALENDAR_MAX_PAGES);
+        });
+
+        it('keeps paging by the RAW page length, before the filter drops rows', async () => {
+            await setLocal('auth', storedAuth());
+            // A full page where half the rows are filtered out: paging must
+            // continue, or the titles on page 2 would be lost.
+            const fullPage = Array.from({ length: CALENDAR_LIMIT }, (_, i) =>
+                i % 2 === 0 ? calendarAnime(i + 1, { status: 'released' }) : calendarAnime(i + 1),
+            );
+            fetchMock
+                .mockResolvedValueOnce(jsonResponse(200, { data: { animes: fullPage } }))
+                .mockResolvedValueOnce(jsonResponse(200, { data: { animes: [] } }));
+
+            await expect(listCalendar()).resolves.toHaveLength(CALENDAR_LIMIT / 2);
+            expect(fetchMock).toHaveBeenCalledTimes(2);
+        });
+
+        it('drops released titles and foreign list statuses from the response', async () => {
+            await setLocal('auth', storedAuth());
+            fetchMock.mockResolvedValueOnce(
+                jsonResponse(200, {
+                    data: {
+                        animes: [
+                            fullRawCalendarAnime,
+                            calendarAnime(2, { status: 'released' }),
+                            calendarAnime(3, {
+                                userRate: { id: '3', status: 'completed', episodes: 12 },
+                            }),
+                            calendarAnime(4, { userRate: null }),
+                            calendarAnime(5, {
+                                userRate: { id: '5', status: 'planned', episodes: 0 },
+                            }),
+                        ],
+                    },
+                }),
+            );
+
+            const items = await listCalendar();
+            expect(items.map((item) => item.targetId)).toEqual(['21', '5']);
+        });
+
+        it('returns an empty list for an empty first page without a second request', async () => {
+            await setLocal('auth', storedAuth());
+            fetchMock.mockResolvedValueOnce(jsonResponse(200, { data: { animes: [] } }));
+
+            await expect(listCalendar()).resolves.toEqual([]);
+            expect(fetchMock).toHaveBeenCalledTimes(1);
         });
     });
 
@@ -734,6 +1041,42 @@ describe('graphql', () => {
             expect(response).toEqual({
                 ok: false,
                 error: { kind: 'api', status: 200, message: 'Field is missing' },
+            });
+        });
+    });
+
+    describe('background calendar.list handler', () => {
+        it('responds with the whole list, paging done inside background', async () => {
+            background.main();
+            await setLocal('auth', storedAuth());
+            const fullPage = Array.from({ length: CALENDAR_LIMIT }, (_, i) => calendarAnime(i + 1));
+            fetchMock
+                .mockResolvedValueOnce(jsonResponse(200, { data: { animes: fullPage } }))
+                .mockResolvedValueOnce(
+                    jsonResponse(200, { data: { animes: [fullRawCalendarAnime] } }),
+                );
+
+            const response = await sendMessage('calendar.list');
+            expect(response.ok).toBe(true);
+            if (response.ok) {
+                // Two pages behind one message: the popup knows nothing about them.
+                expect(response.data.items).toHaveLength(CALENDAR_LIMIT + 1);
+                expect(response.data.items[CALENDAR_LIMIT]).toEqual(fullCalendarItem);
+            }
+            expect(fetchMock).toHaveBeenCalledTimes(2);
+        });
+
+        it('keeps the ApiError kind of a calendar failure on the wire', async () => {
+            background.main();
+            await setLocal('auth', storedAuth());
+            fetchMock.mockResolvedValueOnce(
+                jsonResponse(200, { errors: [{ message: 'mylist is invalid' }] }),
+            );
+
+            const response = await sendMessage('calendar.list');
+            expect(response).toEqual({
+                ok: false,
+                error: { kind: 'api', status: 200, message: 'mylist is invalid' },
             });
         });
     });

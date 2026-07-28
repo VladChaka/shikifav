@@ -118,6 +118,7 @@ function setup(initial: TitleCard[], overrides: Partial<MessageHandlers> = {}): 
         'auth.logout': async () => ({}),
         'search.titles': async () => ({ items: [] }),
         'rates.list': async () => ({ items: [], hasMore: false }),
+        'calendar.list': async () => ({ items: [] }),
         'posters.fetch': async () => ({ posters: {} }),
         'rates.create': async () => ({ rate: { id: '100', status: 'planned' } }),
         'rates.update': async () => ({

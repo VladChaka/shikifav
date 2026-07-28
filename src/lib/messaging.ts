@@ -3,6 +3,7 @@ import { isApiError } from './api/types';
 import type {
     ApiError,
     AuthState,
+    CalendarItem,
     RateCreateParams,
     RatePatch,
     RateRow,
@@ -33,6 +34,10 @@ export interface MessageMap {
         payload: { type: SearchType; status: UserRateStatus; page: number };
         data: { items: RateRow[]; hasMore: boolean };
     };
+    // Ongoings calendar (US-9). No payload and no paging on the wire: the UI has
+    // no «Ещё» button, so background walks the pages itself and answers with the
+    // whole list at once (docs/02).
+    'calendar.list': { payload: undefined; data: { items: CalendarItem[] } };
     // Poster backfill for the titles GraphQL returns without one (Ф6-27): one
     // batch per page of results, answered with id -> absolute poster url for the
     // ids that have a picture (the rest are absent from the map).

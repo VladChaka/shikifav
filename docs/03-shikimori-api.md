@@ -135,10 +135,11 @@ query SearchMangas($search: String, $limit: PositiveInt, $page: PositiveInt, $ki
 ### Календарь — эталонный запрос (фаза 7)
 ```graphql
 query CalendarAnimes($limit: PositiveInt, $page: PositiveInt) {
-  animes(mylist: "watching,rewatching", status: "ongoing", limit: $limit, page: $page) {
+  animes(mylist: "watching,rewatching,planned", status: "ongoing", limit: $limit, page: $page) {
     id            # ID! (строка с числом; для REST target_id — Number(id))
     name          # ромадзи, String!
     russian       # String, nullable
+    status        # AnimeStatusEnum; запрашивается для клиентского гарда (Ф7-5)
     episodes      # Int!, 0 = общее число неизвестно (One Piece)
     episodesAired # Int!, номер следующей серии = episodesAired + 1
     nextEpisodeAt # ISO8601DateTime, nullable (~8% онгоингов без даты)
@@ -149,6 +150,10 @@ query CalendarAnimes($limit: PositiveInt, $page: PositiveInt) {
 }
 ```
 `limit` держать ≤ 50 (потолок выше), сортировку и группировку по дням делать на клиенте.
+
+Запрос выше приведён к реализации Ф7-5 (`CALENDAR_ANIMES_QUERY` в `src/lib/api/graphql.ts`), два отличия от первой редакции — следствие owner-verification 2026-07-28:
+- `mylist` из трёх статусов, а не двух (обоснование — docs/06, «Статусы календаря»);
+- запрашивается `status` тайтла: маппер дублирует серверную фильтрацию клиентским гардом (`status === 'ongoing'` + мой статус из списка `watching,rewatching,planned`). Чекбокс «Комбинация `mylist` + `status` под Bearer» закрыт частично, и протёкший в календарь released был бы молчаливым неверным ответом.
 
 **Задел на будущую фазу франшиз:** у `Anime` есть `franchise: String`, `related: LIST`, `chronology: LIST` — наличие полей подтверждено 2026-07-28, содержимое (элементы списков) не интроспектировалось.
 

@@ -1,5 +1,5 @@
 import { ensureToken, getAuthState, login, logout } from '@/src/lib/api/auth';
-import { listRates, searchTitles } from '@/src/lib/api/graphql';
+import { listCalendar, listRates, searchTitles } from '@/src/lib/api/graphql';
 import { setTokenProvider } from '@/src/lib/api/http';
 import { fetchPosters } from '@/src/lib/api/posters';
 import { createRate, deleteRate, incrementRate, updateRate } from '@/src/lib/api/rates';
@@ -55,6 +55,11 @@ export default defineBackground(() => {
             const { items, hasMore } = await listRates(type, status, page);
             return { items, hasMore };
         },
+        'calendar.list': async () => ({
+            // Paging lives entirely in the read layer: the calendar is one
+            // screen without an «Ещё» button, so the popup never sees pages.
+            items: await listCalendar(),
+        }),
         'posters.fetch': async ({ type, ids }) => ({
             // Ф6-27: GraphQL gives no poster for part of the catalogue, so the
             // UI asks for the missing ones separately — one REST batch, after

@@ -90,6 +90,35 @@ export interface RateRow {
     url?: string | null; // title page, see TitleCard.url
 }
 
+// A row of the ongoings calendar (US-9, phase 7): a still-airing title from my
+// lists, read via animes(mylist:, status: "ongoing"). Anime-only by
+// construction — Manga has no nextEpisodeAt (docs/03).
+//
+// Structurally satisfies ScheduleItem (src/lib/calendar-schedule.ts): the
+// schedule layer is generic over it and hands these rows back untouched, so the
+// four fields it reads (nextEpisodeAt, episodes, episodesAired, progress) must
+// keep their names and types.
+export interface CalendarItem {
+    rateId: string; // user_rate id; the calendar is read-only, but this is the row identity
+    targetId: string; // title id (Number() for REST), also the poster-backfill key
+    name: string;
+    russian: string | null;
+    // My list status. The calendar mixes «Смотрю»/«Пересматриваю» with
+    // «Запланировано» (docs/06, owner-verification 2026-07-28), and without a
+    // badge those rows would be indistinguishable.
+    status: UserRateStatus;
+    posterUrl: string | null;
+    posterUrl2x: string | null;
+    // Raw ISO8601 with offset, exactly as the API returned it. Formatting lives
+    // in the schedule layer on purpose: a preformatted «сегодня 17:15» in the
+    // session cache would have to be invalidated by the clock.
+    nextEpisodeAt: string | null; // null for ~8% of ongoings (docs/03)
+    episodes: number; // total, 0 = unknown (One Piece)
+    episodesAired: number;
+    progress: number; // my watched episodes (userRate.episodes)
+    url?: string | null; // title page, see TitleCard.url
+}
+
 // Search result card (US-2). Nullability mirrors the GraphQL schema per the
 // docs/03 introspection results (2026-07-23).
 export interface TitleCard {

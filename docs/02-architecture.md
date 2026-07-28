@@ -42,6 +42,7 @@
 | `auth.logout` | — | `{}` |
 | `search.titles` | `{ query, type: 'anime'\|'manga'\|'ranobe', page? }` | `{ items: TitleCard[] }` |
 | `rates.list` | `{ type, status, page }` | `{ items: RateRow[], hasMore }` |
+| `calendar.list` | — | `{ items: CalendarItem[] }` (календарь онгоингов, фаза 7) |
 | `rates.create` | `{ targetId, targetType, status }` | `{ rate }` |
 | `rates.update` | `{ rateId, patch }` | `{ rate }` |
 | `rates.delete` | `{ rateId }` | `{}` |
@@ -52,6 +53,7 @@
 - Все типы сообщений — в одном `MessageMap` в `src/lib/messaging.ts`; хелперы `sendMessage(type, payload)` (типобезопасный) и `onMessage(handlers)` для background.
 - «Сырые» `chrome.runtime.sendMessage` по коду запрещены.
 - `rates.create` не содержит `user_id` — background берёт его из сохранённого `auth.user`.
+- `calendar.list` — без payload и без страниц на проводе: у календаря нет кнопки «Ещё», поэтому пагинацию (`limit: 50`, последовательно, жёсткий предел 3 страницы) целиком делает `listCalendar()` в background и отвечает готовым списком. Ответ уже отфильтрован: только `status: ongoing` и только мои статусы — серверные аргументы `mylist` + `status` продублированы клиентским гардом в маппере (docs/03, чекбокс закрыт частично).
 - `settings.setOrigin` — единственное сообщение про настройки. Смена домена завершает сессию по построению: токен выдан приложением на одном домене, кросс-доменная валидность не проверялась, а `.one` отвечает 301 на `POST /oauth/token` и там его даже нельзя обновить (docs/03, docs/04). Порядок в обработчике строгий: сначала `logout()`, только потом запись `origin` — обратный порядок открыл бы окно, где новый origin уже в storage, а старый токен ещё там, и любой запрос в этот момент ушёл бы на новый домен с чужим Bearer. Страница настроек после ответа перечитывает состояние авторизации.
 - Остальные настройки UI пишет прямо в storage через `setSettings` (правило 1 CLAUDE.md ограничивает сеть, а не storage): лишнее сообщение будило бы service worker впустую, против бюджета открытия popup (docs/05).
 
@@ -128,6 +130,7 @@ src/lib/config.ts        # ORIGINS, APP_NAME, CLIENT_ID/SECRET из env
 src/lib/theme.ts         # применение настройки theme к <html> (Ф6-19)
 src/lib/i18n.ts          # все русские строки UI + statusLabel(status, media)
 src/lib/title-name.ts    # displayTitle(name/russian, titleLang) — чистая логика
+src/lib/calendar-schedule.ts # календарь: группировка по локальным дням, время, номер серии, отставание (чистая логика, фаза 7)
 src/lib/context-menu.ts  # регистрация пункта меню и обработка клика (фаза 5)
 src/lib/search-url.ts    # сборка/разбор search.html?q= (фаза 5)
 ```

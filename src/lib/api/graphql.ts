@@ -1,5 +1,12 @@
 import { apiRequest } from './http';
-import type { ApiError, RateRow, SearchType, TitleCard, UserRateStatus } from './types';
+import type {
+    ApiError,
+    CalendarItem,
+    RateRow,
+    SearchType,
+    TitleCard,
+    UserRateStatus,
+} from './types';
 
 // GraphQL read layer (docs/03-shikimori-api.md). Reads travel as HTTP POST, so
 // the 429-retry allowed for reads is opted in explicitly (docs/02, limiter).
@@ -103,6 +110,50 @@ query MylistMangas($mylist: MylistString, $limit: PositiveInt, $page: PositiveIn
 // Page size of "My lists"; background derives hasMore from a full page (docs/06).
 export const LIST_LIMIT = 30;
 
+// Ongoings calendar (US-9), the docs/03 reference query plus one field:
+// `status` of the title, which the reference query omits — the defensive filter
+// in mapAnimeToCalendarItem needs it. mylist/status stay inline literals, as in
+// docs/03: they are the definition of this query, not something a caller varies.
+// The three mylist statuses are an owner-verification result (docs/03,
+// docs/06): the server `status: "ongoing"` drops announcements by itself, so
+// «Запланировано» adds airing titles and no dateless rows.
+const CALENDAR_ANIMES_QUERY = `
+query CalendarAnimes($limit: PositiveInt, $page: PositiveInt) {
+  animes(mylist: "watching,rewatching,planned", status: "ongoing", limit: $limit, page: $page) {
+    id
+    name
+    russian
+    status
+    episodes
+    episodesAired
+    nextEpisodeAt
+    poster { miniUrl mini2xUrl }
+    userRate { id status episodes }
+    url
+  }
+}`;
+
+// Page size of the calendar. 50 is the hard ceiling of animes(): larger values
+// are silently clamped, without an error (docs/03, live check 2026-07-28), so
+// asking for more would only look like a short page.
+export const CALENDAR_LIMIT = 50;
+
+// Hard ceiling on the sequential paging below. 150 airing titles in one
+// person's «Смотрю» is already unrealistic, and an unbounded loop over a server
+// paging quirk would hammer the limiter (CLAUDE.md rule 2).
+export const CALENDAR_MAX_PAGES = 3;
+
+// The my-list statuses the calendar shows; mirrors the `mylist` literal of
+// CALENDAR_ANIMES_QUERY — the two must be edited together.
+const CALENDAR_MYLIST_STATUSES: readonly UserRateStatus[] = [
+    'watching',
+    'rewatching',
+    'planned',
+];
+
+// Title status the calendar shows; mirrors the `status` literal of the query.
+const CALENDAR_TITLE_STATUS = 'ongoing';
+
 // Raw wire shape of an animes() item; nullability per the docs/03 introspection
 // results (2026-07-23). GraphQL ID! serializes as a numeric string.
 export interface RawAnime {
@@ -157,6 +208,22 @@ export interface RawMylistManga {
     chapters: number;
     poster: { miniUrl: string; mini2xUrl: string } | null;
     userRate: { id: string; status: UserRateStatus; chapters: number; score: number } | null;
+    url: string | null; // see RawAnime.url
+}
+
+// Raw wire shape of a CALENDAR_ANIMES_QUERY item. nextEpisodeAt is
+// ISO8601DateTime with an offset and nullable (docs/03, introspection
+// 2026-07-28); userRate carries the episode progress, as in the mylist read.
+export interface RawCalendarAnime {
+    id: string;
+    name: string;
+    russian: string | null;
+    status: string | null; // AnimeStatusEnum value; nullable, like everywhere else
+    episodes: number;
+    episodesAired: number;
+    nextEpisodeAt: string | null;
+    poster: { miniUrl: string; mini2xUrl: string } | null;
+    userRate: { id: string; status: UserRateStatus; episodes: number } | null;
     url: string | null; // see RawAnime.url
 }
 
@@ -306,6 +373,71 @@ export async function listRates(
     const hasMore = data.mangas.length === LIST_LIMIT;
     const items = data.mangas.map(mapMangaToRateRow).filter((row): row is RateRow => row !== null);
     return { items, hasMore };
+}
+
+// Pure mapper, exported for tests. Returns null for a row the calendar must not
+// show, so the caller can simply drop it. Two reasons to drop:
+//
+// 1. userRate === null — the same guard as the mylist mappers: a row that is
+//    not mine has no progress to show.
+// 2. The defensive filter: it repeats client-side what the `mylist` + `status`
+//    arguments already do server-side. Owner-verification of 2026-07-28 (docs/03,
+//    checkbox «Комбинация `mylist` + `status` под Bearer…») showed the server
+//    honours both — the filter is insurance, not a workaround, and costs one
+//    comparison per row. That checkbox is still only PARTLY closed (a real row
+//    with nextEpisodeAt under Bearer has not been observed yet), and a released
+//    title leaking into the calendar would be a silent wrong answer.
+export function mapAnimeToCalendarItem(raw: RawCalendarAnime): CalendarItem | null {
+    if (raw.userRate === null) {
+        return null;
+    }
+    if (
+        raw.status !== CALENDAR_TITLE_STATUS ||
+        !CALENDAR_MYLIST_STATUSES.includes(raw.userRate.status)
+    ) {
+        return null;
+    }
+    return {
+        rateId: raw.userRate.id,
+        targetId: raw.id,
+        name: raw.name,
+        russian: raw.russian,
+        status: raw.userRate.status,
+        posterUrl: raw.poster?.miniUrl ?? null,
+        posterUrl2x: raw.poster?.mini2xUrl ?? null,
+        // Raw ISO through to the UI layer: only calendar-schedule.ts parses it.
+        nextEpisodeAt: raw.nextEpisodeAt,
+        episodes: raw.episodes,
+        episodesAired: raw.episodesAired,
+        progress: raw.userRate.episodes,
+        url: raw.url,
+    };
+}
+
+// Reads the whole calendar: the UI has no «Ещё» button, so paging is done here.
+// Sequential on purpose — a parallel fan-out over pages would burst the rate
+// limiter (CLAUDE.md rule 2); in practice page 2 is never even requested.
+export async function listCalendar(): Promise<CalendarItem[]> {
+    const items: CalendarItem[] = [];
+    for (let page = 1; page <= CALENDAR_MAX_PAGES; page += 1) {
+        const data = await graphqlRequest<{ animes: RawCalendarAnime[] }>(CALENDAR_ANIMES_QUERY, {
+            limit: CALENDAR_LIMIT,
+            page,
+        });
+        for (const raw of data.animes) {
+            const item = mapAnimeToCalendarItem(raw);
+            if (item !== null) {
+                items.push(item);
+            }
+        }
+        // "Keep going while the page came back full", measured on the RAW page
+        // length, before the filter: a page where one row was dropped would
+        // otherwise cut paging short and lose titles (same rule as listRates).
+        if (data.animes.length < CALENDAR_LIMIT) {
+            break;
+        }
+    }
+    return items;
 }
 
 async function graphqlRequest<T>(query: string, variables: Record<string, unknown>): Promise<T> {
