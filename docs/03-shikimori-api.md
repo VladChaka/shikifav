@@ -60,7 +60,9 @@ curl -s -X POST https://shikimori.io/api/graphql \
 ```
 
 ### Результаты интроспекции (2026-07-23, дополнено 2026-07-24)
-- **Anime:** `id: ID!`, `malId: ID`, `name: String!`, `russian: String`, `kind: AnimeKindEnum`, `score: Float`, `status: AnimeStatusEnum`, `episodes: Int!`, `episodesAired: Int!`, `airedOn: IncompleteDate` (подполе `year` подтверждено живым запросом), `poster: Poster`, `userRate: UserRate`.
+- **Anime:** `id: ID!`, `malId: ID`, `name: String!`, `russian: String`, `kind: AnimeKindEnum`, `score: Float`, `status: AnimeStatusEnum`, `episodes: Int!`, `episodesAired: Int!`, `airedOn: IncompleteDate` (подполе `year` подтверждено живым запросом), `poster: Poster`, `userRate: UserRate`, `url: String` (Ф6-26: абсолютный адрес страницы тайтла **на том домене, с которого пришёл ответ** — проверено 2026-07-28, запрос на `.io` дал `https://shikimori.io/animes/59978-…`; поэтому настройка домена учитывается сама и адрес в коде не собирается. То же поле есть у `Manga`).
+
+  **`poster` бывает пустым:** у аниме с `rating: "rx"` он приходит `null` — см. раздел «REST v1 — добор постеров». У `Manga` поля `rating` нет вовсе (`Field 'rating' doesn't exist on type 'Manga'`), поэтому логика добора строится по признаку «постер пустой», а не по типу или рейтингу.
 - **`id: ID!` сериализуется строкой** (например `"52991"`), значение числовое → для REST `target_id` конвертировать `Number(id)`.
 - **Poster** — все поля `String!`: `id`, `miniUrl`, `mini2xUrl`, `miniAltUrl`, `miniAlt2xUrl`, `mainUrl`, `main2xUrl`, `mainAltUrl`, `mainAlt2xUrl`, `previewUrl`, `preview2xUrl`, `previewAltUrl`, `previewAlt2xUrl`, `originalUrl`. Для карточки поиска (бокс 60×94 с Ф6-25) — **`miniUrl`**: он и приходит ровно 60×94 px webp, то есть показывается без пересчёта; `mini2xUrl` (120×188) — retina. Замеры остальных вариантов 2026-07-27: `previewUrl` 160×226 (пропорция ДРУГАЯ, 1:1,413 против 1:1,567 у mini), `mainUrl` 225×318–355 (высота плавает), `originalUrl` 685×975…760×1200 jpeg 362–379 КБ.
 - **UserRate:** `id: ID!`, `status: UserRateStatusEnum!`, `episodes: Int!`, `chapters: Int!`, `volumes: Int!`, `score: Int!`, `rewatches: Int!`, `text: String`, `anime: Anime`, `manga: Manga`, `createdAt`/`updatedAt: ISO8601DateTime!`.
@@ -161,6 +163,28 @@ DELETE {origin}/api/v2/user_rates/{rate_id}   → 204
 POST {origin}/api/v2/user_rates/{rate_id}/increment
 ```
 Инкрементирует прогресс (у аниме — episodes; у манги — chapters, TODO(verify) — команды owner-verification фазы 4 в чекбоксе «`increment` для манги» ниже; contingency: если бампится не chapters, «+1» для Manga делаем через PATCH `{chapters: progress+1}`). В `completed` автоматически НЕ переводим — предлагаем пользователю (US-6).
+
+## REST v1 — добор постеров (Ф6-27)
+
+**Зачем.** GraphQL для аниме с `rating: "rx"` возвращает `poster: null` — ссылки на картинку в ответе нет вовсе (проверено 2026-07-28 на id 1342, 48755, 50634). Сами файлы при этом публичны и открываются. Поэтому карточка без постера добирается через REST-индекс, и только потом падает на локальную заглушку (цепочка — docs/05).
+
+```
+GET {origin}/api/animes?ids=1342,48755,50634&limit=50
+GET {origin}/api/mangas?ids=...&limit=50
+GET {origin}/api/ranobe?ids=...&limit=50
+→ [ { "id": 1342, "image": { "original": "/system/animes/original/1342.jpg?1711979744",
+                             "preview": "...", "x96": "...", "x48": "..." }, ... }, ... ]
+```
+
+Три вещи, которые выяснены живыми запросами и стоят того, чтобы их не переоткрывать:
+
+1. **`limit` обязателен.** Без него эндпоинт отдаёт **одну** запись независимо от длины списка `ids`.
+2. **`/api/mangas?ids=` молча выбрасывает ранобэ.** Id 81669 не возвращается, хотя `/api/mangas/81669` и `/api/ranobe?ids=81669` его отдают. Поэтому для ранобэ — свой эндпоинт, а не общий с мангой.
+3. **Тайтлы без картинки вообще** (анонсы) отвечают путём-плейсхолдером `/assets/globals/missing_*` — такие отсеиваются, иначе вместо нашей заглушки приедет чужая.
+
+Пути в `image.*` относительные — склеиваются с origin из настроек (правило 4: домен только из конфига).
+
+**Размеры `image.*`** (замеры живых файлов 2026-07-27): `x48` 48×75 (2,6–2,8 КБ), **`x96` 96×150 (7–9 КБ)**, `preview` 160×226 (9,4–21,9 КБ), `original` 225×318–355 (16–40 КБ). Берётся `x96`: его пропорция 1:1,5625 совпадает с боксом карточки 60×94, тогда как у `preview`/`original` она 1:1,41 и `object-fit: cover` срезал бы бока. Ретина-варианта подходящей пропорции в REST нет, поэтому у добранных постеров `srcset` не ставится.
 
 ## Профиль
 ```
