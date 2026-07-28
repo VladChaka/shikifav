@@ -62,7 +62,58 @@
                  popup width (a badge-aligned menu would overflow the right
                  edge). -->
             <div class="rate__progress-row">
-                <span class="rate__progress">{{ progressText }}</span>
+                <!-- Progress (Ф7-16): the whole phrase is the trigger, but only
+                     the number becomes a field — the total and the unit stay
+                     put, so the ceiling is in front of the eyes while typing. -->
+                <span class="rate__progress">
+                    <button
+                        v-if="!editing"
+                        ref="triggerEl"
+                        class="rate__progress-btn"
+                        type="button"
+                        :disabled="busy"
+                        :aria-label="editProgressLabel"
+                        :title="editProgressLabel"
+                        @click="openEditor"
+                    >
+                        <span class="rate__progress-value">{{ rate.progress }}</span>
+                        <span class="rate__progress-tail">{{ progressTail }}</span>
+                    </button>
+                    <template v-else>
+                        <!-- type="text", not "number": the spinners are junk in
+                             44px, the mouse wheel over a focused number field
+                             edits it inside a scrolling list, and junk input
+                             comes back as an empty string with nothing left to
+                             point at. -->
+                        <input
+                            ref="inputEl"
+                            class="rate__progress-input"
+                            :class="{ 'rate__progress-input--invalid': invalid }"
+                            type="text"
+                            inputmode="numeric"
+                            :maxlength="MAX_DIGITS"
+                            autocomplete="off"
+                            :value="draft"
+                            :aria-label="progressFieldLabel"
+                            :aria-invalid="invalid ? 'true' : undefined"
+                            :aria-describedby="tailId"
+                            :title="i18n.rates.progressHint"
+                            @input="onInput"
+                            @keydown="onKeydown"
+                            @blur="closeEditor(false)"
+                        />
+                        <!-- Same slot as the rest-state tail: out of range it
+                             says the limit out loud, so neither the height nor
+                             the layout of the row changes (no toast — the error
+                             belongs to the row that made it). -->
+                        <span
+                            :id="tailId"
+                            class="rate__progress-tail"
+                            :class="{ 'rate__progress-tail--invalid': invalid }"
+                            >{{ invalid ? maxHint : progressTail }}</span
+                        >
+                    </template>
+                </span>
                 <button
                     v-if="showIncrement"
                     class="rate__inc"
@@ -146,7 +197,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, nextTick, ref, useId } from 'vue';
 import ScorePicker from '@/src/components/ScorePicker.vue';
 import StatusMenu from '@/src/components/StatusMenu.vue';
 import posterFallback from '@/src/assets/poster-fallback.png';
@@ -165,6 +216,8 @@ import { titleHref } from '@/src/lib/title-url';
 //
 // Emits:
 //   increment                — user pressed [+1]
+//   set-progress(value)      — an absolute progress number was typed and
+//                              confirmed with Enter (Ф7-16)
 //   set-score(value)         — a score 0..10 was chosen (0 = remove)
 //   change-status(value)     — a different status was picked in the StatusMenu
 //                              (picking the current one only closes the menu)
@@ -194,6 +247,7 @@ const props = withDefaults(
 
 const emit = defineEmits<{
     increment: [];
+    'set-progress': [value: number];
     'set-score': [value: number];
     'change-status': [value: UserRateStatus];
     remove: [];
@@ -243,12 +297,13 @@ const posterSrcset = computed(() =>
         : undefined,
 );
 
-// "7 / 12 эп." (or "гл.") when the total is known; "7 эп." when total == 0
-// (unknown/ongoing).
-const progressText = computed(() => {
-    const { progress, total } = props.rate;
+// Static half of the progress phrase: "/ 12 эп." (or "гл.") when the total is
+// known, bare "эп." when total == 0 (unknown/ongoing). It stands still while the
+// number in front of it is being edited.
+const progressTail = computed(() => {
+    const { total } = props.rate;
     const unit = media.value === 'book' ? i18n.card.chaptersShort : i18n.card.episodesShort;
-    return total > 0 ? `${progress} / ${total} ${unit}` : `${progress} ${unit}`;
+    return total > 0 ? `/ ${total} ${unit}` : unit;
 });
 
 // aria/title of the [+1] button: «+1 эпизод» / «+1 глава».
@@ -268,6 +323,114 @@ const showIncrement = computed(() => {
     const active = status === 'watching' || status === 'rewatching';
     return active && (total === 0 || progress < total);
 });
+
+// --- Ф7-16: inline progress editor -----------------------------------------
+// Unlike [+1] the field is offered at every status: where the user stopped has
+// to be recordable in «Отложено» and «Брошено» too. The editor is local view
+// state — the row still emits one absolute number and never touches the network.
+
+// "1147" plus a caret fits the 44px field; a longer number is not a real
+// episode count, it is a typo.
+const MAX_DIGITS = 4;
+
+const editing = ref(false);
+// Raw field text (digits only, may be empty mid-typing) — not a number, so a
+// half-typed value never masquerades as progress.
+const draft = ref('');
+const inputEl = ref<HTMLInputElement | null>(null);
+const triggerEl = ref<HTMLButtonElement | null>(null);
+// The tail describes the field (the unit, or the ceiling when out of range).
+const tailId = useId();
+
+const editProgressLabel = computed(() =>
+    media.value === 'book' ? i18n.rates.editProgressChapter : i18n.rates.editProgress,
+);
+
+const progressFieldLabel = computed(() =>
+    media.value === 'book' ? i18n.rates.progressLabelChapter : i18n.rates.progressLabel,
+);
+
+// total == 0 means the maximum was never announced (One Piece and friends), so
+// there is no upper bound at all — the same rule [+1] follows.
+const maxProgress = computed(() => (props.rate.total > 0 ? props.rate.total : null));
+
+const maxHint = computed(() => `${i18n.rates.progressMaxPrefix} ${props.rate.total}`);
+
+// The field holds digits only (input filter), so an empty string is its only
+// non-numeric state — and an empty field is mid-typing, not an error.
+const parsedDraft = computed(() => (draft.value === '' ? null : Number(draft.value)));
+
+const invalid = computed(() => {
+    const value = parsedDraft.value;
+    const max = maxProgress.value;
+    return value !== null && max !== null && value > max;
+});
+
+function openEditor(): void {
+    if (props.busy || editing.value) {
+        return;
+    }
+    draft.value = String(props.rate.progress);
+    editing.value = true;
+    void nextTick(() => {
+        inputEl.value?.focus();
+        // The current value comes preselected: typing replaces it outright.
+        inputEl.value?.select();
+    });
+}
+
+// Cancel. focusTrigger only for Esc: on blur the user is already somewhere else
+// and pulling the caret back would fight them.
+function closeEditor(focusTrigger: boolean): void {
+    if (!editing.value) {
+        return;
+    }
+    editing.value = false;
+    if (focusTrigger) {
+        void nextTick(() => triggerEl.value?.focus());
+    }
+}
+
+function commit(): void {
+    if (invalid.value) {
+        // Nothing written and the field stays open: the caret keeps its place
+        // and the number does not have to be retyped.
+        return;
+    }
+    const value = parsedDraft.value;
+    if (value === null || value === props.rate.progress) {
+        // Empty field or the very same number — closing costs no request.
+        closeEditor(true);
+        return;
+    }
+    // The write locks the row, so the caret is not handed back to a trigger
+    // that is about to be disabled.
+    closeEditor(false);
+    emit('set-progress', value);
+}
+
+function onInput(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    // Digits only: maxlength covers typing, this also survives a paste.
+    const digits = input.value.replace(/\D+/g, '').slice(0, MAX_DIGITS);
+    draft.value = digits;
+    if (input.value !== digits) {
+        // The bound value did not change, so Vue would not patch the DOM back.
+        input.value = digits;
+    }
+}
+
+function onKeydown(event: KeyboardEvent): void {
+    if (event.key === 'Enter') {
+        event.preventDefault();
+        commit();
+        return;
+    }
+    if (event.key === 'Escape') {
+        event.preventDefault();
+        closeEditor(true);
+    }
+}
 
 function toggleScore(): void {
     emit('update:scoreOpen', !props.scoreOpen);
@@ -424,9 +587,100 @@ a.rate__poster-box:hover .rate__poster {
     padding-top: 6px;
 }
 
+/* The only element of the row that changes shape (Ф7-16): in rest it holds the
+   phrase button, while editing — the field and the same tail. */
 .rate__progress {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
     font-size: 12px;
     color: var(--color-fg-muted);
+}
+
+/* Rest state: the trigger is the whole phrase (a single digit is 7.6px wide at
+   this size, the phrase is 55.8x20.8), and it costs nothing horizontally —
+   vertical padding only, no border, no background — so the progress line stands
+   exactly where it stood before the editor existed. */
+.rate__progress-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    min-width: 0;
+    padding: 2px 0;
+    border: none;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    white-space: nowrap;
+
+    /* Hover answers with one change only: the muted phrase takes the row text
+       color (the bordered controls of the row answer with an accent border, a
+       borderless one answers with color). */
+    &:hover:not(:disabled) {
+        color: var(--color-fg);
+    }
+
+    /* Tighter than the default ring of the foundation, as everywhere in this
+       dense row. */
+    &:focus-visible {
+        outline-offset: 1px;
+    }
+}
+
+/* The only rest-state mark of "this is editable": a dashed underline under the
+   number that is edited. Not a border and not a fill — the row already carries
+   two bordered controls and a pill. */
+.rate__progress-value {
+    text-decoration: underline;
+    text-decoration-style: dashed;
+    text-decoration-color: color-mix(in srgb, currentcolor 65%, transparent);
+    text-underline-offset: 2px;
+    font-variant-numeric: tabular-nums;
+}
+
+/* The field replaces the number and only the number. Fixed width (4 digits fit):
+   a content-sized field would twitch the tail on every keystroke. Height is
+   exactly the 20.8px of the trigger it replaced (1px padding + 1px border over
+   the same 12px/1.4 text), so the row does not grow while typing. */
+.rate__progress-input {
+    /* The tail is the only part of the line allowed to give way (it truncates),
+       so the field keeps its width and the typed number stays fully visible. */
+    flex-shrink: 0;
+    width: 44px;
+    padding: 1px 4px;
+    border: 1px solid var(--color-accent);
+    border-radius: 4px;
+    background: var(--color-bg);
+    color: var(--color-fg);
+    font: inherit;
+    line-height: 1.4;
+    font-variant-numeric: tabular-nums;
+
+    /* The soft ring is a shadow, not an outline: it must not take part in the
+       layout of an already cramped line. */
+    outline: none;
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-accent) 22%, transparent);
+}
+
+.rate__progress-input--invalid {
+    border-color: var(--color-danger);
+    color: var(--color-danger);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-danger) 22%, transparent);
+}
+
+/* The static half of the phrase. Its ellipsis is the deliberate degradation
+   order of the line: [+1], the score and the badge never move, the repeated
+   maximum truncates. */
+.rate__progress-tail {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.rate__progress-tail--invalid {
+    color: var(--color-danger);
 }
 
 /* "+1" per the components-rate-row card (.plus). */

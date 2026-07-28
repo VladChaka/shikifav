@@ -72,6 +72,7 @@
                 @load-more="loadMoreList"
                 @retry="retryList"
                 @increment="incrementRate"
+                @set-progress="setRateProgress"
                 @set-score="setRateScore"
                 @change-status="changeRateStatus"
                 @remove="removeRate"
@@ -174,6 +175,7 @@ const {
     setFilterType: setListType,
     setFilterStatus: setListStatus,
     increment: incrementRate,
+    setProgress: setRateProgress,
     setScore: setRateScore,
     markCompleted: markRateCompleted,
     changeStatus: changeRateStatus,

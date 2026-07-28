@@ -38,6 +38,7 @@
                     :status-open="isPopoverOpen('status', row.rateId)"
                     :warning="warnings.get(row.rateId) ?? null"
                     @increment="emit('increment', row)"
+                    @set-progress="emit('set-progress', row, $event)"
                     @set-score="emit('set-score', row, $event)"
                     @change-status="emit('change-status', row, $event)"
                     @remove="emit('remove', row)"
@@ -98,9 +99,10 @@ import type { MediaKind } from '@/src/lib/i18n';
 // Emits:
 //   update:filterType(type) / update:filterStatus(status) — filter changed
 //   load-more / retry                                      — pagination / error retry
-//   increment(row) / set-score(row, value) /
-//   change-status(row, value) / remove(row) /
-//   mark-completed(row) / dismiss-suggest(row)             — row actions, tagged
+//   increment(row) / set-progress(row, value) /
+//   set-score(row, value) / change-status(row, value) /
+//   remove(row) / mark-completed(row) /
+//   dismiss-suggest(row)                                   — row actions, tagged
 //                                                            with their RateRow
 const props = withDefaults(
     defineProps<{
@@ -149,6 +151,7 @@ const emit = defineEmits<{
     'load-more': [];
     retry: [];
     increment: [row: RateRowData];
+    'set-progress': [row: RateRowData, value: number];
     'set-score': [row: RateRowData, value: number];
     'change-status': [row: RateRowData, value: UserRateStatus];
     remove: [row: RateRowData];

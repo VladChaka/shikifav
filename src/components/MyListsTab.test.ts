@@ -1,10 +1,10 @@
-import { afterEach, describe, expect, it } from 'vitest';
-import { h } from 'vue';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { h, nextTick } from 'vue';
 import type { Component } from 'vue';
 import MyListsTab from './MyListsTab.vue';
-import type { SearchType, UserRateStatus } from '@/src/lib/api/types';
+import type { RateRow, SearchType, UserRateStatus } from '@/src/lib/api/types';
 import { i18n } from '@/src/lib/i18n';
-import { clickOn, createApp, createFakeElement, findAll, textOf } from './fake-renderer';
+import { clickOn, createApp, createFakeElement, findAll, fire, textOf } from './fake-renderer';
 import type { FakeElement } from './fake-renderer';
 
 // UX-1: both filters are ChipGroup rows — neutral chips for the type and six
@@ -171,5 +171,95 @@ describe('MyListsTab filters (UX-1)', () => {
         clickOn(chips(statusGroup(container))[3]!); // completed
         clickOn(chips(statusGroup(container))[5]!); // dropped
         expect(emittedStatuses).toEqual(['completed', 'dropped']);
+    });
+});
+
+// --- Ф7-16: the progress editor inside the list -----------------------------
+
+function row(rateId: string, overrides: Partial<RateRow> = {}): RateRow {
+    return {
+        rateId,
+        targetId: `10${rateId}`,
+        targetType: 'Anime',
+        name: `Title ${rateId}`,
+        russian: null,
+        posterUrl: null,
+        posterUrl2x: null,
+        status: 'watching',
+        score: 0,
+        progress: 5,
+        total: 11,
+        ...overrides,
+    };
+}
+
+interface MountedList {
+    container: FakeElement;
+    written: Array<{ rateId: string; value: number }>;
+}
+
+function mountList(items: RateRow[]): MountedList {
+    const written: Array<{ rateId: string; value: number }> = [];
+    const container = createFakeElement('#container');
+    const app = createApp({
+        render: () =>
+            h(MyListsTab as unknown as Component, {
+                items,
+                listStatus: 'data',
+                hasMore: false,
+                loadingMore: false,
+                filterType: 'anime',
+                filterStatus: 'watching',
+                onSetProgress: (rateRow: RateRow, value: number) => {
+                    written.push({ rateId: rateRow.rateId, value });
+                },
+            }),
+    });
+    app.mount(container);
+    cleanups.push(() => app.unmount());
+    return { container, written };
+}
+
+function triggers(container: FakeElement): FakeElement[] {
+    return findAll(container, 'rate__progress-btn');
+}
+
+function inputs(container: FakeElement): FakeElement[] {
+    return findAll(container, 'rate__progress-input');
+}
+
+describe('MyListsTab progress editor (Ф7-16)', () => {
+    it('forwards set-progress tagged with the row it came from', async () => {
+        const { container, written } = mountList([row('1'), row('2', { progress: 40, total: 0 })]);
+        clickOn(triggers(container)[1]!);
+        await nextTick();
+        const input = inputs(container)[0]!;
+        fire(input, 'input', { target: { value: '42' } });
+        await nextTick();
+        fire(input, 'keydown', { key: 'Enter', preventDefault: vi.fn() });
+        expect(written).toEqual([{ rateId: '2', value: 42 }]);
+    });
+
+    it('keeps at most one editor open across the list', async () => {
+        const { container } = mountList([row('1'), row('2')]);
+        clickOn(triggers(container)[0]!);
+        await nextTick();
+        expect(inputs(container)).toHaveLength(1);
+
+        // Opening the second one moves focus out of the first field, and the
+        // field cancels on blur — that is the whole single-editor discipline,
+        // no list-level state (unlike ScorePicker/StatusMenu, which cannot
+        // close themselves this way).
+        const first = inputs(container)[0]!;
+        fire(first, 'blur', {});
+        await nextTick();
+        clickOn(triggers(container)[1]!);
+        await nextTick();
+
+        expect(inputs(container)).toHaveLength(1);
+        // The remaining editor belongs to the second row.
+        const rows = findAll(container, 'rate');
+        expect(inputs(rows[0]!)).toHaveLength(0);
+        expect(inputs(rows[1]!)).toHaveLength(1);
     });
 });

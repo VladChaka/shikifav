@@ -152,6 +152,17 @@ export const i18n = {
         markCompletedQuestion: 'Перевести в «Просмотрено»?',
         // Book-variant of the completion suggestion (phase 4).
         markReadQuestion: 'Перевести в «Прочитано»?',
+        // Ф7-16 inline progress editor. The name of the phrase button: its
+        // visible text («5 / 11 эп.») does not work as an accessible name.
+        editProgress: 'Изменить номер серии',
+        editProgressChapter: 'Изменить номер главы',
+        // aria-label of the field itself.
+        progressLabel: 'Номер серии',
+        progressLabelChapter: 'Номер главы',
+        // title of the field: Enter is not visible anywhere else in the row.
+        progressHint: 'Enter — сохранить, Esc — отменить',
+        // Out-of-range tail: `${progressMaxPrefix} ${total}` replaces «/ N эп.».
+        progressMaxPrefix: 'макс.',
     },
     // Context menu item for a text selection (US-8). %s is substituted by
     // Chrome with the selected text — never interpolate it by hand.

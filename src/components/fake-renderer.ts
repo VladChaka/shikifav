@@ -31,6 +31,10 @@ export interface FakeElement extends FakeNode {
     // call, and tests may still overwrite it with a spy.
     focus(): void;
     focused: boolean;
+    // HTMLInputElement.select() stand-in, same deal: the progress editor of a
+    // list row preselects its value on open (Ф7-16).
+    select(): void;
+    selected: boolean;
 }
 
 export function createFakeElement(tag: string): FakeElement {
@@ -44,8 +48,12 @@ export function createFakeElement(tag: string): FakeElement {
         children: [],
         style: {},
         focused: false,
+        selected: false,
         focus(): void {
             el.focused = true;
+        },
+        select(): void {
+            el.selected = true;
         },
         contains(other: unknown): boolean {
             let node = other as FakeNode | null;

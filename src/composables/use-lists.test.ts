@@ -634,6 +634,216 @@ describe('use-lists', () => {
         });
     });
 
+    // Ф7-16: the same write path as [+1], but the number is absolute and comes
+    // from the row's field — episodes for anime, chapters for manga/ranobe.
+    describe('setProgress (Ф7-16)', () => {
+        it('sends the typed number as episodes and reconciles with the server', async () => {
+            const updates: { rateId: string; patch: RatePatch }[] = [];
+            const { lists, toasts } = await setup({
+                'rates.list': async () => ({
+                    items: [row('1', { progress: 5, total: 24 })],
+                    hasMore: false,
+                }),
+                'rates.update': async ({ rateId, patch }) => {
+                    updates.push({ rateId, patch });
+                    return { rate: rateState('1', { episodes: 11, score: 7 }) };
+                },
+            });
+
+            lists.activate();
+            await vi.waitFor(() => expect(lists.listStatus.value).toBe('data'));
+
+            lists.setProgress(lists.items.value[0], 11);
+            expect(lists.items.value[0].progress).toBe(11); // optimistic, synchronous
+
+            await vi.waitFor(() => expect(lists.busyIds.value.size).toBe(0));
+            // Absolute value, not a delta, and no other field is touched.
+            expect(updates).toEqual([{ rateId: '1', patch: { episodes: 11 } }]);
+            expect(lists.items.value[0].progress).toBe(11);
+            expect(lists.items.value[0].score).toBe(7); // RateState refreshes the row
+            expect(toasts).toEqual([]);
+        });
+
+        it('sends chapters for a manga row and reads chapters back', async () => {
+            const updates: { rateId: string; patch: RatePatch }[] = [];
+            const { lists } = await setup({
+                'rates.list': async () => ({
+                    items: [row('1', { targetType: 'Manga', progress: 3, total: 200 })],
+                    hasMore: false,
+                }),
+                // episodes carries a decoy value: a manga row must read chapters.
+                'rates.update': async ({ rateId, patch }) => {
+                    updates.push({ rateId, patch });
+                    return { rate: rateState('1', { chapters: 118, episodes: 99 }) };
+                },
+            });
+
+            lists.activate();
+            await vi.waitFor(() => expect(lists.listStatus.value).toBe('data'));
+
+            lists.setProgress(lists.items.value[0], 118);
+            await vi.waitFor(() => expect(lists.busyIds.value.size).toBe(0));
+            expect(updates).toEqual([{ rateId: '1', patch: { chapters: 118 } }]);
+            expect(lists.items.value[0].progress).toBe(118);
+        });
+
+        it('rolls the progress back and toasts when the write fails', async () => {
+            const { lists, toasts } = await setup({
+                'rates.list': async () => ({
+                    items: [row('1', { progress: 5, total: 24 })],
+                    hasMore: false,
+                }),
+                'rates.update': async () => {
+                    throw { kind: 'network' } satisfies ApiError;
+                },
+            });
+
+            lists.activate();
+            await vi.waitFor(() => expect(lists.listStatus.value).toBe('data'));
+
+            lists.setProgress(lists.items.value[0], 11);
+            expect(lists.items.value[0].progress).toBe(11); // optimistic
+
+            await vi.waitFor(() => expect(lists.items.value[0].progress).toBe(5));
+            expect(toasts).toEqual([i18n.errors.network]);
+        });
+
+        it('locks the row: a second write and a parallel [+1] are dropped', async () => {
+            const update = deferred<{ rate: RateState }>();
+            let updateCalls = 0;
+            let incrementCalls = 0;
+            const { lists } = await setup({
+                'rates.list': async () => ({
+                    items: [row('1', { progress: 5, total: 24 })],
+                    hasMore: false,
+                }),
+                'rates.update': async () => {
+                    updateCalls += 1;
+                    return update.promise;
+                },
+                'rates.increment': async () => {
+                    incrementCalls += 1;
+                    return { rate: rateState('1', { episodes: 6 }) };
+                },
+            });
+
+            lists.activate();
+            await vi.waitFor(() => expect(lists.listStatus.value).toBe('data'));
+
+            lists.setProgress(lists.items.value[0], 11);
+            await vi.waitFor(() => expect(lists.busyIds.value.has('1')).toBe(true));
+            lists.setProgress(lists.items.value[0], 12); // busy — dropped
+            lists.increment(lists.items.value[0]); // busy — dropped too
+            await flush();
+
+            expect(updateCalls).toBe(1);
+            expect(incrementCalls).toBe(0);
+            expect(lists.items.value[0].progress).toBe(11);
+
+            update.resolve({ rate: rateState('1', { episodes: 11 }) });
+            await vi.waitFor(() => expect(lists.busyIds.value.size).toBe(0));
+        });
+
+        it('offers «Просмотрено?» only for the server-confirmed total', async () => {
+            const { lists } = await setup({
+                'rates.list': async () => ({
+                    items: [row('1', { progress: 5, total: 12 })],
+                    hasMore: false,
+                }),
+                // The site clamped the typed number: the offer must follow this
+                // value, not the optimistic 12.
+                'rates.update': async () => ({ rate: rateState('1', { episodes: 11 }) }),
+            });
+
+            lists.activate();
+            await vi.waitFor(() => expect(lists.listStatus.value).toBe('data'));
+
+            lists.setProgress(lists.items.value[0], 12);
+            await vi.waitFor(() => expect(lists.items.value[0].progress).toBe(11));
+            expect(lists.suggestIds.value.size).toBe(0);
+        });
+
+        it('offers «Просмотрено?» when the confirmed number reaches the total', async () => {
+            const { lists } = await setup({
+                'rates.list': async () => ({
+                    items: [row('1', { progress: 5, total: 12 })],
+                    hasMore: false,
+                }),
+                'rates.update': async () => ({ rate: rateState('1', { episodes: 12 }) }),
+            });
+
+            lists.activate();
+            await vi.waitFor(() => expect(lists.listStatus.value).toBe('data'));
+
+            lists.setProgress(lists.items.value[0], 12);
+            await vi.waitFor(() => expect(lists.suggestIds.value.has('1')).toBe(true));
+            // Still «Смотрю»: the transition stays the user's decision (US-6).
+            expect(lists.items.value[0].status).toBe('watching');
+        });
+
+        it('never offers completion when the total is unknown (0)', async () => {
+            const { lists } = await setup({
+                'rates.list': async () => ({
+                    items: [row('1', { progress: 1146, total: 0 })],
+                    hasMore: false,
+                }),
+                'rates.update': async () => ({ rate: rateState('1', { episodes: 1147 }) }),
+            });
+
+            lists.activate();
+            await vi.waitFor(() => expect(lists.listStatus.value).toBe('data'));
+
+            lists.setProgress(lists.items.value[0], 1147);
+            await vi.waitFor(() => expect(lists.items.value[0].progress).toBe(1147));
+            expect(lists.suggestIds.value.size).toBe(0);
+        });
+
+        it('drops the row when the write flips the status out of the filter', async () => {
+            // The site auto-completes on the last episode: the confirmed status
+            // is outside the «Смотрю» filter, so the row leaves — same rule as
+            // for [+1] and a manual status change.
+            const { lists } = await setup({
+                'rates.list': async () => ({
+                    items: [row('1', { progress: 5, total: 12 })],
+                    hasMore: false,
+                }),
+                'rates.update': async () => ({
+                    rate: rateState('1', { episodes: 12, status: 'completed' }),
+                }),
+            });
+
+            lists.activate();
+            await vi.waitFor(() => expect(lists.listStatus.value).toBe('data'));
+
+            lists.setProgress(lists.items.value[0], 12);
+            await vi.waitFor(() => expect(lists.busyIds.value.size).toBe(0));
+            expect(lists.items.value).toEqual([]);
+            expect(lists.listStatus.value).toBe('empty');
+            expect(lists.suggestIds.value.size).toBe(0);
+        });
+
+        it('keeps a row whose progress write is refused as forbidden, with a warning', async () => {
+            const { lists, toasts } = await setup({
+                'rates.list': async () => ({
+                    items: [row('1', { progress: 5, total: 12 })],
+                    hasMore: false,
+                }),
+                'rates.update': async () => {
+                    throw { kind: 'unauthorized' } satisfies ApiError;
+                },
+            });
+
+            lists.activate();
+            await vi.waitFor(() => expect(lists.listStatus.value).toBe('data'));
+
+            lists.setProgress(lists.items.value[0], 11);
+            await vi.waitFor(() => expect(lists.warnings.value.has('1')).toBe(true));
+            expect(lists.warnings.value.get('1')).toBe(i18n.errors.editForbidden);
+            expect(lists.items.value[0].progress).toBe(5); // rolled back
+            expect(toasts).toEqual([]); // inline warning only, no toast
+        });
+    });
+
     describe('score (US-5)', () => {
         it('sends the score and keeps the server-confirmed value', async () => {
             const updates: { rateId: string; patch: RatePatch }[] = [];

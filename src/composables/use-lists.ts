@@ -7,6 +7,7 @@ import { apiErrorMessage, i18n } from '../lib/i18n';
 import { failureToast, isEditForbidden } from './use-rates';
 import type {
     ApiError,
+    RatePatch,
     RateRow,
     RateState,
     RateTargetType,
@@ -44,6 +45,8 @@ export interface UseLists {
     setFilterType: (type: SearchType) => void;
     setFilterStatus: (status: UserRateStatus) => void;
     increment: (row: RateRow) => void;
+    // Ф7-16: absolute progress typed in the row (episodes / chapters).
+    setProgress: (row: RateRow, value: number) => void;
     setScore: (row: RateRow, value: number) => void;
     markCompleted: (row: RateRow) => void;
     changeStatus: (row: RateRow, status: UserRateStatus) => void;
@@ -379,10 +382,30 @@ async function runRowAction<T>(
 
 async function sendUpdate(
     rateId: string,
-    patch: { status?: UserRateStatus; score?: number },
+    patch: RatePatch,
 ): Promise<{ ok: true; rate: RateState } | { ok: false; error: ApiError }> {
     const response = await sendMessage('rates.update', { rateId, patch });
     return response.ok ? { ok: true, rate: response.data.rate } : response;
+}
+
+// Shared reconciliation of a progress write — [+1] and a typed number differ
+// only in what they send, never in how the answer is read.
+function applyProgressResult(rateId: string, current: RateRow, rate: RateState): void {
+    if (rate.status !== current.status && rate.status !== filterStatus.value) {
+        // The write itself moved the title out of the current filter (e.g. the
+        // site auto-completes on the last episode) — drop it like a manual
+        // status change (docs/05), same rule as changeStatus. Both guards
+        // matter: a status that merely differs from the filter but did not
+        // change (a rewatching row shown under another filter) must stay and
+        // still get the US-6 offer.
+        removeRow(rateId); // also clears suggest/warning for the row
+        return;
+    }
+    const progress = progressOf(rate, current.targetType);
+    patchRow(rateId, { progress, status: rate.status, score: rate.score });
+    // US-6 offer is driven by the server-confirmed progress/status, never by
+    // the optimistic value.
+    maybeSuggest(rateId, current.total, progress, rate.status);
 }
 
 function increment(row: RateRow): void {
@@ -394,23 +417,24 @@ function increment(row: RateRow): void {
             const response = await sendMessage('rates.increment', { rateId });
             return response.ok ? { ok: true, rate: response.data.rate } : response;
         },
-        (current, rate) => {
-            if (rate.status !== current.status && rate.status !== filterStatus.value) {
-                // The increment itself moved the title out of the current filter
-                // (e.g. the site auto-completes on the last episode) — drop it like
-                // a manual status change (docs/05), same rule as changeStatus. Both
-                // guards matter: a status that merely differs from the filter but
-                // did not change (a rewatching row shown under another filter) must
-                // stay and still get the US-6 offer. No offer here — status left
-                // watching/rewatching.
-                removeRow(rateId); // also clears suggest/warning for the row
-                return;
-            }
-            const progress = progressOf(rate, current.targetType);
-            patchRow(rateId, { progress, status: rate.status, score: rate.score });
-            // US-6 offer is driven by the server-confirmed progress/status.
-            maybeSuggest(rateId, current.total, progress, rate.status);
-        },
+        (current, rate) => applyProgressResult(rateId, current, rate),
+        (current) => ({ progress: current.progress }),
+    );
+}
+
+// Ф7-16: an absolute progress number typed in the row. The write is a plain
+// PATCH — anime counts episodes, manga/ranobe chapters (docs/03) — so the same
+// busy lock as [+1] applies and the two can never run on one row at once. The
+// UI validates the value (integer >= 0, not above a known total) before it gets
+// here; the server-confirmed answer still decides what the row shows.
+function setProgress(row: RateRow, value: number): void {
+    const rateId = row.rateId;
+    const patch: RatePatch = row.targetType === 'Manga' ? { chapters: value } : { episodes: value };
+    void runRowAction(
+        rateId,
+        () => ({ progress: value }),
+        () => sendUpdate(rateId, patch),
+        (current, rate) => applyProgressResult(rateId, current, rate),
         (current) => ({ progress: current.progress }),
     );
 }
@@ -507,6 +531,7 @@ export function useLists(showToast: (text: string) => void): UseLists {
         setFilterType,
         setFilterStatus,
         increment,
+        setProgress,
         setScore,
         markCompleted,
         changeStatus,
