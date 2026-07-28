@@ -440,7 +440,7 @@ async function clearCache(): Promise<void> {
     align-items: center;
     gap: 10px;
     width: 100%;
-    max-width: 1400px;
+    max-width: 880px;
     margin: 0 auto;
     padding: 10px 24px;
 }
@@ -482,7 +482,7 @@ async function clearCache(): Promise<void> {
     flex: 1;
     min-height: 0;
     width: 100%;
-    max-width: 1400px;
+    max-width: 880px;
     margin: 0 auto;
     padding: 20px 24px 28px;
 }
@@ -667,7 +667,10 @@ async function clearCache(): Promise<void> {
     }
 
     .options__wrap {
-        grid-template-rows: auto auto auto;
+        /* The panel row takes the slack, not the tab row: with three auto rows
+           the stretched wrap pushed the rule 170px below the tabs it belongs
+           to. */
+        grid-template-rows: auto 1fr auto;
         grid-template-columns: minmax(0, 1fr);
         padding: 14px 16px 22px;
     }
