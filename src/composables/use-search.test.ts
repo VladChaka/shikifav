@@ -63,6 +63,7 @@ function handlers(overrides: Partial<MessageHandlers>): MessageHandlers {
         'auth.logout': async () => ({}),
         'search.titles': async () => ({ items: [] }),
         'rates.list': async () => ({ items: [], hasMore: false }),
+        'posters.fetch': async () => ({ posters: {} }),
         'rates.create': async () => ({ rate: { id: '1', status: 'planned' } }),
         'rates.update': async () => ({
             rate: { id: '1', status: 'watching', score: 0, episodes: 0, chapters: 0, volumes: 0 },
@@ -233,6 +234,148 @@ describe('use-search', () => {
                 type: 'anime',
                 items,
             });
+        });
+    });
+
+    // Ф6-27: GraphQL returns no poster for part of the catalogue (all 18+ titles
+    // among them). The cards are shown at once and the missing posters are
+    // backfilled from REST afterwards, in one batch per page.
+    describe('poster backfill (Ф6-27)', () => {
+        const REST_POSTER = 'https://shikimori.io/system/animes/x96/2.jpg?1711979744';
+
+        function withPoster(id: string, name: string): TitleCard {
+            return {
+                ...card(id, name),
+                posterUrl: `https://shikimori.io/uploads/poster/animes/${id}/mini.webp`,
+                posterUrl2x: `https://shikimori.io/uploads/poster/animes/${id}/mini@2x.webp`,
+            };
+        }
+
+        it('asks for the empty posters in one batch and patches the answer in', async () => {
+            const asked: { type: string; ids: string[] }[] = [];
+            const { search, storage } = await setup({
+                'search.titles': async () => ({
+                    items: [withPoster('1', 'Has poster'), card('2', 'No poster')],
+                }),
+                'posters.fetch': async ({ type, ids }) => {
+                    asked.push({ type, ids });
+                    return { posters: { '2': REST_POSTER } };
+                },
+            });
+
+            search.setQuery('frieren');
+            await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+            await vi.waitFor(() => expect(search.items.value[1].posterUrl).toBe(REST_POSTER));
+
+            // Only the poster-less title is in the batch, and it is ONE request.
+            expect(asked).toEqual([{ type: 'anime', ids: ['2'] }]);
+            // The card that had a poster keeps its GraphQL urls untouched.
+            expect(search.items.value[0]).toEqual(withPoster('1', 'Has poster'));
+            // The backfilled url survives in the session cache: otherwise the
+            // pictures would vanish again on the next popup open.
+            expect(await storage.getSession('lastSearch')).toEqual({
+                query: 'frieren',
+                type: 'anime',
+                items: search.items.value,
+            });
+        });
+
+        it('sends no request when every card came with a poster', async () => {
+            const asked: string[][] = [];
+            const { search } = await setup({
+                'search.titles': async () => ({ items: [withPoster('1', 'Has poster')] }),
+                'posters.fetch': async ({ ids }) => {
+                    asked.push(ids);
+                    return { posters: {} };
+                },
+            });
+
+            search.setQuery('frieren');
+            await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+            await vi.waitFor(() => expect(search.status.value).toBe('data'));
+            await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+
+            expect(asked).toEqual([]); // no extra request on every search
+        });
+
+        it('leaves the poster empty when the backfill fails, without an error state', async () => {
+            const { search } = await setup({
+                'search.titles': async () => ({ items: [card('2', 'No poster')] }),
+                'posters.fetch': async () => {
+                    throw { kind: 'network' } satisfies ApiError;
+                },
+            });
+
+            search.setQuery('frieren');
+            await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+            await vi.waitFor(() => expect(search.status.value).toBe('data'));
+            await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+
+            // The card falls back to the local placeholder image; the failure of
+            // a background top-up is not a user-facing error (docs/05).
+            expect(search.items.value).toEqual([card('2', 'No poster')]);
+            expect(search.error.value).toBeUndefined();
+            expect(search.status.value).toBe('data');
+        });
+
+        it('does not show the cards while the backfill is in flight', async () => {
+            const gate = deferred<{ posters: Record<string, string> }>();
+            const { search } = await setup({
+                'search.titles': async () => ({ items: [card('2', 'No poster')] }),
+                'posters.fetch': async () => gate.promise,
+            });
+
+            search.setQuery('frieren');
+            await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+            // Results are on screen before the backfill answers.
+            await vi.waitFor(() => expect(search.status.value).toBe('data'));
+            expect(search.items.value).toEqual([card('2', 'No poster')]);
+
+            gate.resolve({ posters: { '2': REST_POSTER } });
+            await vi.waitFor(() => expect(search.items.value[0].posterUrl).toBe(REST_POSTER));
+        });
+
+        it('drops a backfill that belongs to a superseded search', async () => {
+            const gate = deferred<{ posters: Record<string, string> }>();
+            let call = 0;
+            const { search } = await setup({
+                'search.titles': async ({ query }) => ({ items: [card('2', query)] }),
+                'posters.fetch': async () => {
+                    call += 1;
+                    return call === 1 ? gate.promise : { posters: {} };
+                },
+            });
+
+            search.setQuery('one');
+            await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+            await vi.waitFor(() => expect(search.items.value).toEqual([card('2', 'one')]));
+
+            search.setQuery('two');
+            await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+            await vi.waitFor(() => expect(search.items.value).toEqual([card('2', 'two')]));
+
+            gate.resolve({ posters: { '2': REST_POSTER } }); // stale
+            await vi.advanceTimersByTimeAsync(0);
+            expect(search.items.value).toEqual([card('2', 'two')]);
+        });
+
+        it('backfills a session cache restored without posters', async () => {
+            // A cache written before Ф6-27 (or one whose backfill failed) still
+            // has empty posters, and a restore alone hits no network otherwise.
+            const asked: string[][] = [];
+            const { search, storage } = await setup(
+                {
+                    'posters.fetch': async ({ ids }) => {
+                        asked.push(ids);
+                        return { posters: { '2': REST_POSTER } };
+                    },
+                },
+                { query: 'frieren', type: 'anime', items: [card('2', 'No poster')] },
+            );
+
+            await vi.waitFor(() => expect(search.items.value[0].posterUrl).toBe(REST_POSTER));
+            expect(asked).toEqual([['2']]);
+            expect((await storage.getSession('lastSearch'))?.items).toEqual(search.items.value);
         });
     });
 

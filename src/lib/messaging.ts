@@ -33,6 +33,13 @@ export interface MessageMap {
         payload: { type: SearchType; status: UserRateStatus; page: number };
         data: { items: RateRow[]; hasMore: boolean };
     };
+    // Poster backfill for the titles GraphQL returns without one (Ф6-27): one
+    // batch per page of results, answered with id -> absolute poster url for the
+    // ids that have a picture (the rest are absent from the map).
+    'posters.fetch': {
+        payload: { type: SearchType; ids: string[] };
+        data: { posters: Record<string, string> };
+    };
     'rates.create': { payload: RateCreateParams; data: { rate: UserRateRef } };
     'rates.update': {
         payload: { rateId: string; patch: RatePatch };

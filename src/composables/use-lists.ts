@@ -1,6 +1,7 @@
 import { ref } from 'vue';
 import type { Ref } from 'vue';
 import { sendMessage } from '../lib/messaging';
+import { applyPosters, fetchMissingPosters } from '../lib/poster-backfill';
 import { DEFAULT_SETTINGS, getSession, getSettings, setSession } from '../lib/storage';
 import { apiErrorMessage, i18n } from '../lib/i18n';
 import { failureToast, isEditForbidden } from './use-rates';
@@ -181,6 +182,28 @@ async function restoreStartState(): Promise<void> {
     }
 }
 
+const rowId = (row: RateRow): string => row.targetId;
+
+// Ф6-27, mirror of use-search.fillPosters: the rows are already on screen, the
+// posters GraphQL did not return are fetched in one REST batch and patched in
+// afterwards. `rows` is the page that was just loaded (so an "Ещё" page does not
+// re-ask for the ids of earlier pages), while the patch itself is applied to the
+// current list — an optimistic edit made meanwhile must survive it. The patched
+// list is written back to the session cache. Failures are silent: the rows keep
+// the local fallback image.
+async function fillPosters(requestId: number, rows: RateRow[], type: SearchType): Promise<void> {
+    const posters = await fetchMissingPosters(rows, type, rowId);
+    if (requestId !== requestSeq) {
+        return; // a filter change / reload superseded this page
+    }
+    const patched = applyPosters(items.value, posters, rowId);
+    if (patched === null) {
+        return;
+    }
+    items.value = patched;
+    void writeCache();
+}
+
 async function loadFirstPage(): Promise<void> {
     touched = true;
     const requestId = ++requestSeq;
@@ -207,6 +230,7 @@ async function loadFirstPage(): Promise<void> {
         suggestIds.value.clear();
         warnings.value.clear();
         void writeCache();
+        void fillPosters(requestId, response.data.items, type);
     } else {
         // Keep whatever rows were on screen; retry re-runs this loader.
         errorText.value = apiErrorMessage(response.error);
@@ -237,6 +261,7 @@ function loadMore(): void {
                 page = nextPage;
                 hasMore.value = response.data.hasMore;
                 void writeCache();
+                void fillPosters(requestId, response.data.items, filterType.value);
             } else {
                 // Keep the list and hasMore so "Ещё" stays available for a retry.
                 showToastFn(failureToast(response.error));

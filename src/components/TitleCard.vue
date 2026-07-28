@@ -9,45 +9,14 @@
             v-bind="posterLinkAttrs"
         >
             <img
-                v-if="card.posterUrl"
                 class="card__poster"
-                :src="card.posterUrl"
+                :src="posterSrc"
                 :srcset="posterSrcset"
                 width="60"
                 height="94"
                 loading="lazy"
                 alt=""
             />
-            <span
-                v-else
-                class="card__poster card__poster--empty"
-                aria-hidden="true"
-            >
-                <svg
-                    viewBox="0 0 24 24"
-                    width="22"
-                    height="22"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="1.5"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                >
-                    <rect
-                        x="3"
-                        y="3"
-                        width="18"
-                        height="18"
-                        rx="2"
-                    />
-                    <circle
-                        cx="9"
-                        cy="9"
-                        r="2"
-                    />
-                    <path d="m21 15-4-4-9 9" />
-                </svg>
-            </span>
         </component>
 
         <div class="card__body">
@@ -161,6 +130,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import StatusMenu from '@/src/components/StatusMenu.vue';
+import posterFallback from '@/src/assets/poster-fallback.jpg';
 import { useSettings } from '@/src/composables/use-settings';
 import type { TitleCard, UserRateStatus } from '@/src/lib/api/types';
 import { i18n, kindLabel, mediaOf, statusLabel, titleStatusLabel } from '@/src/lib/i18n';
@@ -239,6 +209,12 @@ const addLabel = computed(() => `+ ${statusLabel(settings.value.quickStatus, med
 const scoreText = computed(() =>
     props.card.score && props.card.score > 0 ? props.card.score.toFixed(1) : null,
 );
+
+// Last step of the poster chain (Ф6-27): GraphQL poster -> REST backfill ->
+// this local file. Everything upstream may come back empty (GraphQL returns no
+// poster for part of the catalogue, and the backfill may fail), and an empty
+// box in the card is worse than a picture that says "no poster".
+const posterSrc = computed(() => props.card.posterUrl || posterFallback);
 
 const posterSrcset = computed(() =>
     props.card.posterUrl && props.card.posterUrl2x
@@ -342,13 +318,6 @@ a.card__poster-box:hover .card__poster {
     border-radius: 5px;
     background: var(--color-surface);
     object-fit: cover;
-}
-
-.card__poster--empty {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--color-fg-muted);
 }
 
 .card__body {

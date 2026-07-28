@@ -69,6 +69,7 @@ async function mountPage(
         },
         'search.titles': async () => ({ items: [] }),
         'rates.list': async () => ({ items: [], hasMore: false }),
+        'posters.fetch': async () => ({ posters: {} }),
         'rates.create': async () => ({ rate: { id: '100', status: 'planned' } }),
         'rates.update': async () => ({
             rate: { id: '100', status: 'watching', score: 0, episodes: 0, chapters: 0, volumes: 0 },

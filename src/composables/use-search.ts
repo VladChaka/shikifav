@@ -1,6 +1,7 @@
 import { ref } from 'vue';
 import type { Ref } from 'vue';
 import { sendMessage } from '../lib/messaging';
+import { applyPosters, fetchMissingPosters } from '../lib/poster-backfill';
 import { DEFAULT_SETTINGS, getSession, getSettings, setSession } from '../lib/storage';
 import type { ApiError, SearchType, TitleCard } from '../lib/api/types';
 
@@ -143,19 +144,48 @@ async function dispatch(searchQuery: string): Promise<void> {
     if (response.ok) {
         items.value = response.data.items;
         status.value = response.data.items.length > 0 ? 'data' : 'empty';
-        // Session cache feeds the instant first render of the next popup open
-        // (docs/02); fire-and-forget, a write failure only loses the cache.
-        void setSession('lastSearch', {
-            query: searchQuery,
-            type,
-            items: response.data.items,
-        });
+        cacheSearch(searchQuery, type, response.data.items);
+        // Results are already on screen; the poster backfill catches up later.
+        void fillPosters(requestId, searchQuery, type);
     } else {
         // Previous results stay in `items`: a successful retry re-renders
         // instantly and an aborted retry loses nothing.
         error.value = response.error;
         status.value = 'error';
     }
+}
+
+// Session cache feeds the instant first render of the next popup open
+// (docs/02); fire-and-forget, a write failure only loses the cache.
+function cacheSearch(searchQuery: string, type: SearchType, cards: TitleCard[]): void {
+    void setSession('lastSearch', { query: searchQuery, type, items: cards });
+}
+
+const cardId = (card: TitleCard): string => card.id;
+
+// Ф6-27: GraphQL returns no poster for part of the catalogue (all 18+ titles
+// among them), so the empty ones are backfilled from REST in one batch and
+// patched in when they arrive — never awaited before the results are shown.
+// The patched list goes back to the session cache, otherwise the pictures would
+// disappear again on the next popup open. Failures are silent (see
+// fetchMissingPosters): the cards keep the local fallback image.
+async function fillPosters(
+    requestId: number,
+    searchQuery: string,
+    type: SearchType,
+): Promise<void> {
+    const posters = await fetchMissingPosters(items.value, type, cardId);
+    if (requestId !== requestSeq) {
+        return; // a newer search (or a cleared query) replaced these cards
+    }
+    // Applied to the CURRENT array: a rate written while the request was in
+    // flight must survive the patch.
+    const patched = applyPosters(items.value, posters, cardId);
+    if (patched === null) {
+        return;
+    }
+    items.value = patched;
+    cacheSearch(searchQuery, type, patched);
 }
 
 function retry(): void {
@@ -195,6 +225,11 @@ async function restoreStartState(): Promise<void> {
     items.value = cached.items;
     status.value = cached.items.length > 0 ? 'data' : 'empty';
     lastQuery = cached.query;
+    // A cache written before Ф6-27 (or one whose backfill failed last time)
+    // still has empty posters, and a restore alone hits no network otherwise —
+    // so the backfill runs here too. Cards that already have a poster make it a
+    // no-op without any request.
+    void fillPosters(requestSeq, cached.query, cached.type);
 }
 
 export function useSearch(): UseSearch {

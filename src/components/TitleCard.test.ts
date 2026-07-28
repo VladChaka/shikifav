@@ -112,6 +112,29 @@ describe('TitleCard title page links (Ф6-26)', () => {
         expect(findAll(container, 'card__title-link')).toHaveLength(0);
     });
 
+    // Ф6-27: the last step of the poster chain. GraphQL gives no poster for part
+    // of the catalogue and the REST backfill may fail too — the card then shows
+    // a bundled image instead of an empty box.
+    it('falls back to the local image when the card has no poster', () => {
+        const container = mountCard(card({ posterUrl: null, posterUrl2x: null }));
+        const poster = find(container, 'card__poster');
+        expect(poster.tag).toBe('img');
+        expect(String(poster.props.src)).toContain('poster-fallback');
+        // No srcset: the fallback is a single file, not a 1x/2x pair.
+        expect(poster.props.srcset).toBeUndefined();
+        // Still the same 60x94 box, so nothing shifts when a poster arrives.
+        expect(poster.props.width).toBe('60');
+        expect(poster.props.height).toBe('94');
+    });
+
+    it('uses a backfilled poster with no 2x pair as a plain src', () => {
+        const backfilled = 'https://shikimori.io/system/animes/x96/1342.jpg?1711979744';
+        const container = mountCard(card({ posterUrl: backfilled, posterUrl2x: null }));
+        const poster = find(container, 'card__poster');
+        expect(poster.props.src).toBe(backfilled);
+        expect(poster.props.srcset).toBeUndefined();
+    });
+
     it('keeps a non-https url out of href', () => {
         for (const url of [
             'javascript:alert(1)',

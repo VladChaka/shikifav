@@ -1,6 +1,7 @@
 import { ensureToken, getAuthState, login, logout } from '@/src/lib/api/auth';
 import { listRates, searchTitles } from '@/src/lib/api/graphql';
 import { setTokenProvider } from '@/src/lib/api/http';
+import { fetchPosters } from '@/src/lib/api/posters';
 import { createRate, deleteRate, incrementRate, updateRate } from '@/src/lib/api/rates';
 import { registerUserAgentRule } from '@/src/lib/api/user-agent-rule';
 import { handleMenuClick, registerContextMenu } from '@/src/lib/context-menu';
@@ -54,6 +55,12 @@ export default defineBackground(() => {
             const { items, hasMore } = await listRates(type, status, page);
             return { items, hasMore };
         },
+        'posters.fetch': async ({ type, ids }) => ({
+            // Ф6-27: GraphQL gives no poster for part of the catalogue, so the
+            // UI asks for the missing ones separately — one REST batch, after
+            // the page is already rendered.
+            posters: await fetchPosters(type, ids),
+        }),
         'rates.create': async ({ targetId, targetType, status }) => ({
             rate: await createRate(targetId, targetType, status),
         }),

@@ -68,6 +68,7 @@ function handlers(overrides: Partial<MessageHandlers>): MessageHandlers {
         'auth.logout': async () => ({}),
         'search.titles': async () => ({ items: [] }),
         'rates.list': async () => ({ items: [], hasMore: false }),
+        'posters.fetch': async () => ({ posters: {} }),
         'rates.create': async () => ({ rate: { id: '100', status: 'planned' } }),
         'rates.update': async () => ({ rate: rateState('100') }),
         'rates.delete': async () => ({}),
@@ -951,6 +952,158 @@ describe('use-lists', () => {
             lists.increment(lists.items.value[0]); // a new attempt clears the warning
             await vi.waitFor(() => expect(lists.items.value[0].progress).toBe(4));
             expect(lists.warnings.value.size).toBe(0);
+        });
+    });
+
+    // Ф6-27: same chain as in the search results — GraphQL poster, then a REST
+    // batch for the rows that came without one, then the local fallback image.
+    describe('poster backfill (Ф6-27)', () => {
+        const REST_POSTER = 'https://shikimori.io/system/animes/x96/101.jpg?1711979744';
+
+        function withPoster(rateId: string): RateRow {
+            return row(rateId, {
+                posterUrl: `https://shikimori.io/uploads/poster/animes/${rateId}/mini.webp`,
+                posterUrl2x: `https://shikimori.io/uploads/poster/animes/${rateId}/mini@2x.webp`,
+            });
+        }
+
+        it('asks for the empty posters in one batch keyed by target id', async () => {
+            const asked: { type: string; ids: string[] }[] = [];
+            const { lists, storage } = await setup({
+                'rates.list': async () => ({
+                    items: [withPoster('1'), row('2')],
+                    hasMore: false,
+                }),
+                'posters.fetch': async ({ type, ids }) => {
+                    asked.push({ type, ids });
+                    return { posters: { '102': REST_POSTER } };
+                },
+            });
+
+            lists.activate();
+            await vi.waitFor(() => expect(lists.items.value[1].posterUrl).toBe(REST_POSTER));
+
+            // targetId, NOT rateId: the poster endpoint knows title ids only.
+            expect(asked).toEqual([{ type: 'anime', ids: ['102'] }]);
+            expect(lists.items.value[0]).toEqual(withPoster('1'));
+            // The patched rows land in the session cache with their new urls.
+            expect((await storage.getSession('lastList'))?.items).toEqual(lists.items.value);
+        });
+
+        it('sends no request when every row came with a poster', async () => {
+            const asked: string[][] = [];
+            const { lists } = await setup({
+                'rates.list': async () => ({ items: [withPoster('1')], hasMore: false }),
+                'posters.fetch': async ({ ids }) => {
+                    asked.push(ids);
+                    return { posters: {} };
+                },
+            });
+
+            lists.activate();
+            await vi.waitFor(() => expect(lists.listStatus.value).toBe('data'));
+            await flush();
+
+            expect(asked).toEqual([]);
+        });
+
+        it('leaves the rows alone when the backfill fails, with no toast', async () => {
+            const { lists, toasts } = await setup({
+                'rates.list': async () => ({ items: [row('1')], hasMore: false }),
+                'posters.fetch': async () => {
+                    throw { kind: 'network' } satisfies ApiError;
+                },
+            });
+
+            lists.activate();
+            await vi.waitFor(() => expect(lists.listStatus.value).toBe('data'));
+            await flush();
+
+            expect(lists.items.value).toEqual([row('1')]); // local fallback in the row
+            expect(toasts).toEqual([]); // not a user action — nothing to report
+        });
+
+        it('shows the rows before the backfill answers', async () => {
+            const gate = deferred<{ posters: Record<string, string> }>();
+            const { lists } = await setup({
+                'rates.list': async () => ({ items: [row('1')], hasMore: false }),
+                'posters.fetch': async () => gate.promise,
+            });
+
+            lists.activate();
+            await vi.waitFor(() => expect(lists.listStatus.value).toBe('data'));
+            expect(lists.items.value).toEqual([row('1')]);
+
+            gate.resolve({ posters: { '101': REST_POSTER } });
+            await vi.waitFor(() => expect(lists.items.value[0].posterUrl).toBe(REST_POSTER));
+        });
+
+        it('asks only for the ids of the page just appended by "Ещё"', async () => {
+            const asked: string[][] = [];
+            const { lists } = await setup({
+                'rates.list': async ({ page }) => ({
+                    items: page === 1 ? [row('1')] : [row('2')],
+                    hasMore: page === 1,
+                }),
+                'posters.fetch': async ({ ids }) => {
+                    asked.push(ids);
+                    return { posters: {} };
+                },
+            });
+
+            lists.activate();
+            await vi.waitFor(() => expect(lists.hasMore.value).toBe(true));
+            await vi.waitFor(() => expect(asked).toEqual([['101']]));
+
+            lists.loadMore();
+            await vi.waitFor(() => expect(lists.items.value).toHaveLength(2));
+            // The first page is not re-asked: one batch per page of results.
+            await vi.waitFor(() => expect(asked).toEqual([['101'], ['102']]));
+        });
+
+        it('keeps an optimistic edit made while the backfill was in flight', async () => {
+            const gate = deferred<{ posters: Record<string, string> }>();
+            const { lists } = await setup({
+                'rates.list': async () => ({ items: [row('1')], hasMore: false }),
+                'posters.fetch': async () => gate.promise,
+                'rates.increment': async () => ({ rate: rateState('1', { episodes: 4 }) }),
+            });
+
+            lists.activate();
+            await vi.waitFor(() => expect(lists.listStatus.value).toBe('data'));
+
+            lists.increment(lists.items.value[0]);
+            await vi.waitFor(() => expect(lists.busyIds.value.size).toBe(0));
+            expect(lists.items.value[0].progress).toBe(4);
+
+            gate.resolve({ posters: { '101': REST_POSTER } });
+            await vi.waitFor(() => expect(lists.items.value[0].posterUrl).toBe(REST_POSTER));
+            expect(lists.items.value[0].progress).toBe(4); // not rolled back by the patch
+        });
+
+        it('drops a backfill belonging to a superseded filter', async () => {
+            const gate = deferred<{ posters: Record<string, string> }>();
+            let call = 0;
+            const { lists } = await setup({
+                'rates.list': async ({ status }) => ({
+                    items: [row('1', { status: status === 'watching' ? 'watching' : 'completed' })],
+                    hasMore: false,
+                }),
+                'posters.fetch': async () => {
+                    call += 1;
+                    return call === 1 ? gate.promise : { posters: {} };
+                },
+            });
+
+            lists.activate();
+            await vi.waitFor(() => expect(lists.listStatus.value).toBe('data'));
+
+            lists.setFilterStatus('completed');
+            await vi.waitFor(() => expect(lists.items.value[0].status).toBe('completed'));
+
+            gate.resolve({ posters: { '101': REST_POSTER } }); // stale
+            await flush();
+            expect(lists.items.value[0].posterUrl).toBeNull();
         });
     });
 

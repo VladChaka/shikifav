@@ -8,45 +8,14 @@
             v-bind="posterLinkAttrs"
         >
             <img
-                v-if="rate.posterUrl"
                 class="rate__poster"
-                :src="rate.posterUrl"
+                :src="posterSrc"
                 :srcset="posterSrcset"
                 width="42"
                 height="58"
                 loading="lazy"
                 alt=""
             />
-            <span
-                v-else
-                class="rate__poster rate__poster--empty"
-                aria-hidden="true"
-            >
-                <svg
-                    viewBox="0 0 24 24"
-                    width="22"
-                    height="22"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="1.5"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                >
-                    <rect
-                        x="3"
-                        y="3"
-                        width="18"
-                        height="18"
-                        rx="2"
-                    />
-                    <circle
-                        cx="9"
-                        cy="9"
-                        r="2"
-                    />
-                    <path d="m21 15-4-4-9 9" />
-                </svg>
-            </span>
         </component>
 
         <div class="rate__body">
@@ -179,6 +148,7 @@
 import { computed } from 'vue';
 import ScorePicker from '@/src/components/ScorePicker.vue';
 import StatusMenu from '@/src/components/StatusMenu.vue';
+import posterFallback from '@/src/assets/poster-fallback.jpg';
 import { useSettings } from '@/src/composables/use-settings';
 import type { RateRow, UserRateStatus } from '@/src/lib/api/types';
 import { i18n, mediaOf, statusLabel } from '@/src/lib/i18n';
@@ -261,6 +231,10 @@ const posterLinkAttrs = computed((): Record<string, string> => {
 // («эп.», «+1 эпизод», «Просмотрено»), manga/ranobe count chapters
 // («гл.», «+1 глава», «Прочитано»).
 const media = computed(() => mediaOf(props.rate.targetType));
+
+// Last step of the poster chain (Ф6-27), same rule as in TitleCard: GraphQL
+// poster -> REST backfill -> this local file.
+const posterSrc = computed(() => props.rate.posterUrl || posterFallback);
 
 const posterSrcset = computed(() =>
     props.rate.posterUrl && props.rate.posterUrl2x
@@ -352,13 +326,6 @@ a.rate__poster-box:hover .rate__poster {
     border-radius: 5px;
     background: var(--color-surface);
     object-fit: cover;
-}
-
-.rate__poster--empty {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--color-fg-muted);
 }
 
 .rate__body {

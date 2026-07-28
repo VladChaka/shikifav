@@ -112,6 +112,26 @@ describe('RateRow title page links (Ф6-26)', () => {
         );
     });
 
+    // Ф6-27: same poster chain as in TitleCard, ending in the bundled image.
+    it('falls back to the local image when the row has no poster', () => {
+        const { container } = mountRow(row({ posterUrl: null, posterUrl2x: null }));
+        const poster = find(container, 'rate__poster');
+        expect(poster.tag).toBe('img');
+        expect(String(poster.props.src)).toContain('poster-fallback');
+        expect(poster.props.srcset).toBeUndefined();
+        // Unchanged 42x58 box.
+        expect(poster.props.width).toBe('42');
+        expect(poster.props.height).toBe('58');
+    });
+
+    it('uses a backfilled poster with no 2x pair as a plain src', () => {
+        const backfilled = 'https://shikimori.io/system/animes/x96/1342.jpg?1711979744';
+        const { container } = mountRow(row({ posterUrl: backfilled, posterUrl2x: null }));
+        const poster = find(container, 'rate__poster');
+        expect(poster.props.src).toBe(backfilled);
+        expect(poster.props.srcset).toBeUndefined();
+    });
+
     it('keeps a non-https url out of href', () => {
         for (const url of ['javascript:alert(1)', 'http://shikimori.io/animes/52991', 'nonsense']) {
             const { container } = mountRow(row({ url }));
