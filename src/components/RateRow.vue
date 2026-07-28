@@ -1,45 +1,53 @@
 <template>
     <article class="rate">
-        <img
-            v-if="rate.posterUrl"
-            class="rate__poster"
-            :src="rate.posterUrl"
-            :srcset="posterSrcset"
-            width="42"
-            height="58"
-            loading="lazy"
-            alt=""
-        />
-        <span
-            v-else
-            class="rate__poster rate__poster--empty"
-            aria-hidden="true"
+        <!-- Poster box: an <a> to the title page when there is one, a plain
+             <div> of the same geometry otherwise (same rule as TitleCard). -->
+        <component
+            :is="href ? 'a' : 'div'"
+            class="rate__poster-box"
+            v-bind="posterLinkAttrs"
         >
-            <svg
-                viewBox="0 0 24 24"
-                width="22"
-                height="22"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.5"
-                stroke-linecap="round"
-                stroke-linejoin="round"
+            <img
+                v-if="rate.posterUrl"
+                class="rate__poster"
+                :src="rate.posterUrl"
+                :srcset="posterSrcset"
+                width="42"
+                height="58"
+                loading="lazy"
+                alt=""
+            />
+            <span
+                v-else
+                class="rate__poster rate__poster--empty"
+                aria-hidden="true"
             >
-                <rect
-                    x="3"
-                    y="3"
-                    width="18"
-                    height="18"
-                    rx="2"
-                />
-                <circle
-                    cx="9"
-                    cy="9"
-                    r="2"
-                />
-                <path d="m21 15-4-4-9 9" />
-            </svg>
-        </span>
+                <svg
+                    viewBox="0 0 24 24"
+                    width="22"
+                    height="22"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.5"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                >
+                    <rect
+                        x="3"
+                        y="3"
+                        width="18"
+                        height="18"
+                        rx="2"
+                    />
+                    <circle
+                        cx="9"
+                        cy="9"
+                        r="2"
+                    />
+                    <path d="m21 15-4-4-9 9" />
+                </svg>
+            </span>
+        </component>
 
         <div class="rate__body">
             <div class="rate__title-row">
@@ -47,7 +55,15 @@
                     class="rate__title"
                     :title="title"
                 >
-                    {{ title }}
+                    <a
+                        v-if="href"
+                        class="rate__title-link"
+                        :href="href"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        >{{ title }}</a
+                    >
+                    <template v-else>{{ title }}</template>
                 </h3>
                 <!-- Anchor for the absolutely positioned ScorePicker. -->
                 <div class="rate__score">
@@ -167,6 +183,7 @@ import { useSettings } from '@/src/composables/use-settings';
 import type { RateRow, UserRateStatus } from '@/src/lib/api/types';
 import { i18n, mediaOf, statusLabel } from '@/src/lib/i18n';
 import { displayTitle } from '@/src/lib/title-name';
+import { titleHref } from '@/src/lib/title-url';
 
 // "Мои списки" list row (US-4/5/6 + Ф3-7 status badge). Presentational only:
 // progress, +1, score, status change/removal and the "completed?" suggestion
@@ -219,6 +236,26 @@ const emit = defineEmits<{
 // name only, so the second one from displayTitle is deliberately dropped.
 const { settings } = useSettings();
 const title = computed(() => displayTitle(props.rate, settings.value.titleLang).primary);
+
+// Link to the title page on Shikimori (Ф6-26), same contract as in TitleCard:
+// the url is API data on the current origin, null = nothing to link to (old
+// session cache or a non-https value). The poster link duplicates it and stays
+// out of the tab order / a11y tree.
+const href = computed(() => titleHref(props.rate.url));
+
+const posterLinkAttrs = computed((): Record<string, string> => {
+    const url = href.value;
+    if (url === null) {
+        return {};
+    }
+    return {
+        href: url,
+        target: '_blank',
+        rel: 'noopener noreferrer',
+        tabindex: '-1',
+        'aria-hidden': 'true',
+    };
+});
 
 // Wording follows the row media (phase 4): anime counts episodes
 // («эп.», «+1 эпизод», «Просмотрено»), manga/ranobe count chapters
@@ -292,6 +329,21 @@ function onRemove(): void {
     border-bottom: 1px solid var(--color-border);
 }
 
+.rate__poster-box {
+    /* Wrapper of the poster (Ф6-26): no size of its own, only the flex
+       behaviour the poster used to have as a direct row child. */
+    display: flex;
+    flex-shrink: 0;
+    align-self: flex-start;
+    border-radius: 5px;
+}
+
+/* Hover of the poster link: the same fade toward the page background as in
+   TitleCard. */
+a.rate__poster-box:hover .rate__poster {
+    opacity: 0.75;
+}
+
 .rate__poster {
     /* Fixed 42x58 box (components-rate-row): no layout shift while loading. */
     flex-shrink: 0;
@@ -323,7 +375,8 @@ function onRemove(): void {
 }
 
 .rate__title {
-    /* Up to two lines, then ellipsis. */
+    /* Up to two lines, then ellipsis; the clipping stays tight and the focus
+       ring of the title link is moved inward, exactly as in TitleCard. */
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
@@ -333,6 +386,23 @@ function onRemove(): void {
     font-size: 13.5px;
     font-weight: 600;
     line-height: 1.3;
+}
+
+/* Same rule as .card__title-link: the link looks like the heading it sits in,
+   only the hover underline marks it. */
+.rate__title-link {
+    color: inherit;
+    text-decoration: none;
+
+    &:hover {
+        text-decoration: underline;
+    }
+
+    /* Same reason as .card__title-link: the clamped heading clips an outward
+       ring, so this one is drawn just inside the text box. */
+    &:focus-visible {
+        outline-offset: -1px;
+    }
 }
 
 .rate__score {

@@ -1,45 +1,54 @@
 <template>
     <article class="card">
-        <img
-            v-if="card.posterUrl"
-            class="card__poster"
-            :src="card.posterUrl"
-            :srcset="posterSrcset"
-            width="60"
-            height="94"
-            loading="lazy"
-            alt=""
-        />
-        <span
-            v-else
-            class="card__poster card__poster--empty"
-            aria-hidden="true"
+        <!-- Poster box: an <a> to the title page when there is one, a plain
+             <div> of the same geometry otherwise (a card from an old session
+             cache has no url). -->
+        <component
+            :is="href ? 'a' : 'div'"
+            class="card__poster-box"
+            v-bind="posterLinkAttrs"
         >
-            <svg
-                viewBox="0 0 24 24"
-                width="22"
-                height="22"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.5"
-                stroke-linecap="round"
-                stroke-linejoin="round"
+            <img
+                v-if="card.posterUrl"
+                class="card__poster"
+                :src="card.posterUrl"
+                :srcset="posterSrcset"
+                width="60"
+                height="94"
+                loading="lazy"
+                alt=""
+            />
+            <span
+                v-else
+                class="card__poster card__poster--empty"
+                aria-hidden="true"
             >
-                <rect
-                    x="3"
-                    y="3"
-                    width="18"
-                    height="18"
-                    rx="2"
-                />
-                <circle
-                    cx="9"
-                    cy="9"
-                    r="2"
-                />
-                <path d="m21 15-4-4-9 9" />
-            </svg>
-        </span>
+                <svg
+                    viewBox="0 0 24 24"
+                    width="22"
+                    height="22"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.5"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                >
+                    <rect
+                        x="3"
+                        y="3"
+                        width="18"
+                        height="18"
+                        rx="2"
+                    />
+                    <circle
+                        cx="9"
+                        cy="9"
+                        r="2"
+                    />
+                    <path d="m21 15-4-4-9 9" />
+                </svg>
+            </span>
+        </component>
 
         <div class="card__body">
             <div class="card__title-row">
@@ -47,7 +56,15 @@
                     class="card__title"
                     :title="title"
                 >
-                    {{ title }}
+                    <a
+                        v-if="href"
+                        class="card__title-link"
+                        :href="href"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        >{{ title }}</a
+                    >
+                    <template v-else>{{ title }}</template>
                 </h3>
                 <span
                     v-if="scoreText"
@@ -148,6 +165,7 @@ import { useSettings } from '@/src/composables/use-settings';
 import type { TitleCard, UserRateStatus } from '@/src/lib/api/types';
 import { i18n, kindLabel, mediaOf, statusLabel, titleStatusLabel } from '@/src/lib/i18n';
 import { displayTitle } from '@/src/lib/title-name';
+import { titleHref } from '@/src/lib/title-url';
 
 // Search result card (US-2/US-3). Presentational only: mutations are emitted
 // upwards, `busy`, `warning` and `menuOpen` are controlled by the owner of the
@@ -184,6 +202,29 @@ const names = computed(() => displayTitle(props.card, settings.value.titleLang))
 const title = computed(() => names.value.primary);
 // The other name goes second, when there is one to show.
 const original = computed(() => names.value.secondary);
+
+// Link to the title page on Shikimori (Ф6-26): the url comes from the API on
+// the very domain the response came from, so the origin setting is honoured
+// with no url building here. null = nothing to link to (old session cache, or
+// a value that is not an https link).
+const href = computed(() => titleHref(props.card.url));
+
+// The poster repeats the destination of the title link, so it is kept out of
+// the tab order and the a11y tree: the image itself is decorative (alt=""), and
+// a second link would only make a screen reader announce the same title twice.
+const posterLinkAttrs = computed((): Record<string, string> => {
+    const url = href.value;
+    if (url === null) {
+        return {};
+    }
+    return {
+        href: url,
+        target: '_blank',
+        rel: 'noopener noreferrer',
+        tabindex: '-1',
+        'aria-hidden': 'true',
+    };
+});
 
 // Wording/meta variant (phase 4): anime cards show episodes and «Смотрю…»
 // labels, manga/ranobe cards show volumes/chapters and «Читаю…» labels.
@@ -274,6 +315,23 @@ function onRemove(): void {
     border-bottom: 1px solid var(--color-border);
 }
 
+.card__poster-box {
+    /* Wrapper of the poster: carries no size of its own, only the flex behaviour
+       the poster used to have as a direct card child (align-self keeps it 94px
+       tall in a taller card, display:flex drops the inline-image baseline gap). */
+    display: flex;
+    flex-shrink: 0;
+    align-self: flex-start;
+    border-radius: 5px;
+}
+
+/* Hover of the poster link (Ф6-26): a fade, not a fixed color — the poster
+   blends toward the page background, which reads as lighter on the light theme
+   and as darker on the dark one. */
+a.card__poster-box:hover .card__poster {
+    opacity: 0.75;
+}
+
 .card__poster {
     /* Fixed 60x94 box (components-title-card) — the natural size of miniUrl, so
        nothing is rescaled or cropped. The width/height attributes on the <img>
@@ -307,7 +365,10 @@ function onRemove(): void {
 }
 
 .card__title {
-    /* Up to two lines, then ellipsis. */
+    /* Up to two lines, then ellipsis. The clipping must stay tight (`clip` with
+       a margin lets the top of the cut third line bleed onto the second name),
+       so the focus ring of the title link is moved inward instead — see
+       .card__title-link. */
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
@@ -317,6 +378,23 @@ function onRemove(): void {
     font-size: 13.5px;
     font-weight: 600;
     line-height: 1.3;
+}
+
+/* The title link inherits the look of the heading: only the hover underline
+   marks it as a link, so the two-line clamp of the <h3> is untouched. */
+.card__title-link {
+    color: inherit;
+    text-decoration: none;
+
+    &:hover {
+        text-decoration: underline;
+    }
+
+    /* Inward instead of the 2px outward ring of the foundation: the clamped
+       heading clips its overflow, and an outward ring would be cut in half. */
+    &:focus-visible {
+        outline-offset: -1px;
+    }
 }
 
 .card__score {

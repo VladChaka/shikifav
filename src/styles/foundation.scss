@@ -168,7 +168,12 @@ button:disabled {
     cursor: default;
 }
 
-button:focus-visible {
+/* Links to the title page (poster and name of a card, Ф6-26) share that ring:
+   the UA default is platform-dependent and reads as foreign in this UI. Their
+   color and underline stay with the component — a link inside a card is not
+   styled like a link in body text. */
+button:focus-visible,
+a:focus-visible {
     outline: 2px solid var(--color-accent);
     outline-offset: 2px;
 }

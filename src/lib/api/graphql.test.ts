@@ -79,6 +79,8 @@ const fullRawAnime: RawAnime = {
         mini2xUrl: 'https://desu.shikimori.one/uploads/poster/animes/52991/mini@2x.webp',
     },
     userRate: { id: '311', status: 'watching' },
+    // Absolute url on the domain the response came from (live check 2026-07-27).
+    url: 'https://shikimori.io/animes/52991-sousou-no-frieren',
 };
 
 const fullTitleCard: TitleCard = {
@@ -95,6 +97,7 @@ const fullTitleCard: TitleCard = {
     posterUrl: 'https://desu.shikimori.one/uploads/poster/animes/52991/mini.webp',
     posterUrl2x: 'https://desu.shikimori.one/uploads/poster/animes/52991/mini@2x.webp',
     userRate: { id: '311', status: 'watching' },
+    url: 'https://shikimori.io/animes/52991-sousou-no-frieren',
 };
 
 // The same title as read by MYLIST_ANIMES_QUERY: userRate carries progress + score.
@@ -115,6 +118,7 @@ const fullRateRow: RateRow = {
     score: 9,
     progress: 27,
     total: 28,
+    url: 'https://shikimori.io/animes/52991-sousou-no-frieren',
 };
 
 // Realistic manga wire fixture: shape from the docs/03 SearchMangas template
@@ -134,6 +138,7 @@ const fullRawManga: RawManga = {
         mini2xUrl: 'https://desu.shikimori.one/uploads/poster/mangas/25/mini@2x.webp',
     },
     userRate: { id: '512', status: 'watching' },
+    url: 'https://shikimori.io/mangas/25-fullmetal-alchemist',
 };
 
 // The manga card carries chapters/volumes and NO episode fields; ranobe cards
@@ -152,6 +157,7 @@ const fullMangaCard: TitleCard = {
     posterUrl: 'https://desu.shikimori.one/uploads/poster/mangas/25/mini.webp',
     posterUrl2x: 'https://desu.shikimori.one/uploads/poster/mangas/25/mini@2x.webp',
     userRate: { id: '512', status: 'watching' },
+    url: 'https://shikimori.io/mangas/25-fullmetal-alchemist',
 };
 
 // The same title as read by MYLIST_MANGAS_QUERY: userRate carries the chapters
@@ -166,6 +172,7 @@ const fullRawMylistManga: RawMylistManga = {
         mini2xUrl: 'https://desu.shikimori.one/uploads/poster/mangas/25/mini@2x.webp',
     },
     userRate: { id: '512', status: 'watching', chapters: 58, score: 9 },
+    url: 'https://shikimori.io/mangas/25-fullmetal-alchemist',
 };
 
 const fullMangaRateRow: RateRow = {
@@ -180,6 +187,7 @@ const fullMangaRateRow: RateRow = {
     score: 9,
     progress: 58,
     total: 116,
+    url: 'https://shikimori.io/mangas/25-fullmetal-alchemist',
 };
 
 // Compact mylist item generator for page-size fixtures (hasMore cases).
@@ -251,6 +259,25 @@ describe('graphql', () => {
         it('maps a missing airedOn object to year: null', () => {
             expect(mapAnimeToTitleCard({ ...fullRawAnime, airedOn: null }).year).toBeNull();
         });
+
+        // Ф6-26: the card links to the title page, and the url comes from the
+        // response as is — building it from the origin setting is what rule 4
+        // of CLAUDE.md forbids.
+        it('carries the url of the title through unchanged', () => {
+            expect(mapAnimeToTitleCard(fullRawAnime).url).toBe(
+                'https://shikimori.io/animes/52991-sousou-no-frieren',
+            );
+            expect(
+                mapAnimeToTitleCard({
+                    ...fullRawAnime,
+                    url: 'https://shikimori.one/animes/52991-sousou-no-frieren',
+                }).url,
+            ).toBe('https://shikimori.one/animes/52991-sousou-no-frieren');
+        });
+
+        it('maps a null url to null (the card then renders without a link)', () => {
+            expect(mapAnimeToTitleCard({ ...fullRawAnime, url: null }).url).toBeNull();
+        });
     });
 
     describe('mapAnimeToRateRow', () => {
@@ -271,6 +298,13 @@ describe('graphql', () => {
         it('keeps total = 0 for an ongoing title with an unknown episode count', () => {
             const row = mapAnimeToRateRow({ ...fullRawMylistAnime, episodes: 0 });
             expect(row?.total).toBe(0);
+        });
+
+        it('carries the url of the title through, null included (Ф6-26)', () => {
+            expect(mapAnimeToRateRow(fullRawMylistAnime)?.url).toBe(
+                'https://shikimori.io/animes/52991-sousou-no-frieren',
+            );
+            expect(mapAnimeToRateRow({ ...fullRawMylistAnime, url: null })?.url).toBeNull();
         });
     });
 
@@ -302,6 +336,13 @@ describe('graphql', () => {
                 userRate: null,
             });
         });
+
+        it('carries the url of the title through, null included (Ф6-26)', () => {
+            expect(mapMangaToTitleCard(fullRawManga).url).toBe(
+                'https://shikimori.io/mangas/25-fullmetal-alchemist',
+            );
+            expect(mapMangaToTitleCard({ ...fullRawManga, url: null }).url).toBeNull();
+        });
     });
 
     describe('mapMangaToRateRow', () => {
@@ -317,6 +358,41 @@ describe('graphql', () => {
             const row = mapMangaToRateRow({ ...fullRawMylistManga, chapters: 0 });
             expect(row?.total).toBe(0);
             expect(row?.progress).toBe(58); // the progress unit stays chapters
+        });
+
+        it('carries the url of the title through, null included (Ф6-26)', () => {
+            expect(mapMangaToRateRow(fullRawMylistManga)?.url).toBe(
+                'https://shikimori.io/mangas/25-fullmetal-alchemist',
+            );
+            expect(mapMangaToRateRow({ ...fullRawMylistManga, url: null })?.url).toBeNull();
+        });
+    });
+
+    // Ф6-26: every read that feeds a card or a row must ask for the url, or the
+    // title page link silently disappears for one of the four screens.
+    describe('url in the read queries', () => {
+        it('is requested by both searches and both mylist reads', async () => {
+            await setLocal('auth', storedAuth());
+            fetchMock
+                .mockResolvedValueOnce(jsonResponse(200, { data: { animes: [] } }))
+                .mockResolvedValueOnce(jsonResponse(200, { data: { mangas: [] } }))
+                .mockResolvedValueOnce(jsonResponse(200, { data: { animes: [] } }))
+                .mockResolvedValueOnce(jsonResponse(200, { data: { mangas: [] } }));
+
+            await searchTitles('frieren', 'anime');
+            await searchTitles('berserk', 'manga');
+            await listRates('anime', 'watching', 1);
+            await listRates('manga', 'watching', 1);
+
+            const queries = capturedRequests().map(
+                (request) => (request.body as { query: string }).query,
+            );
+            expect(queries).toHaveLength(4);
+            for (const query of queries) {
+                // Its own field line: a plain substring check would also match
+                // poster { miniUrl mini2xUrl }.
+                expect(query).toMatch(/^\s+url$/m);
+            }
         });
     });
 

@@ -87,6 +87,7 @@ export interface RateRow {
     score: number; // 0 = no score
     progress: number; // my episodes (anime) or chapters (manga/ranobe)
     total: number; // total episodes/chapters, 0 = unknown
+    url?: string | null; // title page, see TitleCard.url
 }
 
 // Search result card (US-2). Nullability mirrors the GraphQL schema per the
@@ -109,6 +110,12 @@ export interface TitleCard {
     posterUrl: string | null; // poster.miniUrl, 60×94 webp
     posterUrl2x: string | null; // poster.mini2xUrl, retina
     userRate: UserRateRef | null; // null without Bearer or when not in my list
+    // Absolute title page url as returned by the API — always on the domain the
+    // response came from, so the origin setting is honoured without building
+    // any url in the code (CLAUDE.md rule 4). Optional on read: records cached
+    // in storage.session by an older build carry no url, and the UI then simply
+    // renders the title without a link.
+    url?: string | null;
 }
 
 // Raw wire shapes of the GraphQL responses (Raw*) live next to their queries in

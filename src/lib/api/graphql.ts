@@ -22,6 +22,7 @@ query SearchAnimes($search: String, $limit: PositiveInt, $page: PositiveInt) {
     airedOn { year }
     poster { miniUrl mini2xUrl }
     userRate { id status }
+    url
   }
 }`;
 
@@ -42,6 +43,7 @@ query SearchMangas($search: String, $limit: PositiveInt, $page: PositiveInt, $ki
     airedOn { year }
     poster { miniUrl mini2xUrl }
     userRate { id status }
+    url
   }
 }`;
 
@@ -78,6 +80,7 @@ query MylistAnimes($mylist: MylistString, $limit: PositiveInt, $page: PositiveIn
     airedOn { year }
     poster { miniUrl mini2xUrl }
     userRate { id status episodes score }
+    url
   }
 }`;
 
@@ -93,6 +96,7 @@ query MylistMangas($mylist: MylistString, $limit: PositiveInt, $page: PositiveIn
     chapters
     poster { miniUrl mini2xUrl }
     userRate { id status chapters score }
+    url
   }
 }`;
 
@@ -114,6 +118,11 @@ export interface RawAnime {
     airedOn: { year: number | null } | null;
     poster: { miniUrl: string; mini2xUrl: string } | null;
     userRate: { id: string; status: UserRateStatus } | null;
+    // Absolute title page url, always on the domain the response came from
+    // (live check 2026-07-27: a request to shikimori.io answers with
+    // https://shikimori.io/animes/...). Typed nullable — the field was verified
+    // by value, not by introspection, so a missing url must stay survivable.
+    url: string | null;
 }
 
 // Same item under MYLIST_ANIMES_QUERY: userRate carries progress + score.
@@ -136,6 +145,7 @@ export interface RawManga {
     airedOn: { year: number | null } | null;
     poster: { miniUrl: string; mini2xUrl: string } | null;
     userRate: { id: string; status: UserRateStatus } | null;
+    url: string | null; // see RawAnime.url (mangas answer .../mangas/2-berserk)
 }
 
 // Raw wire shape of a mangas(mylist:) item (MYLIST_MANGAS_QUERY): only the
@@ -147,6 +157,7 @@ export interface RawMylistManga {
     chapters: number;
     poster: { miniUrl: string; mini2xUrl: string } | null;
     userRate: { id: string; status: UserRateStatus; chapters: number; score: number } | null;
+    url: string | null; // see RawAnime.url
 }
 
 // GraphQL transport envelope: HTTP 200 may still carry errors[] without data.
@@ -173,6 +184,7 @@ export function mapAnimeToTitleCard(raw: RawAnime): TitleCard {
         posterUrl2x: raw.poster?.mini2xUrl ?? null,
         userRate:
             raw.userRate === null ? null : { id: raw.userRate.id, status: raw.userRate.status },
+        url: raw.url,
     };
 }
 
@@ -194,6 +206,7 @@ export function mapMangaToTitleCard(raw: RawManga): TitleCard {
         posterUrl2x: raw.poster?.mini2xUrl ?? null,
         userRate:
             raw.userRate === null ? null : { id: raw.userRate.id, status: raw.userRate.status },
+        url: raw.url,
     };
 }
 
@@ -238,6 +251,7 @@ export function mapAnimeToRateRow(raw: RawMylistAnime): RateRow | null {
         score: raw.userRate.score,
         progress: raw.userRate.episodes,
         total: raw.episodes,
+        url: raw.url,
     };
 }
 
@@ -259,6 +273,7 @@ export function mapMangaToRateRow(raw: RawMylistManga): RateRow | null {
         score: raw.userRate.score,
         progress: raw.userRate.chapters,
         total: raw.chapters,
+        url: raw.url,
     };
 }
 
