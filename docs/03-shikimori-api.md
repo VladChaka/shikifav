@@ -89,6 +89,7 @@ query SearchAnimes($search: String, $limit: PositiveInt, $page: PositiveInt) {
     airedOn { year }
     poster { miniUrl mini2xUrl }            # 60×94 webp — ровно бокс карточки поиска
     userRate { id status episodes score }   # null без Bearer или если тайтла нет в списке
+    url                                     # абсолютный адрес на домене ответа (Ф6-26, см. Anime.url выше)
   }
 }
 ```
@@ -108,6 +109,7 @@ query SearchMangas($search: String, $limit: PositiveInt, $page: PositiveInt, $ki
     airedOn { year }
     poster { miniUrl mini2xUrl }
     userRate { id status chapters volumes score }
+    url           # абсолютный адрес на домене ответа (Ф6-26)
   }
 }
 ```
@@ -115,9 +117,33 @@ query SearchMangas($search: String, $limit: PositiveInt, $page: PositiveInt, $ki
 
 Манга без ранобэ = `kind: "!light_novel,!novel"` (негативный фильтр) — подтверждено живым запросом 2026-07-24: `mangas(search: "monogatari", kind: "!light_novel,!novel", limit: 10)` вернул только manga/one_shot/doujin, тогда как тот же поиск без kind-фильтра содержит light_novel- и novel-тайтлы.
 
-### Мои списки — два варианта, выбрать в фазе 3
-- **Вариант А (предпочтительный):** те же `animes` / `mangas` с аргументом `mylist: "watching"` — сразу возвращает карточки с userRate. Аргумент `mylist: MylistString` подтверждён интроспекцией 2026-07-23 (значения = 6 статусов, можно списком через запятую); поведение под Bearer проверить в фазе 3.
-- **Вариант Б:** REST `GET /api/v2/user_rates?user_id=<id>&target_type=Anime&status=watching&limit=30&page=1`, затем дозапросить карточки одним GraphQL-запросом по `ids`.
+### Мои списки — вариант А (выбран в фазе 3)
+Списки читаются теми же `animes` / `mangas` с аргументом `mylist` — страница карточек сразу с `userRate`, без `user_id` в read-пути. Аргумент `mylist: MylistString` подтверждён интроспекцией 2026-07-23, фильтрация по владельцу токена — owner-verification 2026-07-23 (чекбокс «Существует ли аргумент `mylist`…» ниже).
+
+**Отклонённый вариант Б:** REST `GET /api/v2/user_rates?user_id=<id>&target_type=Anime&status=watching&limit=30&page=1` + дозапрос карточек одним GraphQL по `ids` — два запроса на страницу вместо одного. Остаётся запасным путём, если `mylist` под Bearer перестанет фильтровать по владельцу.
+
+```graphql
+query MylistAnimes($mylist: MylistString, $limit: PositiveInt, $page: PositiveInt) {
+  animes(mylist: $mylist, limit: $limit, page: $page) {
+    id
+    malId
+    name
+    russian
+    kind
+    score
+    status
+    episodes                                # всего серий, 0 = неизвестно
+    episodesAired
+    airedOn { year }
+    poster { miniUrl mini2xUrl }
+    userRate { id status episodes score }   # прогресс и оценка строки списка
+    url
+  }
+}
+```
+Манга и ранобэ — `MylistMangas` (`MYLIST_MANGAS_QUERY` в `src/lib/api/graphql.ts`): те же `mylist`/`limit`/`page` плюс `$kind: MangaKindString`, которым разводятся вкладки «Манга» и «Ранобэ», а поля урезаны до нужных строке — `id name russian chapters poster userRate { id status chapters score } url`.
+
+`limit` = 30 (`LIST_LIMIT`), «есть ещё» считается по длине СЫРОЙ страницы, до отсева записей без `userRate` (docs/06). `order` не задаётся — порядок отдаёт сервер, поэтому тайтл, переехавший в другой список на сайте, может сдвинуться между страницами; известный мелкий риск фазы 3.
 
 ## Календарь онгоингов (фаза 7)
 
