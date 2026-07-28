@@ -1,5 +1,12 @@
 import { browser } from 'wxt/browser';
-import type { RateRow, SearchType, TitleCard, User, UserRateStatus } from './api/types';
+import type {
+    CalendarItem,
+    RateRow,
+    SearchType,
+    TitleCard,
+    User,
+    UserRateStatus,
+} from './api/types';
 import { DEFAULT_ORIGIN } from './config';
 import type { Origin } from './config';
 
@@ -52,6 +59,12 @@ export interface SessionState {
         page: number;
         hasMore: boolean;
     };
+    // Last loaded ongoings calendar for the instant first frame of the tab (Ф7-7).
+    // Rows only — never the built schedule: the day groups depend on the current
+    // clock, so a cached «Сегодня» would show yesterday's air time under today's
+    // header. `fetchedAt` is diagnostics/«обновлено …», not a TTL: the tab
+    // refreshes on every show (docs/06).
+    lastCalendar?: { items: CalendarItem[]; fetchedAt: number };
 }
 
 export const DEFAULT_SETTINGS: LocalState['settings'] = {
