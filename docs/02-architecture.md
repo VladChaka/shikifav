@@ -43,6 +43,7 @@
 | `search.titles` | `{ query, type: 'anime'\|'manga'\|'ranobe', page? }` | `{ items: TitleCard[] }` |
 | `rates.list` | `{ type, status, page }` | `{ items: RateRow[], hasMore }` |
 | `calendar.list` | — | `{ items: CalendarItem[] }` (календарь онгоингов, фаза 7) |
+| `posters.fetch` | `{ type, ids: string[] }` | `{ posters: Record<string, string> }` (добор постеров, пустых в GraphQL: id → url, один батч на страницу выдачи, Ф6-27) |
 | `rates.create` | `{ targetId, targetType, status }` | `{ rate }` |
 | `rates.update` | `{ rateId, patch }` | `{ rate }` |
 | `rates.delete` | `{ rateId }` | `{}` |
@@ -128,7 +129,9 @@ src/lib/api/http.ts      # fetch wrapper: origin из настроек, заго
 src/lib/api/rate-limiter.ts # очередь sliding window 4 rps / 80 rpm (чистая логика, без chrome.*)
 src/lib/api/graphql.ts   # строки запросов SearchAnimes/SearchMangas/... + типы ответов
 src/lib/api/rates.ts     # REST v2 user_rates: create/update/delete/increment/list
+src/lib/api/posters.ts   # REST v1 ?ids=: постеры (image.x96) для тайтлов, у которых GraphQL отдал null (Ф6-27)
 src/lib/api/auth.ts      # oauth: authorize url, exchange, refresh, whoami, logout
+src/lib/api/user-agent-rule.ts # динамическое правило declarativeNetRequest: User-Agent = APP_NAME (Chrome не даёт поставить его на fetch)
 src/lib/api/types.ts     # TitleCard, RateRow, User, статусы и пр.
 src/lib/messaging.ts     # MessageMap + sendMessage/onMessage
 src/lib/storage.ts       # типизированный chrome.storage + getSettings/setSettings
@@ -136,6 +139,8 @@ src/lib/config.ts        # ORIGINS, APP_NAME, CLIENT_ID/SECRET из env
 src/lib/theme.ts         # применение настройки theme к <html> (Ф6-19)
 src/lib/i18n.ts          # все русские строки UI + statusLabel(status, media)
 src/lib/title-name.ts    # displayTitle(name/russian, titleLang) — чистая логика
+src/lib/title-url.ts     # titleHref(url) — ссылка на страницу тайтла, в href только https (Ф6-26)
+src/lib/poster-backfill.ts # UI-половина цепочки постеров: запрос недостающих одним сообщением + чистое применение к текущему списку (Ф6-27)
 src/lib/calendar-schedule.ts # календарь: группировка по локальным дням, время, номер серии, отставание (чистая логика, фаза 7)
 src/lib/context-menu.ts  # регистрация пункта меню и обработка клика (фаза 5)
 src/lib/search-url.ts    # сборка/разбор search.html?q= (фаза 5)
