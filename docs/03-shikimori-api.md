@@ -119,6 +119,39 @@ query SearchMangas($search: String, $limit: PositiveInt, $page: PositiveInt, $ki
 - **Вариант А (предпочтительный):** те же `animes` / `mangas` с аргументом `mylist: "watching"` — сразу возвращает карточки с userRate. Аргумент `mylist: MylistString` подтверждён интроспекцией 2026-07-23 (значения = 6 статусов, можно списком через запятую); поведение под Bearer проверить в фазе 3.
 - **Вариант Б:** REST `GET /api/v2/user_rates?user_id=<id>&target_type=Anime&status=watching&limit=30&page=1`, затем дозапросить карточки одним GraphQL-запросом по `ids`.
 
+## Календарь онгоингов (фаза 7)
+
+Всё в этом разделе проверено живыми запросами и интроспекцией на shikimori.io **2026-07-28** — переоткрывать не нужно.
+
+- **Корневого `calendar` в GraphQL нет.** Поля `Query`: `animes, characters, contests, currentUser, genres, mangas, people, userRates, users`. Календарь собирается из `animes`.
+- **`Anime.nextEpisodeAt: ISO8601DateTime`** (nullable) и **`Anime.duration: Int`**. Живой запрос `{ animes(status: "ongoing", limit: 3, order: popularity) { id name russian nextEpisodeAt episodes episodesAired status } }` вернул `One Piece → "2026-08-02T17:15:00+03:00"`, `Re:Zero 4 → "2026-07-29T16:00:00+03:00"` — дата приходит со смещением, то есть это момент времени, а не «дата сайта».
+- **У `Manga` поля `nextEpisodeAt` нет** (интроспекция полного списка полей) и аналога нет → **календарь anime-only**, вкладок манги/ранобэ в нём не будет.
+- **Потолок `limit` у `animes` = 50.** Большие значения молча клампятся (`limit: 51` → 50, `limit: 100` → 50), ошибки нет. Больше 50 строк — только пагинацией по `page`.
+- **В `OrderEnum` нет сортировки по дате следующей серии:** `id, id_desc, ranked, kind, popularity, name, aired_on, episodes, status, random, ranked_random, ranked_shiki, created_at, created_at_desc, updated_at, updated_at_desc`. → **сортировка календаря клиентская** (`src/lib/calendar-schedule.ts`).
+- **У `status: "anons"` `nextEpisodeAt` всегда `null`** (10 из 10 топ-анонсов) → «Запланировано»/анонсы в календарь не берём: строк с датой они не дадут.
+- **Среди топ-50 популярных онгоингов 4 без `nextEpisodeAt` (~8%)** → строки без даты — нормальный случай, их показываем группой «Дата не объявлена», а не выбрасываем.
+- **REST `/api/calendar` жив** (HTTP 200, без авторизации, принимает `?limit=`) и отдаёт `next_episode`, `next_episode_at`, `duration`, `anime { id, name, russian, image {...}, url, kind, score, status, episodes, episodes_aired, aired_on, released_on }`. **Не используется:** список глобальный (не «мой»), `userRate` он не отдаёт, а `duration` уже есть в GraphQL — фильтровать глобальную выдачу по своему списку на клиенте дороже одного запроса с `mylist`.
+
+### Календарь — эталонный запрос (фаза 7)
+```graphql
+query CalendarAnimes($limit: PositiveInt, $page: PositiveInt) {
+  animes(mylist: "watching,rewatching", status: "ongoing", limit: $limit, page: $page) {
+    id            # ID! (строка с числом; для REST target_id — Number(id))
+    name          # ромадзи, String!
+    russian       # String, nullable
+    episodes      # Int!, 0 = общее число неизвестно (One Piece)
+    episodesAired # Int!, номер следующей серии = episodesAired + 1
+    nextEpisodeAt # ISO8601DateTime, nullable (~8% онгоингов без даты)
+    poster { miniUrl mini2xUrl }   # 60×94 webp, как в карточке поиска
+    userRate { id status episodes }
+    url           # абсолютный адрес на домене ответа (см. Anime.url выше)
+  }
+}
+```
+`limit` держать ≤ 50 (потолок выше), сортировку и группировку по дням делать на клиенте.
+
+**Задел на будущую фазу франшиз:** у `Anime` есть `franchise: String`, `related: LIST`, `chronology: LIST` — наличие полей подтверждено 2026-07-28, содержимое (элементы списков) не интроспектировалось.
+
 ## REST v2 — запись списков
 Все запросы с Bearer и User-Agent. Требуемый OAuth scope: `user_rates`.
 
@@ -243,6 +276,27 @@ GET {origin}/api/users/whoami
     ```
     Если в «Читаю» нет ни одного ранобэ, запрос 1 вернёт пустой список — тогда повторить оба curl со статусом, где ранобэ точно есть (например `planned`).
     Результат: подтверждено функционально smoke-ом владельца 2026-07-27 («всё работает»): вкладки Манга/Ранобэ показывали только свои тайтлы с корректным разделением kind (расширение шлёт `mylist` + `kind` в одном запросе — см. `MYLIST_MANGAS_QUERY`). Формальные curl из пакета выше не прогонялись; при странностях в списках манги перепроверить ими.
+- [ ] Комбинация `mylist` + `status` под Bearer фильтрует по владельцу (календарь, фаза 7)
+  - Отдельно каждый аргумент проверен: `mylist` под Bearer фильтрует по владельцу токена (фаза 3, чекбокс выше), `status: "ongoing"` работает публично (запросы 2026-07-28). Вместе под Bearer — нет.
+  - **Owner-verification фазы 7 (Bearer).** Два запроса:
+    ```
+    # 1) целевой: ожидаются ТОЛЬКО мои тайтлы из «Смотрю»/«Пересматриваю» и ТОЛЬКО онгоинги
+    #    (status=ongoing у каждого), userRate ненулевой
+    curl -s -X POST https://shikimori.io/api/graphql \
+      -H 'Content-Type: application/json' -H 'User-Agent: ShikiFav' \
+      -H 'Authorization: Bearer <живой access token>' \
+      -d '{"query":"{ animes(mylist: \"watching,rewatching\", status: \"ongoing\", limit: 50) { id name status nextEpisodeAt episodes episodesAired userRate { id status episodes } } }"}'
+
+    # 2) контрольный, тот же mylist БЕЗ status: по-прежнему только мои тайтлы,
+    #    но в выдаче вместе с онгоингами есть released — значит фильтр из запроса 1 сработал,
+    #    а не совпал с содержимым списка
+    curl -s -X POST https://shikimori.io/api/graphql \
+      -H 'Content-Type: application/json' -H 'User-Agent: ShikiFav' \
+      -H 'Authorization: Bearer <живой access token>' \
+      -d '{"query":"{ animes(mylist: \"watching,rewatching\", limit: 50) { id name status userRate { id status } } }"}'
+    ```
+    Результат: ожидает прогона владельцем.
+  - **Contingency:** если `status` под `mylist` игнорируется (в ответе 1 есть released) → фильтровать по `status` клиентски в маппере календаря. Если `mylist` не принимает два статуса через запятую (ошибка или выдача только по первому) → два запроса (`watching` и `rewatching`) и слияние по `id`; оба идут через общий limiter, суммарно 2 запроса на открытие вкладки.
 - [x] `increment` для манги: главы или что-то другое
   - Ожидает: живой Bearer + фаза 4 («+1» для манги/ранобэ).
   - **Owner-verification фазы 4, REST (Bearer).** Полный цикл на тестовой записи: создать → increment → удалить. Тайтл — любая манга НЕ из моих списков (её `id` можно взять из публичного поиска `mangas`, для REST — `Number(id)`):

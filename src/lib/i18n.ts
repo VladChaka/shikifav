@@ -52,6 +52,16 @@ export const i18n = {
         loadingMore: 'Загрузка…',
         empty: 'Ничего не найдено',
     },
+    // Ongoings calendar (phase 7): headers of the day groups. Every other day
+    // header is a date formatted by Intl (`пн, 3 августа`), see
+    // src/lib/calendar-schedule.ts.
+    calendar: {
+        today: 'Сегодня',
+        tomorrow: 'Завтра',
+        // Both a missing nextEpisodeAt (~8% of ongoings, docs/03) and a date the
+        // server has not moved forward yet.
+        undated: 'Дата не объявлена',
+    },
     // Score picker (US-5): 0 removes the score, 1–10 set it.
     score: {
         label: 'Оценка',
