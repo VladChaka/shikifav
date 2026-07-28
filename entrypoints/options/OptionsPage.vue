@@ -437,7 +437,7 @@ async function clearCache(): Promise<void> {
     align-items: center;
     gap: 10px;
     width: 100%;
-    max-width: 880px;
+    max-width: 1400px;
     margin: 0 auto;
     padding: 10px 24px;
 }
@@ -474,8 +474,14 @@ async function clearCache(): Promise<void> {
     display: grid;
     grid-template-rows: 1fr auto;
     grid-template-columns: 216px minmax(0, 1fr);
+
+    /* Fills the height left by the bar (.options is a 100vh flex column), so
+       the divider runs the whole window and the version line sits at its
+       bottom instead of floating under the tallest section. */
+    flex: 1;
+    min-height: 0;
     width: 100%;
-    max-width: 880px;
+    max-width: 1400px;
     margin: 0 auto;
     padding: 20px 24px 28px;
 }
@@ -545,7 +551,9 @@ async function clearCache(): Promise<void> {
 .options__panel {
     grid-area: 1 / 2 / 3 / 3;
     /* Floor = the height of the tallest section («Поведение»), so switching
-       sections moves nothing at all; shorter ones get whitespace. */
+       sections moves nothing at all; shorter ones get whitespace. Since the
+       wrap stretches to the window, this only bites on a window shorter than
+       the tallest section. */
     min-height: 460px;
     padding-left: 28px;
     border-left: 1px solid var(--color-border);
