@@ -387,14 +387,19 @@ export async function listRates(
 //    comparison per row. That checkbox is still only PARTLY closed (a real row
 //    with nextEpisodeAt under Bearer has not been observed yet), and a released
 //    title leaking into the calendar would be a silent wrong answer.
+//
+// `status: null` is NOT a reason to drop, only an explicitly foreign value is
+// (`released`, `anons`). Anime.status is nullable by introspection (docs/03), and
+// a missing row is just as wrong as a leaked released one but harder to spot — an
+// absent line on screen is invisible, so nobody reports it. The server-side
+// `status: "ongoing"` filter is confirmed, so a row that came back at all is
+// trusted when it says nothing about its own status.
 export function mapAnimeToCalendarItem(raw: RawCalendarAnime): CalendarItem | null {
     if (raw.userRate === null) {
         return null;
     }
-    if (
-        raw.status !== CALENDAR_TITLE_STATUS ||
-        !CALENDAR_MYLIST_STATUSES.includes(raw.userRate.status)
-    ) {
+    const foreignTitleStatus = raw.status !== null && raw.status !== CALENDAR_TITLE_STATUS;
+    if (foreignTitleStatus || !CALENDAR_MYLIST_STATUSES.includes(raw.userRate.status)) {
         return null;
     }
     return {

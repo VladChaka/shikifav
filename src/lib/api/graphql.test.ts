@@ -487,10 +487,18 @@ describe('graphql', () => {
         // Defensive filter: the server arguments are confirmed (docs/03,
         // owner-verification 2026-07-28), this is the insurance layer.
         describe('defensive client-side filter', () => {
-            it('drops a title that is no longer ongoing', () => {
-                for (const status of ['released', 'anons', null]) {
+            it('drops a title whose status is explicitly something else', () => {
+                for (const status of ['released', 'anons']) {
                     expect(mapAnimeToCalendarItem({ ...fullRawCalendarAnime, status })).toBeNull();
                 }
+            });
+
+            // Ф7-14: Anime.status is nullable (docs/03), and a row that vanishes
+            // from the calendar is invisible — the guard only fires on a value
+            // that is explicitly not ongoing, never on a missing one.
+            it('keeps a row with status: null instead of losing it', () => {
+                const item = mapAnimeToCalendarItem({ ...fullRawCalendarAnime, status: null });
+                expect(item).toEqual(fullCalendarItem);
             });
 
             it('keeps the three calendar list statuses', () => {
@@ -657,13 +665,16 @@ describe('graphql', () => {
                             calendarAnime(5, {
                                 userRate: { id: '5', status: 'planned', episodes: 0 },
                             }),
+                            // Nullable field, so a row that says nothing about its
+                            // own status stays in (Ф7-14).
+                            calendarAnime(6, { status: null }),
                         ],
                     },
                 }),
             );
 
             const items = await listCalendar();
-            expect(items.map((item) => item.targetId)).toEqual(['21', '5']);
+            expect(items.map((item) => item.targetId)).toEqual(['21', '5', '6']);
         });
 
         it('returns an empty list for an empty first page without a second request', async () => {

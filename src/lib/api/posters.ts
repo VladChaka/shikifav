@@ -5,7 +5,8 @@ import type { ApiError, SearchType } from './types';
 // Poster backfill over REST v1 (Ф6-27). GraphQL answers `poster: null` for part
 // of the catalogue (every 18+ title checked, e.g. animes 1342/48755/50634), yet
 // the very same titles carry an `image` in the REST index — so a page whose
-// GraphQL posters came back empty is topped up here with ONE extra request.
+// GraphQL posters came back empty is topped up here with one extra request per
+// 50 ids (see MAX_BATCH).
 // Reads stay GraphQL-first (CLAUDE.md rule 5): this is a fallback for a field
 // GraphQL does not give, not a second read path.
 
@@ -18,9 +19,13 @@ const REST_PATHS: Record<SearchType, string> = {
     ranobe: '/api/ranobe',
 };
 
-// One request per page of results, never a request per title (CLAUDE.md rule 2).
-// 50 is the documented cap of the REST v1 `limit`; our pages are 10 (search) and
-// 30 (lists), so the cap is a guard, not a working limit.
+// Ids per request, never a request per title (CLAUDE.md rule 2). 50 is the
+// documented cap of the REST v1 `limit`, and since phase 7 a caller can hand
+// over more than that: search asks for 10 ids and lists for 30 (one batch), but
+// the calendar reads up to 150 rows at once. A longer list is therefore split
+// into batches of 50 requested SEQUENTIALLY — dropping the tail would leave
+// rows without a poster for no visible reason, and a parallel fan-out would
+// burst the shared limiter.
 const MAX_BATCH = 50;
 
 // Which of the four `image` sizes to take (measured live 2026-07-28):
@@ -51,26 +56,38 @@ export async function fetchPosters(
 ): Promise<Record<string, string>> {
     // Numeric-only and deduplicated: a junk id would poison the whole batch
     // request, and duplicates would waste its budget.
-    const wanted = [...new Set(ids)].filter((id) => /^[0-9]+$/.test(id)).slice(0, MAX_BATCH);
+    const wanted = [...new Set(ids)].filter((id) => /^[0-9]+$/.test(id));
     if (wanted.length === 0) {
-        return {};
-    }
-    // `limit` is mandatory: without it the endpoint answers with a SINGLE record
-    // whatever the ids list (checked live 2026-07-28).
-    const path = `${REST_PATHS[type]}?ids=${wanted.join(',')}&limit=${wanted.length}`;
-    const result = await apiRequest<RestTitle[]>(path);
-    if (!result.ok) {
-        throw result.error satisfies ApiError;
-    }
-    if (!Array.isArray(result.data)) {
         return {};
     }
     const { origin } = await getSettings();
     const posters: Record<string, string> = {};
-    for (const item of result.data) {
-        const url = posterUrl(item, origin);
-        if (url !== null) {
-            posters[String(item.id)] = url;
+    for (let from = 0; from < wanted.length; from += MAX_BATCH) {
+        const batch = wanted.slice(from, from + MAX_BATCH);
+        // `limit` is mandatory: without it the endpoint answers with a SINGLE
+        // record whatever the ids list (checked live 2026-07-28).
+        const path = `${REST_PATHS[type]}?ids=${batch.join(',')}&limit=${batch.length}`;
+        const result = await apiRequest<RestTitle[]>(path);
+        if (!result.ok) {
+            // Whatever the earlier batches gave stays: the backfill is not a user
+            // action, and the caller turns a failure into "keep the fallback
+            // image" (poster-backfill.ts), so half the posters beat none. With
+            // nothing collected yet there is nothing to save — the error is
+            // passed on, and the failure is still visible as ok:false on the wire.
+            if (Object.keys(posters).length === 0) {
+                throw result.error satisfies ApiError;
+            }
+            break;
+        }
+        // A non-array body is a malformed answer for this batch only.
+        if (!Array.isArray(result.data)) {
+            continue;
+        }
+        for (const item of result.data) {
+            const url = posterUrl(item, origin);
+            if (url !== null) {
+                posters[String(item.id)] = url;
+            }
         }
     }
     return posters;

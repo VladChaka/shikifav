@@ -51,6 +51,23 @@ export default defineConfigWithVueTs(
                 { allowShortCircuit: true, allowTernary: true },
             ],
             'vue/multi-word-component-names': 'off',
+            // Ф7-14: console.log/info/warn/error survive into the production
+            // build and print whatever they are given — phase 7 opened by
+            // removing five console.log that dumped the whole user list into the
+            // console of a release build, and nothing caught them. Every
+            // deliberate log in the project is console.debug (docs/02: only
+            // error kind/status, never tokens or bodies).
+            'no-console': ['error', { allow: ['debug'] }],
+        },
+    },
+
+    {
+        // Node build scripts: stdout IS their output (bundle-size report), and
+        // they never ship inside the extension.
+        name: 'app/scripts',
+        files: ['scripts/**'],
+        rules: {
+            'no-console': 'off',
         },
     },
 );

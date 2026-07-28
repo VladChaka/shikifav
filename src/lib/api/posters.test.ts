@@ -11,7 +11,7 @@ import type { ApiError, User } from './types';
 
 // Ф6-27: GraphQL answers poster: null for part of the catalogue (every 18+ title
 // checked live: animes 1342 / 48755 / 50634), while the REST index returns their
-// `image`. This layer tops such a page up with ONE batch request.
+// `image`. This layer tops such a page up with one batch request per 50 ids.
 
 const fetchMock = vi.fn<typeof fetch>();
 
@@ -167,6 +167,54 @@ describe('fetchPosters', () => {
             // An absolute https url is taken as is; anything else is dropped.
             '6': 'https://cdn.test/system/x96/6.jpg',
         });
+    });
+
+    // Ф7-14: the calendar hands over up to 150 ids at once, so the 50-id cap of
+    // the REST `limit` splits the list instead of silently cutting its tail.
+    it('splits a long id list into sequential batches of 50 and merges them', async () => {
+        const ids = Array.from({ length: 120 }, (_, i) => String(i + 1));
+        // Records the order of starts and ends: a parallel fan-out would burst
+        // the shared limiter (CLAUDE.md rule 2), so the batches must not overlap.
+        const events: string[] = [];
+        fetchMock.mockImplementation((input) => {
+            const batchIds = new URL(String(input)).searchParams.get('ids')?.split(',') ?? [];
+            events.push(`start ${batchIds[0]}`);
+            return Promise.resolve().then(() => {
+                events.push(`end ${batchIds[0]}`);
+                return jsonResponse(
+                    200,
+                    batchIds.map((id) => restTitle(Number(id))),
+                );
+            });
+        });
+
+        const posters = await fetchPosters('anime', ids);
+
+        expect(Object.keys(posters)).toHaveLength(120);
+        for (const id of ['1', '50', '51', '100', '101', '120']) {
+            expect(posters[id]).toBe(`https://shikimori.io/system/animes/x96/${id}.jpg?1711979744`);
+        }
+        expect(requestedUrls()).toEqual([
+            `https://shikimori.io/api/animes?ids=${ids.slice(0, 50).join(',')}&limit=50`,
+            `https://shikimori.io/api/animes?ids=${ids.slice(50, 100).join(',')}&limit=50`,
+            `https://shikimori.io/api/animes?ids=${ids.slice(100).join(',')}&limit=20`,
+        ]);
+        expect(events).toEqual(['start 1', 'end 1', 'start 51', 'end 51', 'start 101', 'end 101']);
+    });
+
+    it('keeps the posters of the batches that already answered when one fails', async () => {
+        const ids = Array.from({ length: 120 }, (_, i) => String(i + 1));
+        fetchMock
+            .mockResolvedValueOnce(jsonResponse(200, [restTitle(1)]))
+            .mockResolvedValueOnce(jsonResponse(500, { message: 'boom' }));
+
+        // Silently partial, as before: the backfill is not a user action, and the
+        // rows without a poster simply keep their local fallback (docs/05).
+        await expect(fetchPosters('anime', ids)).resolves.toEqual({
+            '1': 'https://shikimori.io/system/animes/x96/1.jpg?1711979744',
+        });
+        // Stops at the failure instead of hammering the failing endpoint.
+        expect(requestedUrls()).toHaveLength(2);
     });
 
     it('propagates an API failure as an ApiError', async () => {
