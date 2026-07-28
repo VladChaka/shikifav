@@ -11,6 +11,13 @@ const PROD_MANIFEST_KEY =
 // See https://wxt.dev/api/config.html
 export default defineConfig({
     modules: ['@wxt-dev/module-vue'],
+    // Never inline assets as data URIs. Vite inlines anything under 4 KB by
+    // default, which put the poster placeholder inside the popup bundle and
+    // cost 9 KB gzip of the JS budget — for an image the browser would
+    // otherwise fetch once and cache. Whether an asset crosses that threshold
+    // is also a matter of a few bytes, so the behaviour is pinned rather than
+    // left to chance.
+    vite: () => ({ build: { assetsInlineLimit: 0 } }),
     manifest: (env) => ({
         name: 'ShikiFav',
         // Explicit description: without it WXT falls back to the English

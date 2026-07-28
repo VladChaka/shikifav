@@ -130,7 +130,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import StatusMenu from '@/src/components/StatusMenu.vue';
-import posterFallback from '@/src/assets/poster-fallback.jpg';
+import posterFallback from '@/src/assets/poster-fallback.png';
 import { useSettings } from '@/src/composables/use-settings';
 import type { TitleCard, UserRateStatus } from '@/src/lib/api/types';
 import { i18n, kindLabel, mediaOf, statusLabel, titleStatusLabel } from '@/src/lib/i18n';

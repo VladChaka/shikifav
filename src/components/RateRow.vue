@@ -148,7 +148,7 @@
 import { computed } from 'vue';
 import ScorePicker from '@/src/components/ScorePicker.vue';
 import StatusMenu from '@/src/components/StatusMenu.vue';
-import posterFallback from '@/src/assets/poster-fallback.jpg';
+import posterFallback from '@/src/assets/poster-fallback.png';
 import { useSettings } from '@/src/composables/use-settings';
 import type { RateRow, UserRateStatus } from '@/src/lib/api/types';
 import { i18n, mediaOf, statusLabel } from '@/src/lib/i18n';

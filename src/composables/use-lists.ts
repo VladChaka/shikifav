@@ -139,6 +139,7 @@ function maybeSuggest(
 // instant first render.
 async function writeCache(): Promise<void> {
     try {
+        console.log(1, items.value);
         await setSession('lastList', {
             type: filterType.value,
             status: filterStatus.value,
@@ -173,6 +174,7 @@ async function restoreStartState(): Promise<void> {
         }
         filterType.value = cached.type;
         filterStatus.value = cached.status;
+        console.log(2, cached.items);
         items.value = cached.items;
         page = cached.page;
         hasMore.value = cached.hasMore;
@@ -200,6 +202,7 @@ async function fillPosters(requestId: number, rows: RateRow[], type: SearchType)
     if (patched === null) {
         return;
     }
+    console.log(3, patched);
     items.value = patched;
     void writeCache();
 }
@@ -219,6 +222,7 @@ async function loadFirstPage(): Promise<void> {
         return; // a filter change / retry superseded this load
     }
     if (response.ok) {
+        console.log(4, response.data.items);
         items.value = response.data.items;
         page = 1;
         hasMore.value = response.data.hasMore;
@@ -257,6 +261,7 @@ function loadMore(): void {
             }
             if (response.ok) {
                 // Append, never replace (docs/06 pagination); exactly one request.
+                console.log(5, [...items.value, ...response.data.items]);
                 items.value = [...items.value, ...response.data.items];
                 page = nextPage;
                 hasMore.value = response.data.hasMore;
