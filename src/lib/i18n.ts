@@ -30,6 +30,7 @@ export const i18n = {
     tabs: {
         search: 'Поиск',
         myLists: 'Мои списки',
+        calendar: 'Календарь',
     },
     search: {
         placeholder: 'Поиск',
@@ -61,6 +62,24 @@ export const i18n = {
         // Both a missing nextEpisodeAt (~8% of ongoings, docs/03) and a date the
         // server has not moved forward yet.
         undated: 'Дата не объявлена',
+        // Next episode line, assembled in CalendarRow: «Серия 9 из 16»; with an
+        // unknown total (One Piece) the «из N» half is simply dropped —
+        // «Серия 1147».
+        episodeWord: 'Серия',
+        outOf: 'из',
+        // Backlog line, «Смотрю»/«Пересматриваю» only: «вы на 5-й из 8 вышедших».
+        // The ordinal ending fits any number, so no plural rules are needed.
+        behindPrefix: 'вы на',
+        behindOrdinal: '-й',
+        behindSuffix: 'вышедших',
+        // Zero progress: the general formula would read «вы на 0-й из 3 вышедших».
+        behindNotStarted: 'вы ещё не начали',
+        // Empty tab. Says out loud that the calendar is anime-only: manga and
+        // ranobe have no next-chapter date in the API (docs/03), so their
+        // absence here is by design, not a bug.
+        empty:
+            'Ни одно аниме из ваших списков сейчас не выходит. Календарь только про аниме: ' +
+            'даты следующих глав манги и ранобэ Shikimori не сообщает.',
     },
     // Score picker (US-5): 0 removes the score, 1–10 set it.
     score: {

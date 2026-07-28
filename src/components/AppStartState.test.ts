@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { nextTick } from 'vue';
 import { fakeBrowser } from 'wxt/testing';
 import type { MessageHandlers } from '@/src/lib/messaging';
-import type { RateCreateParams, TitleCard } from '@/src/lib/api/types';
+import type { CalendarItem, RateCreateParams, TitleCard } from '@/src/lib/api/types';
 import { clickOn, createApp, createFakeElement, find, findAll, textOf } from './fake-renderer';
 import type { FakeElement } from './fake-renderer';
 
@@ -194,6 +194,111 @@ describe('popup start state from the settings (Ф6-20)', () => {
 
             const { getSession } = await import('@/src/lib/storage');
             await vi.waitFor(async () => expect(await getSession('lastTab')).toBe('lists'));
+        });
+
+        // Ф7-9: both persisted tab values come from a profile this build does
+        // not own — another (or a newer) build may have written a tab that no
+        // longer exists here. Rendering it verbatim left the popup with no tab
+        // selected at all, so both are validated against the known list and
+        // fall back to «Поиск».
+        describe('a tab value from another build', () => {
+            it('ignores an unknown cached tab and opens «Поиск»', async () => {
+                const container = await mountPopup(async () => {
+                    await fakeBrowser.storage.session.set({ lastTab: 'timeline' });
+                });
+
+                await settle();
+                expect(activeTabLabel(container)).toContain('Поиск');
+                expect(findAll(container, 'tabs__tab--active')).toHaveLength(1);
+            });
+
+            it('ignores an unknown pinned tab and opens «Поиск»', async () => {
+                const container = await mountPopup(async () => {
+                    // A valid cached tab as well: an unknown setting carries no
+                    // restorable intent, so it must not silently fall through to
+                    // the cache either.
+                    await fakeBrowser.storage.local.set({ settings: { startTab: 'timeline' } });
+                    await fakeBrowser.storage.session.set({ lastTab: 'lists' });
+                });
+
+                await settle();
+                expect(activeTabLabel(container)).toContain('Поиск');
+                expect(findAll(container, 'tabs__tab--active')).toHaveLength(1);
+            });
+        });
+    });
+
+    // Ф7-9: the calendar is the third tab — pinned by the same setting, cached
+    // by the same key, and loaded by the same "only when shown" rule as «Мои
+    // списки» (docs/06: a popup opened elsewhere must cost the calendar
+    // nothing).
+    describe('«Календарь» tab', () => {
+        function calendarItem(): CalendarItem {
+            return {
+                rateId: '311',
+                targetId: '52991',
+                name: 'Sousou no Frieren',
+                russian: null,
+                status: 'watching',
+                posterUrl: null,
+                posterUrl2x: null,
+                nextEpisodeAt: new Date(Date.now() + 3_600_000).toISOString(),
+                episodes: 16,
+                episodesAired: 8,
+                progress: 5,
+                url: null,
+            };
+        }
+
+        it('opens on the calendar when the setting pins it, and loads it once', async () => {
+            let calendarCalls = 0;
+            const container = await mountPopup(
+                async ({ setSettings }) => {
+                    await setSettings({ startTab: 'calendar' });
+                },
+                {
+                    'calendar.list': async () => {
+                        calendarCalls += 1;
+                        return { items: [calendarItem()] };
+                    },
+                },
+            );
+
+            await vi.waitFor(() => expect(activeTabLabel(container)).toContain('Календарь'));
+            // Shown means loaded: the pinned tab must arrive with its rows.
+            await vi.waitFor(() => expect(findAll(container, 'cal')).toHaveLength(1));
+            expect(calendarCalls).toBe(1);
+        });
+
+        it('costs nothing while the popup stays on «Поиске», loads on the switch', async () => {
+            let calendarCalls = 0;
+            const container = await mountPopup(async () => {}, {
+                'calendar.list': async () => {
+                    calendarCalls += 1;
+                    return { items: [calendarItem()] };
+                },
+            });
+
+            await settle();
+            expect(calendarCalls).toBe(0);
+
+            const calendarTab = findAll(container, 'tabs__tab').find((el) =>
+                textOf(el).includes('Календарь'),
+            );
+            clickOn(calendarTab as FakeElement);
+
+            await vi.waitFor(() => expect(calendarCalls).toBe(1));
+            // And the switch is cached, so 'last' brings the user back here.
+            const { getSession } = await import('@/src/lib/storage');
+            await vi.waitFor(async () => expect(await getSession('lastTab')).toBe('calendar'));
+        });
+
+        it('restores the calendar as the cached tab', async () => {
+            const container = await mountPopup(async ({ setSession }) => {
+                await setSession('lastTab', 'calendar');
+            });
+
+            await vi.waitFor(() => expect(activeTabLabel(container)).toContain('Календарь'));
         });
     });
 

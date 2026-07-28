@@ -187,6 +187,25 @@ describe('storage', () => {
             await expect(getSettings()).resolves.toEqual(DEFAULT_SETTINGS);
         });
 
+        // Ф7-9: startTab decides which tab the popup opens on, so it is the one
+        // key checked against its vocabulary and not merely against undefined —
+        // an unknown tab (a profile from another build) would open none.
+        it('replaces an unknown startTab with «Поиск», not with the default', async () => {
+            await writeRawSettings({ startTab: 'timeline' });
+            const settings = await getSettings();
+            expect(settings.startTab).toBe('search');
+            // The documented default ('last') stays the answer for a MISSING
+            // key: only a value from a vocabulary this build lacks is dropped.
+            expect(DEFAULT_SETTINGS.startTab).toBe('last');
+        });
+
+        it('keeps every known startTab value, including the third tab', async () => {
+            for (const startTab of ['search', 'lists', 'calendar', 'last'] as const) {
+                await writeRawSettings({ startTab });
+                await expect(getSettings()).resolves.toEqual({ ...DEFAULT_SETTINGS, startTab });
+            }
+        });
+
         it('setSettings patches one key and keeps the other', async () => {
             await setLocal('settings', { ...DEFAULT_SETTINGS, titleLang: 'romaji' });
 

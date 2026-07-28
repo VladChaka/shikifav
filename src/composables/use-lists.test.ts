@@ -1166,7 +1166,8 @@ describe('use-lists', () => {
             await storage.setSession('lastTab', 'lists');
 
             const authStatus = ref<'loading' | 'anonymous' | 'authorized'>('loading');
-            const activeTab = ref<'search' | 'lists'>('search');
+            // Same vocabulary as session.lastTab (storage.PopupTab, Ф7-9).
+            const activeTab = ref<'search' | 'lists' | 'calendar'>('search');
             watch(
                 [authStatus, activeTab],
                 ([auth, tab]) => {

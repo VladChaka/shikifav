@@ -16,8 +16,33 @@ import type { Origin } from './config';
 // consumers (lib/theme.ts, the options page) share one definition instead of
 // importing each other.
 export type Theme = 'system' | 'light' | 'dark';
+
+// Top-level popup tabs, in the order TabBar renders them (Ф7-9). Declared here
+// rather than in the component because storage is where the two persisted tab
+// values live — `session.lastTab` and the `startTab` setting — and both must be
+// validated against exactly this list.
+export const POPUP_TABS = ['search', 'lists', 'calendar'] as const;
+export type PopupTab = (typeof POPUP_TABS)[number];
+
 // 'last' = restore the tab the popup was closed on (session.lastTab).
-export type StartTab = 'search' | 'lists' | 'last';
+export type StartTab = PopupTab | 'last';
+
+// Where an unknown persisted tab lands: «Поиск» is the one tab that always
+// exists and opens with no data of its own.
+export const FALLBACK_TAB: PopupTab = 'search';
+
+// Anything read back from storage is untrusted input: a profile written by
+// another build (or by a later one, before a downgrade) can hold a tab this
+// build knows nothing about. Rendering it would leave the popup with no active
+// tab at all, so unknown values are dropped by these guards and the caller
+// falls back to FALLBACK_TAB.
+export function isPopupTab(value: unknown): value is PopupTab {
+    return (POPUP_TABS as readonly string[]).includes(value as string);
+}
+
+function isStartTab(value: unknown): value is StartTab {
+    return value === 'last' || isPopupTab(value);
+}
 
 export interface LocalState {
     auth?: {
@@ -41,8 +66,8 @@ export interface LocalState {
 
 // chrome.storage.session — live cache, safe to lose (docs/02-architecture.md).
 export interface SessionState {
-    // Last opened popup tab: «Поиск» / «Мои списки» (docs/05-ui.md).
-    lastTab?: 'search' | 'lists';
+    // Last opened popup tab: «Поиск» / «Мои списки» / «Календарь» (docs/05-ui.md).
+    lastTab?: PopupTab;
     // Last search results for the instant first render of the popup (docs/05-ui.md).
     // type keeps the Аниме/Манга/Ранобэ selector in sync with restored items.
     lastSearch?: { query: string; type: SearchType; items: TitleCard[] };
@@ -95,6 +120,19 @@ export async function removeLocal<K extends keyof LocalState>(key: K): Promise<v
     await browser.storage.local.remove(key);
 }
 
+// The only setting checked against its vocabulary and not merely against
+// undefined: it decides which tab the popup opens on, and an unknown value
+// would open none. Two different fallbacks on purpose — a missing key is the
+// documented default ('last', restore the cached tab), while a value from a
+// vocabulary this build does not have carries no restorable intent and goes
+// straight to «Поиск».
+function readStartTab(value: unknown): StartTab {
+    if (value === undefined) {
+        return DEFAULT_SETTINGS.startTab;
+    }
+    return isStartTab(value) ? value : FALLBACK_TAB;
+}
+
 // Single source of truth for settings: every reader goes through getSettings()
 // instead of getLocal('settings') ?? DEFAULT_SETTINGS. The stored object is
 // treated as partial on purpose — a build that wrote fewer keys (or a patch
@@ -106,7 +144,7 @@ export async function getSettings(): Promise<LocalState['settings']> {
         origin: stored?.origin ?? DEFAULT_SETTINGS.origin,
         titleLang: stored?.titleLang ?? DEFAULT_SETTINGS.titleLang,
         theme: stored?.theme ?? DEFAULT_SETTINGS.theme,
-        startTab: stored?.startTab ?? DEFAULT_SETTINGS.startTab,
+        startTab: readStartTab(stored?.startTab),
         quickStatus: stored?.quickStatus ?? DEFAULT_SETTINGS.quickStatus,
         defaultSearchType: stored?.defaultSearchType ?? DEFAULT_SETTINGS.defaultSearchType,
         defaultListStatus: stored?.defaultListStatus ?? DEFAULT_SETTINGS.defaultListStatus,

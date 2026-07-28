@@ -79,6 +79,14 @@
                 @dismiss-suggest="dismissRateSuggest"
             />
 
+            <CalendarTab
+                v-show="activeTab === 'calendar'"
+                :days="calendarDays"
+                :screen-status="calendarStatus"
+                :error-text="calendarErrorText"
+                @retry="retryCalendar"
+            />
+
             <!-- :key re-mounts the toast, restarting its auto-close timer even
                  when the same text is shown twice in a row. -->
             <Toast
@@ -95,6 +103,7 @@
 
 <script setup lang="ts">
 import { onMounted, ref, watch } from 'vue';
+import CalendarTab from '@/src/components/CalendarTab.vue';
 import LoginScreen from '@/src/components/LoginScreen.vue';
 import MyListsTab from '@/src/components/MyListsTab.vue';
 import SearchResults from '@/src/components/SearchResults.vue';
@@ -104,12 +113,15 @@ import type { TabId } from '@/src/components/TabBar.vue';
 import Toast from '@/src/components/Toast.vue';
 import UserHeader from '@/src/components/UserHeader.vue';
 import { useAuth } from '@/src/composables/use-auth';
+import { useCalendar } from '@/src/composables/use-calendar';
 import { useLists } from '@/src/composables/use-lists';
 import { useSearchScreen } from '@/src/composables/use-search-screen';
 import {
     DEFAULT_SETTINGS,
+    FALLBACK_TAB,
     getSession,
     getSettings,
+    isPopupTab,
     removeSession,
     setSession,
 } from '@/src/lib/storage';
@@ -169,10 +181,20 @@ const {
     dismissSuggest: dismissRateSuggest,
 } = useLists(showToast);
 
+// Ongoings calendar (US-9). Read-only, so the composable hands over rows and
+// states only — no write callbacks, no toast.
+const {
+    days: calendarDays,
+    screenStatus: calendarStatus,
+    errorText: calendarErrorText,
+    activate: activateCalendar,
+    retry: retryCalendar,
+} = useCalendar();
+
 // Active top-level tab (docs/05). Which tab opens is the `startTab` setting:
-// 'last' restores session.lastTab, 'search'/'lists' pin the tab (Ф6-20). The
+// 'last' restores session.lastTab, a tab name pins that tab (Ф6-20, Ф7-9). The
 // cache is written on every switch either way — 'last' lives on it.
-const activeTab = ref<TabId>('search');
+const activeTab = ref<TabId>(FALLBACK_TAB);
 // The async start-tab restore must not override a tab the user already picked.
 let tabTouched = false;
 
@@ -222,7 +244,11 @@ onMounted(async () => {
         return; // the user picked a tab while these reads were in flight
     }
     if (settings.startTab === 'last') {
-        if (lastTab) {
+        // A cached tab from another build is dropped instead of restored: the
+        // popup then simply stays on the tab it started on (FALLBACK_TAB),
+        // never on none (Ф7-9). getSettings() applies the same guard to the
+        // setting itself.
+        if (isPopupTab(lastTab)) {
             activeTab.value = lastTab;
         }
         return;
@@ -261,15 +287,21 @@ function selectTab(tab: TabId): void {
     void setSession('lastTab', tab);
 }
 
-// Lazy first-page load: only once the user is authorized AND the "Мои списки"
-// tab is actually shown (docs/05 — no blocking requests at popup open).
-// Re-fires on every later show of the tab: activate() refreshes the list each
-// time so site-side changes surface (docs/06, дополнение фазы 3).
+// Lazy first-page load: only once the user is authorized AND the data tab is
+// actually shown (docs/05 — no blocking requests at popup open). Re-fires on
+// every later show of the tab: activate() refreshes each time so site-side
+// changes surface (docs/06, дополнение фазы 3). The calendar rides the same
+// watch — a popup opened on «Поиске» must cost it nothing (docs/06, phase 7).
 watch(
     [status, activeTab],
     ([authStatus, tab]) => {
-        if (authStatus === 'authorized' && tab === 'lists') {
+        if (authStatus !== 'authorized') {
+            return;
+        }
+        if (tab === 'lists') {
             activateLists();
+        } else if (tab === 'calendar') {
+            activateCalendar();
         }
     },
     { immediate: true },

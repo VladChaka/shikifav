@@ -19,32 +19,48 @@
 </template>
 
 <script lang="ts">
-// Exported so the parent (App, Ф3-4) can type its active-tab state.
-export type TabId = 'search' | 'lists';
+// Exported so the parent (App, Ф3-4) can type its active-tab state. The
+// vocabulary itself lives in storage.ts, which also validates what a profile
+// wrote into `lastTab` / `startTab` (Ф7-9).
+export type { PopupTab as TabId } from '@/src/lib/storage';
 </script>
 
 <script setup lang="ts">
 import { i18n } from '@/src/lib/i18n';
+import { POPUP_TABS } from '@/src/lib/storage';
+import type { PopupTab } from '@/src/lib/storage';
 
-// Top-level tab navigation "Поиск / Мои списки" (docs/05, «Экран авторизован»).
-// Presentational: the active tab is owned by the parent; this only reflects it
-// and emits the requested change (markup moved out of SearchTab).
+// Top-level tab navigation "Поиск / Мои списки / Календарь" (docs/05, «Экран
+// авторизован»). Presentational: the active tab is owned by the parent; this
+// only reflects it and emits the requested change.
+//
+// Geometry is unchanged by the third tab: at flex:1 each label gets 126.7px
+// minus 2x9 padding = 108.7px, while the widest («Мои списки») measures 86.9px
+// at 13px/600 — no wrapping, no shortened labels (screens/calendar card).
 //
 // Props: active — currently selected tab.
 // Emits: update:active(tab) — user picked another tab (v-model-friendly).
-const props = defineProps<{ active: TabId }>();
+const props = defineProps<{ active: PopupTab }>();
 
 const emit = defineEmits<{
-    'update:active': [tab: TabId];
+    'update:active': [tab: PopupTab];
 }>();
 
-const TABS: readonly TabId[] = ['search', 'lists'];
+const TABS = POPUP_TABS;
 
-function label(tab: TabId): string {
-    return tab === 'search' ? i18n.tabs.search : i18n.tabs.myLists;
+// Indexed instead of branched, so a new tab in POPUP_TABS fails to compile
+// here until it has a label.
+const LABELS: Record<PopupTab, string> = {
+    search: i18n.tabs.search,
+    lists: i18n.tabs.myLists,
+    calendar: i18n.tabs.calendar,
+};
+
+function label(tab: PopupTab): string {
+    return LABELS[tab];
 }
 
-function select(tab: TabId): void {
+function select(tab: PopupTab): void {
     if (tab !== props.active) {
         emit('update:active', tab);
     }

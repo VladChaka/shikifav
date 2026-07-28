@@ -324,6 +324,26 @@ describe('OptionsPage (Ф6-3)', () => {
         await vi.waitFor(async () => expect((await getSettings()).startTab).toBe('search'));
     });
 
+    // Ф7-9: the third tab is pinnable like the other two.
+    it('offers every popup tab plus «Последняя открытая», and writes the calendar', async () => {
+        const { container, getSettings } = await mountPage();
+        await openSection(container, 1);
+
+        expect(
+            findAll(chipRow(container, i18n.options.startTabLabel), 'chip').map((el) =>
+                textOf(el).trim(),
+            ),
+        ).toEqual([
+            i18n.tabs.search,
+            i18n.tabs.myLists,
+            i18n.tabs.calendar,
+            i18n.options.startTabLast,
+        ]);
+
+        clickOn(chip(container, i18n.options.startTabLabel, i18n.tabs.calendar));
+        await vi.waitFor(async () => expect((await getSettings()).startTab).toBe('calendar'));
+    });
+
     it('writes the one-click status', async () => {
         const { container, getSettings } = await mountPage();
         await openSection(container, 1);

@@ -343,9 +343,11 @@ const TITLE_LANG_OPTIONS: readonly ChipOption<LocalState['settings']['titleLang'
     { value: 'romaji', label: i18n.options.titleLangRomaji },
 ];
 
+// Tab chips in the order of the TabBar itself, «Последняя открытая» last.
 const START_TAB_OPTIONS: readonly ChipOption<StartTab>[] = [
     { value: 'search', label: i18n.tabs.search },
     { value: 'lists', label: i18n.tabs.myLists },
+    { value: 'calendar', label: i18n.tabs.calendar },
     { value: 'last', label: i18n.options.startTabLast },
 ];
 
