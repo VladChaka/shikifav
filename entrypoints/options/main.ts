@@ -10,6 +10,7 @@ import { initTheme } from '@/src/lib/theme';
 // Theme is applied before the mount so the first frame already carries the
 // chosen theme instead of flashing the system one (cost: one storage read).
 const version = browser.runtime.getManifest().version;
+const iconUrl = browser.runtime.getURL('/icon/48.png');
 void initTheme().then(() => {
-    createApp(OptionsPage, { version }).mount('#app');
+    createApp(OptionsPage, { version, iconUrl }).mount('#app');
 });

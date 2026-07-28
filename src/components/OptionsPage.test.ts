@@ -22,6 +22,7 @@ import type { FakeElement } from './fake-renderer';
 // module graph because use-settings / use-auth keep module state.
 
 const VERSION = '1.2.3';
+const ICON_URL = 'chrome-extension://test/icon/48.png';
 
 const authorized: AuthState = {
     status: 'authorized',
@@ -88,7 +89,7 @@ async function mountPage(
 
     const { default: OptionsPage } = await import('@/entrypoints/options/OptionsPage.vue');
     const container = createFakeElement('#container');
-    const app = createApp(OptionsPage, { version: VERSION });
+    const app = createApp(OptionsPage, { version: VERSION, iconUrl: ICON_URL });
     app.mount(container);
     cleanups.push(() => app.unmount());
 
@@ -285,6 +286,13 @@ describe('OptionsPage (Ф6-3)', () => {
         expect(textOf(find(container, 'options__version')).trim()).toBe(
             `${i18n.options.version} ${VERSION}`,
         );
+    });
+
+    // The header shows the shipped extension icon, so a manifest icon change
+    // cannot leave a stale stand-in glyph behind (Ф6-26).
+    it('renders the extension icon in the header from the prop', async () => {
+        const { container } = await mountPage();
+        expect(find(container, 'options__logo').props.src).toBe(ICON_URL);
     });
 
     // --- writes ---------------------------------------------------------------

@@ -4,12 +4,13 @@
              UserHeader on the search page). -->
         <div class="options__bar">
             <div class="options__bar-inner">
-                <div
+                <img
                     class="options__logo"
-                    aria-hidden="true"
+                    :src="iconUrl"
+                    alt=""
+                    width="26"
+                    height="26"
                 >
-                    ★
-                </div>
                 <h1 class="options__heading">{{ i18n.options.title }}</h1>
                 <div class="options__app">{{ i18n.app.name }}</div>
             </div>
@@ -244,7 +245,9 @@ import type { LocalState, StartTab, Theme } from '@/src/lib/storage';
 //
 // The version comes from the entrypoint as a prop: the component never touches
 // the extension runtime, which keeps it mountable in tests.
-defineProps<{ version: string }>();
+// iconUrl arrives as a prop for the same reason as version: the page stays
+// mountable without the extension runtime (component tests).
+defineProps<{ version: string; iconUrl: string }>();
 
 // Every control writes storage directly (CLAUDE.md rule 1 restricts network,
 // not storage) — except the API domain, which has to end the session first and
@@ -442,16 +445,14 @@ async function clearCache(): Promise<void> {
     padding: 10px 24px;
 }
 
+/* The extension icon itself, not a stand-in glyph: whatever ships in the
+   manifest is what the header shows. The mark is drawn on its own white sheet
+   (see assets/icon/icon.svg), so no themed background is needed under it. */
 .options__logo {
-    display: flex;
-    align-items: center;
-    justify-content: center;
     flex: 0 0 auto;
     width: 26px;
     height: 26px;
     border-radius: 7px;
-    background: var(--color-surface);
-    font-size: 14px;
 }
 
 .options__heading {
