@@ -13,8 +13,15 @@ const OUT_DIR = resolve(process.argv[2] ?? '.output/chrome-mv3');
 const ENTRY_HTML = ['popup.html', 'search.html', 'options.html'];
 const BACKGROUND = 'background.js';
 const KB = 1024;
-// docs/05-ui.md: JS popup суммарно ≤ 80 КБ gzip.
-const POPUP_JS_BUDGET = 80 * KB;
+// docs/05-ui.md, «Перфоманс-бюджеты». Everything listed here is checked; a
+// number printed but not checked is how the popup CSS budget was quietly
+// exceeded for a whole phase while this script kept answering OK (Ф7-17).
+const BUDGETS = [
+    { entry: 'popup.html', kind: 'js', label: 'popup JS', budget: 80 * KB },
+    { entry: 'popup.html', kind: 'css', label: 'popup CSS', budget: 6 * KB },
+    { entry: 'search.html', kind: 'css', label: 'search CSS', budget: 4.5 * KB },
+    { entry: 'options.html', kind: 'css', label: 'options CSS', budget: 3 * KB },
+];
 
 const gzipCache = new Map();
 
@@ -129,16 +136,24 @@ if (existsSync(backgroundFile)) {
     console.log(`\n  ${BACKGROUND}: not found`);
 }
 
-const popup = totals.get('popup.html');
-if (!popup) {
-    console.error('\nFAIL: popup.html is missing from the build, budget cannot be checked.');
-    process.exit(1);
+console.log('');
+let failed = false;
+for (const { entry, kind, label, budget } of BUDGETS) {
+    const measured = totals.get(entry);
+    if (!measured) {
+        // A missing popup is a broken build; the other entrypoints are optional
+        // (options did not exist before phase 6) and only skip their check.
+        if (entry !== 'popup.html') continue;
+        console.error('FAIL: popup.html is missing from the build, budgets cannot be checked.');
+        process.exit(1);
+    }
+    const actual = measured[kind].gzip;
+    const over = actual > budget;
+    failed ||= over;
+    const diff = fmt(Math.abs(budget - actual));
+    console.log(
+        `${over ? 'FAIL' : 'OK'}: ${label} ${fmt(actual)} gzip ` +
+            `${over ? 'over' : 'within'} budget ${fmt(budget)} (${over ? 'excess' : 'headroom'} ${diff})`,
+    );
 }
-
-const over = popup.js.gzip > POPUP_JS_BUDGET;
-const diff = fmt(Math.abs(POPUP_JS_BUDGET - popup.js.gzip));
-console.log(
-    `\n${over ? 'FAIL' : 'OK'}: popup JS ${fmt(popup.js.gzip)} gzip ` +
-        `${over ? 'over' : 'within'} budget ${fmt(POPUP_JS_BUDGET)} (${over ? 'excess' : 'headroom'} ${diff})`,
-);
-process.exit(over ? 1 : 0);
+process.exit(failed ? 1 : 0);
