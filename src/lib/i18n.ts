@@ -26,6 +26,8 @@ export const i18n = {
     header: {
         logout: 'Выйти',
         settings: 'Настройки',
+        // Opens the options page on its «Поддержать» section (Ф8-3).
+        support: 'Поддержать проект',
     },
     tabs: {
         search: 'Поиск',
@@ -175,8 +177,8 @@ export const i18n = {
     contextMenu: {
         searchSelection: 'Найти «%s» на Shikimori',
     },
-    // Options page (design card screens/options): three sections behind
-    // vertical tabs — «Вид», «Поведение», «Аккаунт и данные».
+    // Options page (design card screens/options): four sections behind
+    // vertical tabs — «Вид», «Поведение», «Аккаунт и данные», «Поддержать».
     options: {
         title: 'Настройки',
 
@@ -188,6 +190,10 @@ export const i18n = {
         // Narrow window: the tabs become a horizontal row and the long label
         // no longer fits.
         sectionAccountShort: 'Аккаунт',
+        // Ф8: last, and not a setting at all — the ways to support the project.
+        // The content of the section (methods and free ways to help) lives in
+        // src/lib/donations.ts, next to the links it carries.
+        sectionSupport: 'Поддержать',
 
         // --- «Вид» ---
         themeLabel: 'Тема',

@@ -44,6 +44,21 @@ function isStartTab(value: unknown): value is StartTab {
     return value === 'last' || isPopupTab(value);
 }
 
+// Sections of the options page, in the order OptionsPage renders them (Ф8-3).
+// Declared here for the same reason as POPUP_TABS: the section handed over
+// through `session.pendingOptionsSection` is a persisted value and has to be
+// validated against exactly this list.
+export const OPTIONS_SECTIONS = ['view', 'behavior', 'account', 'support'] as const;
+export type OptionsSection = (typeof OPTIONS_SECTIONS)[number];
+
+// Where an unknown handover lands: «Вид» is the section the page always opens
+// on, and it needs no data of its own.
+export const FALLBACK_OPTIONS_SECTION: OptionsSection = 'view';
+
+export function isOptionsSection(value: unknown): value is OptionsSection {
+    return (OPTIONS_SECTIONS as readonly string[]).includes(value as string);
+}
+
 export interface LocalState {
     auth?: {
         accessToken: string;
@@ -75,6 +90,13 @@ export interface SessionState {
     // Written right before browser.action.openPopup() and consumed exactly once:
     // the popup removes the key as soon as it reads it.
     pendingSearch?: { query: string };
+    // Section the options page must open on, handed over by «Поддержать проект»
+    // in the popup header (Ф8-3). Written right before openOptionsPage() and
+    // consumed exactly once: the page removes the key as soon as it reads it.
+    // A storage key rather than a URL hash because openOptionsPage() focuses an
+    // ALREADY open options tab without reloading it — a hash would be ignored
+    // there, while a key also reaches that tab through storage.onChanged.
+    pendingOptionsSection?: OptionsSection;
     // Last opened "My lists" filter+page for the instant first render (docs/05).
     // Only the last-viewed (type,status) combo is cached — mirrors lastSearch.
     lastList?: {

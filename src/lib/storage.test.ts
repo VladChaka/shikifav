@@ -3,9 +3,12 @@ import { fakeBrowser } from 'wxt/testing';
 import {
     clearSession,
     DEFAULT_SETTINGS,
+    FALLBACK_OPTIONS_SECTION,
     getLocal,
     getSession,
     getSettings,
+    isOptionsSection,
+    OPTIONS_SECTIONS,
     removeLocal,
     removeSession,
     setLocal,
@@ -302,17 +305,61 @@ describe('storage', () => {
             await expect(getSession('pendingSearch')).resolves.toBeUndefined();
         });
 
+        // Ф8-3: the heart button in the popup header writes the section here
+        // right before openOptionsPage(), and the options page consumes it once.
+        it('round-trips pendingOptionsSection', async () => {
+            await setSession('pendingOptionsSection', 'support');
+            await expect(getSession('pendingOptionsSection')).resolves.toBe('support');
+        });
+
+        it('returns undefined for pendingOptionsSection on empty storage', async () => {
+            await expect(getSession('pendingOptionsSection')).resolves.toBeUndefined();
+        });
+
+        it('drops pendingOptionsSection alone, leaving the rest of the cache', async () => {
+            await setSession('pendingOptionsSection', 'support');
+            await setSession('lastTab', 'lists');
+
+            await removeSession('pendingOptionsSection');
+
+            await expect(getSession('pendingOptionsSection')).resolves.toBeUndefined();
+            await expect(getSession('lastTab')).resolves.toBe('lists');
+        });
+
         it('clearSession wipes the session area but not local', async () => {
             await setSession('lastTab', 'search');
             // A pending selection is personal data too and must not survive logout.
             await setSession('pendingSearch', { query: 'берсерк' });
+            await setSession('pendingOptionsSection', 'support');
             await setLocal('settings', DEFAULT_SETTINGS);
 
             await clearSession();
 
             await expect(getSession('lastTab')).resolves.toBeUndefined();
             await expect(getSession('pendingSearch')).resolves.toBeUndefined();
+            await expect(getSession('pendingOptionsSection')).resolves.toBeUndefined();
             await expect(getLocal('settings')).resolves.toEqual(DEFAULT_SETTINGS);
+        });
+    });
+
+    // Ф8-3: the handed-over section comes back from storage as untrusted input,
+    // exactly like the persisted popup tabs (Ф7-9).
+    describe('options sections', () => {
+        it('accepts every section the options page renders', () => {
+            for (const section of OPTIONS_SECTIONS) {
+                expect(isOptionsSection(section)).toBe(true);
+            }
+        });
+
+        it.each([['timeline'], [''], [undefined], [null], [42], [{ id: 'support' }]])(
+            'rejects %s as a section',
+            (value) => {
+                expect(isOptionsSection(value)).toBe(false);
+            },
+        );
+
+        it('falls back to a section that exists', () => {
+            expect(OPTIONS_SECTIONS).toContain(FALLBACK_OPTIONS_SECTION);
         });
     });
 

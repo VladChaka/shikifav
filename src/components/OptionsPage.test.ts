@@ -17,9 +17,10 @@ import {
 } from './fake-renderer';
 import type { FakeElement } from './fake-renderer';
 
-// Ф6-3 options page: seven settings behind three vertical tabs, opened in its
-// own tab. Mounted through the shared fake renderer; every test rebuilds the
-// module graph because use-settings / use-auth keep module state.
+// Ф6-3 options page: seven settings behind vertical tabs, opened in its own
+// tab; Ф8-3 added a fourth tab, «Поддержать», and the one-shot handover that
+// opens the page on it. Mounted through the shared fake renderer; every test
+// rebuilds the module graph because use-settings / use-auth keep module state.
 
 const VERSION = '1.2.3';
 const ICON_URL = 'chrome-extension://test/icon/48.png';
@@ -34,6 +35,7 @@ interface Mounted {
     // Live storage of the SAME module graph the page is mounted from.
     getSettings: () => Promise<LocalState['settings']>;
     getSession: <K extends keyof SessionState>(key: K) => Promise<SessionState[K] | undefined>;
+    setSession: <K extends keyof SessionState>(key: K, value: SessionState[K]) => Promise<void>;
     originCalls: string[];
 }
 
@@ -43,6 +45,9 @@ async function mountPage(
     options: {
         auth?: AuthState;
         seed?: Partial<LocalState['settings']>;
+        // Section handed over by the popup header (Ф8-3). A raw string, so a
+        // value from another build is expressible.
+        pendingSection?: string;
         // Replaces a handler with a failing (or otherwise special) one; the
         // defaults below are the happy path.
         overrides?: Partial<MessageHandlers>;
@@ -52,6 +57,11 @@ async function mountPage(
     const storage = await import('@/src/lib/storage');
     if (options.seed) {
         await storage.setSettings(options.seed);
+    }
+    if (options.pendingSection !== undefined) {
+        // Written before the mount, exactly as the header writes it before
+        // openOptionsPage() opens this page.
+        await fakeBrowser.storage.session.set({ pendingOptionsSection: options.pendingSection });
     }
 
     // Auth flips to anonymous the moment the domain changes, exactly as
@@ -99,6 +109,7 @@ async function mountPage(
         container,
         getSettings: storage.getSettings,
         getSession: storage.getSession,
+        setSession: storage.setSession,
         originCalls,
     };
 }
@@ -192,11 +203,11 @@ describe('OptionsPage (Ф6-3)', () => {
         expect(list.props['aria-label']).toBe(i18n.options.sectionsLabel);
 
         const all = tabs(container);
-        expect(all).toHaveLength(3);
-        expect(all.map((el) => el.props.role)).toEqual(['tab', 'tab', 'tab']);
-        expect(all.map((el) => el.props['aria-selected'])).toEqual([true, false, false]);
+        expect(all).toHaveLength(4);
+        expect(all.map((el) => el.props.role)).toEqual(['tab', 'tab', 'tab', 'tab']);
+        expect(all.map((el) => el.props['aria-selected'])).toEqual([true, false, false, false]);
         // Only the selected tab is tabbable: the list is one Tab stop.
-        expect(all.map((el) => el.props.tabindex)).toEqual([0, -1, -1]);
+        expect(all.map((el) => el.props.tabindex)).toEqual([0, -1, -1, -1]);
         expect(activeTabLabel(container)).toBe(i18n.options.sectionView);
 
         const panel = find(container, 'options__panel');
@@ -205,6 +216,7 @@ describe('OptionsPage (Ф6-3)', () => {
         // Only the active panel is rendered, so only the selected tab points at it.
         expect(all.map((el) => el.props['aria-controls'])).toEqual([
             panel.props.id,
+            undefined,
             undefined,
             undefined,
         ]);
@@ -232,6 +244,7 @@ describe('OptionsPage (Ф6-3)', () => {
             false,
             true,
             false,
+            false,
         ]);
         expect(panelLabels(container)).toEqual([
             i18n.options.startTabLabel,
@@ -248,8 +261,10 @@ describe('OptionsPage (Ф6-3)', () => {
 
     it.each([
         ['ArrowDown', 1, i18n.options.sectionBehavior],
-        ['ArrowUp', 2, i18n.options.sectionAccount],
-        ['End', 2, i18n.options.sectionAccount],
+        // Wrapping upwards from the first tab lands on the last one — «Поддержать»
+        // since Ф8-3.
+        ['ArrowUp', 3, i18n.options.sectionSupport],
+        ['End', 3, i18n.options.sectionSupport],
     ])('moves the selection and the focus with %s', async (key, index, label) => {
         const { container } = await mountPage();
 
@@ -260,7 +275,7 @@ describe('OptionsPage (Ф6-3)', () => {
         expect(activeTabLabel(container)).toContain(label);
         expect(tabs(container)[index].focused).toBe(true);
         expect(tabs(container).map((el) => el.props.tabindex)).toEqual(
-            [0, 1, 2].map((i) => (i === index ? 0 : -1)),
+            [0, 1, 2, 3].map((i) => (i === index ? 0 : -1)),
         );
     });
 
@@ -487,5 +502,85 @@ describe('OptionsPage (Ф6-3)', () => {
         await openSection(container, 0);
         clickOn(chip(container, i18n.options.themeLabel, i18n.options.themeLight));
         await vi.waitFor(async () => expect((await getSettings()).theme).toBe('light'));
+    });
+
+    // --- «Поддержать» and the handover from the popup header (Ф8-3) ------------
+
+    describe('the «Поддержать» section', () => {
+        it('is the last tab and owns the panel when selected', async () => {
+            const { container } = await mountPage();
+            expect(tabs(container).map((el) => textOf(el).trim())).toEqual([
+                i18n.options.sectionView,
+                i18n.options.sectionBehavior,
+                // The long label plus its narrow-window variant.
+                `${i18n.options.sectionAccount}${i18n.options.sectionAccountShort}`,
+                i18n.options.sectionSupport,
+            ]);
+
+            await openSection(container, 3);
+
+            expect(activeTabLabel(container)).toBe(i18n.options.sectionSupport);
+            expect(find(container, 'options__panel').props['aria-labelledby']).toBe(
+                tabs(container)[3].props.id,
+            );
+        });
+
+        // The key, not a URL hash: openOptionsPage() focuses an already open
+        // options tab without reloading it.
+        it('opens on the handed-over section and drops the key', async () => {
+            const { container, getSession } = await mountPage({ pendingSection: 'support' });
+
+            await vi.waitFor(() =>
+                expect(activeTabLabel(container)).toBe(i18n.options.sectionSupport),
+            );
+            // Consumed exactly once: a key left behind would jump the section
+            // again on the next visit.
+            await vi.waitFor(async () =>
+                expect(await getSession('pendingOptionsSection')).toBeUndefined(),
+            );
+        });
+
+        // Same rule as the persisted popup tabs (Ф7-9): a value from another
+        // build names a section this one does not have.
+        it('ignores an unknown section and stays on «Вид»', async () => {
+            const { container, getSession } = await mountPage({ pendingSection: 'telemetry' });
+
+            await vi.waitFor(async () =>
+                expect(await getSession('pendingOptionsSection')).toBeUndefined(),
+            );
+            for (let i = 0; i < 10; i += 1) {
+                await nextTick();
+            }
+            expect(activeTabLabel(container)).toBe(i18n.options.sectionView);
+            // Never a page with no section selected.
+            expect(findAll(container, 'options__tab--active')).toHaveLength(1);
+        });
+
+        it('switches an already open page on the fly', async () => {
+            const { container, getSession, setSession } = await mountPage();
+            // The tab has been sitting on another section since the last visit.
+            await openSection(container, 1);
+
+            await setSession('pendingOptionsSection', 'support');
+
+            await vi.waitFor(() =>
+                expect(activeTabLabel(container)).toBe(i18n.options.sectionSupport),
+            );
+            await vi.waitFor(async () =>
+                expect(await getSession('pendingOptionsSection')).toBeUndefined(),
+            );
+        });
+
+        it('leaves the page alone when another session key changes', async () => {
+            const { container, setSession } = await mountPage();
+            await openSection(container, 1);
+
+            await setSession('lastTab', 'calendar');
+
+            for (let i = 0; i < 10; i += 1) {
+                await nextTick();
+            }
+            expect(activeTabLabel(container)).toBe(i18n.options.sectionBehavior);
+        });
     });
 });

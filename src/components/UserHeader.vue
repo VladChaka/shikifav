@@ -8,6 +8,30 @@
             alt=""
         />
         <span class="header__nickname">{{ user.nickname }}</span>
+        <!-- Feather "heart": the same options page, opened on its «Поддержать»
+             section (Ф8-3). Stands before ⚙ so the closing action of the bar
+             stays «Выйти». -->
+        <button
+            class="header__btn"
+            type="button"
+            :title="i18n.header.support"
+            :aria-label="i18n.header.support"
+            @click="openSupport"
+        >
+            <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+            >
+                <path
+                    d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"
+                />
+            </svg>
+        </button>
         <!-- Feather "settings": opens entrypoints/options in its own tab
              (options_ui.open_in_tab). Chrome closes the popup for us. -->
         <button
@@ -72,6 +96,7 @@ import { browser } from 'wxt/browser';
 import type { User } from '@/src/lib/api/types';
 import { useAuth } from '@/src/composables/use-auth';
 import { i18n } from '@/src/lib/i18n';
+import { setSession } from '@/src/lib/storage';
 
 // Shell header: avatar + nickname + icon actions.
 //
@@ -86,6 +111,18 @@ const { pending, logout } = useAuth();
 // The page is a full tab, so the same button works from the popup and from the
 // search page; Chrome focuses an already open options tab instead of adding one.
 function openOptions(): void {
+    void browser.runtime.openOptionsPage();
+}
+
+// Same page, one section further: the target is handed over through a one-shot
+// session key (Ф8-3, the pendingSearch pattern of ф.5) instead of a URL hash,
+// because openOptionsPage() focuses an already open options tab as it is —
+// without reloading it, so a new URL would never be read there.
+async function openSupport(): Promise<void> {
+    // Awaited: the page reads the key while mounting, so it has to be in
+    // storage before the tab opens. A failed write costs the jump, not the
+    // page — settings then simply open on «Вид».
+    await setSession('pendingOptionsSection', 'support').catch(() => {});
     void browser.runtime.openOptionsPage();
 }
 </script>

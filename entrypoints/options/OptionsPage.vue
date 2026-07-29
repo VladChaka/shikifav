@@ -159,7 +159,7 @@
                 </template>
 
                 <!-- --- «Аккаунт и данные» --- -->
-                <template v-else>
+                <template v-else-if="activeId === 'account'">
                     <section class="opt">
                         <div class="opt__label">{{ i18n.options.originLabel }}</div>
                         <p class="opt__hint">
@@ -204,6 +204,15 @@
                         </div>
                     </section>
                 </template>
+
+                <!-- --- «Поддержать» --- -->
+                <template v-else>
+                    <!-- TODO(Ф8-2): the section itself is drawn from the design
+                         card and rendered from DONATION_METHODS /
+                         SUPPORT_ACTIONS (src/lib/donations.ts). This stub only
+                         keeps the tab clickable and the panel non-empty. -->
+                    <section class="opt"></section>
+                </template>
             </div>
 
             <!-- A caption, not a section of its own: visible from any section,
@@ -223,7 +232,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { browser } from 'wxt/browser';
 import ChipGroup from '@/src/components/ChipGroup.vue';
 import type { ChipOption } from '@/src/components/ChipGroup.vue';
 import Toast from '@/src/components/Toast.vue';
@@ -236,12 +246,20 @@ import { DEFAULT_ORIGIN, ORIGINS } from '@/src/lib/config';
 import type { Origin } from '@/src/lib/config';
 import { apiErrorMessage, i18n, statusLabel } from '@/src/lib/i18n';
 import { sendMessage } from '@/src/lib/messaging';
-import { clearSession, setSettings } from '@/src/lib/storage';
-import type { LocalState, StartTab, Theme } from '@/src/lib/storage';
+import {
+    clearSession,
+    FALLBACK_OPTIONS_SECTION,
+    getSession,
+    isOptionsSection,
+    removeSession,
+    setSettings,
+} from '@/src/lib/storage';
+import type { LocalState, OptionsSection, StartTab, Theme } from '@/src/lib/storage';
 
 // Options page (design card screens/options): seven settings behind three
-// vertical tabs. Opened in its own tab, so the page owns no shell — the header
-// is a full-width bar and everything lines up in one 1400px column.
+// vertical tabs, plus «Поддержать» as a fourth (Ф8). Opened in its own tab, so
+// the page owns no shell — the header is a full-width bar and everything lines
+// up in one 1400px column.
 //
 // The version comes from the entrypoint as a prop: the component never touches
 // the extension runtime, which keeps it mountable in tests.
@@ -257,10 +275,10 @@ const { status, pending, logout, refreshState } = useAuth();
 
 // --- sections ---------------------------------------------------------------
 
-type SectionId = 'view' | 'behavior' | 'account';
-
+// The ids live in storage.ts, next to the session key that hands a section over
+// from the popup header (Ф8-3).
 interface Section {
-    id: SectionId;
+    id: OptionsSection;
     label: string;
     // Narrow window: the tabs become a horizontal row, where the full label of
     // «Аккаунт и данные» no longer fits. CSS swaps the two spans — a resize
@@ -270,7 +288,8 @@ interface Section {
 
 // Order is deliberate: what is changed once and seen immediately, then what
 // changes the habit of opening the popup, then what costs something (the domain
-// ends the session, «Выйти» ends it too).
+// ends the session, «Выйти» ends it too), and last the one section that is not
+// a setting at all.
 const SECTIONS: readonly Section[] = [
     { id: 'view', label: i18n.options.sectionView },
     { id: 'behavior', label: i18n.options.sectionBehavior },
@@ -279,18 +298,24 @@ const SECTIONS: readonly Section[] = [
         label: i18n.options.sectionAccount,
         shortLabel: i18n.options.sectionAccountShort,
     },
+    { id: 'support', label: i18n.options.sectionSupport },
 ];
 
 const PANEL_ID = 'options-panel';
 
-function tabId(id: SectionId): string {
+function tabId(id: OptionsSection): string {
     return `options-tab-${id}`;
 }
 
+function indexOfSection(id: OptionsSection): number {
+    return SECTIONS.findIndex((section) => section.id === id);
+}
+
 // The page always opens on «Вид»; the last opened section is not remembered —
-// no storage key is added for it.
-const activeIndex = ref(0);
-const activeId = computed<SectionId>(() => SECTIONS[activeIndex.value].id);
+// no storage key is added for it. The only thing that can move it is a one-shot
+// handover from the popup header (see below).
+const activeIndex = ref(indexOfSection(FALLBACK_OPTIONS_SECTION));
+const activeId = computed<OptionsSection>(() => SECTIONS[activeIndex.value].id);
 
 // Roving tabindex: only the selected tab is tabbable, the arrows move both the
 // selection and the focus, so the tab list is one Tab stop.
@@ -329,6 +354,51 @@ function onTabKeydown(event: KeyboardEvent): void {
     activate(next);
     tabEls[next]?.focus();
 }
+
+// --- section handed over by the popup header (Ф8-3) -------------------------
+
+const PENDING_SECTION_KEY = 'pendingOptionsSection';
+
+// One-shot handover, the pendingSearch pattern of ф.5: the heart button writes
+// the key and calls openOptionsPage(), which opens this page — or merely
+// focuses it, if the tab is already there. Hence both halves below: the key is
+// read at mount AND followed through storage.onChanged, so an open tab switches
+// the section on the fly instead of showing whatever it was left on.
+//
+// Never rejects: a failed read costs the jump, not the page.
+async function consumePendingSection(): Promise<void> {
+    const pending = await getSession(PENDING_SECTION_KEY).catch(() => undefined);
+    if (pending === undefined) {
+        return;
+    }
+    // Dropped before the switch, and regardless of what it holds: a key left
+    // behind would jump the section again on the next visit.
+    await removeSession(PENDING_SECTION_KEY).catch(() => {});
+    // A value from another build names a section this one does not have; the
+    // page then stays where it is («Вид» at open) instead of rendering a panel
+    // with no tab selected — the same rule as the popup tabs (Ф7-9).
+    if (isOptionsSection(pending)) {
+        activeIndex.value = indexOfSection(pending);
+    }
+}
+
+// Re-read instead of parsing change.newValue (same convention as
+// use-settings.ts). The removal above fires this listener too: the re-read then
+// finds nothing and returns, so there is no loop.
+function onSessionChanged(changes: Record<string, unknown>): void {
+    if (PENDING_SECTION_KEY in changes) {
+        void consumePendingSection();
+    }
+}
+
+onMounted(() => {
+    void consumePendingSection();
+    browser.storage.session.onChanged.addListener(onSessionChanged);
+});
+
+onUnmounted(() => {
+    browser.storage.session.onChanged.removeListener(onSessionChanged);
+});
 
 // --- control options --------------------------------------------------------
 
