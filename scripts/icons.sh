@@ -2,6 +2,14 @@
 # Rebuild extension icons (public/icon/{16,32,48,128}.png) from the SVG
 # sources in assets/icon/.
 #
+# STALE as of 2026-07-29: the shipped icons are no longer the シ ink drawing
+# this script renders. The owner supplied an S+F monogram (ShikiFav) as ready
+# PNGs — they are in public/icon/ and archived in assets/icon/sf-monogram/.
+# Running this script right now would silently put the old mark back. It stays
+# here because the pipeline itself (Chrome at 4x + Pillow LANCZOS, two sources)
+# is what the monogram needs too: once the mark is vectorised, point SRC_BASE
+# and SRC_SMALL at the new files and drop this note.
+#
 # Why two sources: the base drawing loses its ink texture below ~32 px, so the
 # designer supplies a simplified variant (thicker stroke, glyph bleeding to the
 # canvas edges) used for 16 and 32.
