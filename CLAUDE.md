@@ -20,6 +20,7 @@ pnpm compile    # проверка типов (vue-tsc --noEmit)
 pnpm test       # vitest
 pnpm lint       # eslint
 ```
+Две ловушки окружения (подробности — README, раздел 8): `pnpm test` без `.env` падает на `APP_NAME is not configured`, а любая `pnpm`-команда может не стартовать из-за `spawn-sync` в `allowBuilds`.
 
 ## Структура
 ```

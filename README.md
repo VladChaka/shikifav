@@ -185,6 +185,14 @@ pnpm format     # prettier --write
 
 `pnpm size` разбирает уже собранный `.output/chrome-mv3` и сверяет размер JS popup с бюджетом из `docs/05-ui.md` (≤ 80 КБ gzip); без предварительного `pnpm build` команда завершится с ошибкой.
 
+**`pnpm test` требует `.env`.** Тесты собираются тем же Vite, и `src/lib/config.ts` читает `WXT_SHIKI_*` через `import.meta.env`. Без файла падают 6 файлов и 114 тестов с `APP_NAME is not configured` — код тут ни при чём. В свежем клоне и в новом git worktree `.env` не появляется сам (он в `.gitignore`), а для прогона хватает любых непустых значений — настоящие ключи нужны только для входа:
+
+```bash
+WXT_SHIKI_APP_NAME=test WXT_SHIKI_CLIENT_ID=test WXT_SHIKI_CLIENT_SECRET=test pnpm test
+```
+
+**`pnpm <команда>` может упасть на `spawn-sync`, не запустив сам скрипт.** Перед скриптом pnpm 11 сверяет зависимости через `pnpm install`, а тот выходит с `[ERR_PNPM_IGNORED_BUILDS] Ignored build scripts: spawn-sync@1.0.15` и кодом 1. Заодно install дописывает в отслеживаемый `pnpm-workspace.yaml` строку-плейсхолдер `spawn-sync: set this to true or false` — коммитить её нельзя, с ней падение повторится у всех. `spawn-sync` — транзитивная зависимость `wxt → web-ext-run → fx-runner` (запуск Firefox), её build-скрипт расширению не нужен, поэтому правильное решение — заменить плейсхолдер на `spawn-sync: false` в `allowBuilds`, как уже сделано для `@parcel/watcher`. Разовый обход — отключить саму сверку (`pnpm config set verify-deps-before-run false --location project`), она пишется в тот же `pnpm-workspace.yaml` и после прогона откатывается вместе с плейсхолдером.
+
 Иконки расширения (`public/icon/{16,32,48,128}.png`) — сгенерированные; их источник лежит в `assets/icon/` (два SVG: базовый и упрощённый для 16/32). Пересобрать после правки SVG: `scripts/icons.sh` (нужны `google-chrome` и python3 с Pillow).
 
 Перед изменениями кода загляните в:
