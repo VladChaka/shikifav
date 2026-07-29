@@ -197,7 +197,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, ref, useId } from 'vue';
+import { computed, nextTick, ref, useId, watch } from 'vue';
 import ScorePicker from '@/src/components/ScorePicker.vue';
 import StatusMenu from '@/src/components/StatusMenu.vue';
 import posterFallback from '@/src/assets/poster-fallback.png';
@@ -391,6 +391,11 @@ function closeEditor(focusTrigger: boolean): void {
     }
 }
 
+// Set by commit(): the caret owed back to the trigger, waiting for the write to
+// finish. Only a write this editor started arms it — the caret after [+1], a
+// score or a status change belongs to the control the user pressed there.
+let refocusAfterWrite = false;
+
 function commit(): void {
     if (invalid.value) {
         // Nothing written and the field stays open: the caret keeps its place
@@ -404,10 +409,31 @@ function commit(): void {
         return;
     }
     // The write locks the row, so the caret is not handed back to a trigger
-    // that is about to be disabled.
+    // that is about to be disabled — the watch below does it once busy lifts.
+    refocusAfterWrite = true;
     closeEditor(false);
     emit('set-progress', value);
 }
+
+// Saving with Enter leaves the focus on <body> (the trigger was disabled at
+// that moment), from where the next Tab would restart at the top of the
+// document. Post-flush: while the prop is being applied the button is still
+// disabled, and focus() on a disabled button does nothing.
+watch(
+    () => props.busy,
+    (busy) => {
+        if (busy || !refocusAfterWrite) {
+            return;
+        }
+        refocusAfterWrite = false;
+        // Anywhere but <body> means the user went somewhere themselves while
+        // the write was in flight — their focus wins.
+        if (document.activeElement === document.body) {
+            triggerEl.value?.focus();
+        }
+    },
+    { flush: 'post' },
+);
 
 function onInput(event: Event): void {
     const input = event.target as HTMLInputElement;

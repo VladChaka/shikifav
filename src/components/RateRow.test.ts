@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { h, nextTick } from 'vue';
-import type { Component } from 'vue';
+import { h, nextTick, ref } from 'vue';
+import type { Component, Ref } from 'vue';
 import RateRowView from './RateRow.vue';
 import type { RateRow } from '@/src/lib/api/types';
 import { i18n } from '@/src/lib/i18n';
@@ -80,6 +80,7 @@ afterEach(() => {
         cleanup();
     }
     cleanups = [];
+    vi.unstubAllGlobals();
 });
 
 describe('RateRow title page links (Ф6-26)', () => {
@@ -174,23 +175,26 @@ interface EditorMount {
     container: FakeElement;
     // Values of set-progress, in order.
     written: number[];
+    // The row lock, driven by the test the way the list owner drives it.
+    busy: Ref<boolean>;
 }
 
-function mountEditor(data: RateRow, busy = false): EditorMount {
+function mountEditor(data: RateRow, initialBusy = false): EditorMount {
     const written: number[] = [];
+    const busy = ref(initialBusy);
     const container = createFakeElement('#container');
     const app = createApp({
         render: () =>
             h(RateRowView as unknown as Component, {
                 rate: data,
-                busy,
+                busy: busy.value,
                 suggestCompleted: false,
                 onSetProgress: (value: number) => written.push(value),
             }),
     });
     app.mount(container);
     cleanups.push(() => app.unmount());
-    return { container, written };
+    return { container, written, busy };
 }
 
 // The fake element carries no DOM value property, so the event brings its own
@@ -215,6 +219,16 @@ async function openEditor(container: FakeElement): Promise<FakeElement> {
 
 function classesOf(el: FakeElement): string[] {
     return typeof el.props.class === 'string' ? el.props.class.split(/\s+/) : [];
+}
+
+// There is no DOM in this environment (vitest-environment-node-client.ts), and
+// the focus-return rule reads exactly two things — so those two are the whole
+// stub. The returned object is also the handle for moving the focus away.
+function stubFocusOwner(): { body: object; activeElement: object } {
+    const body = { tag: 'body' };
+    const doc = { body, activeElement: body as object };
+    vi.stubGlobal('document', doc);
+    return doc;
 }
 
 describe('RateRow progress editor (Ф7-16)', () => {
@@ -434,5 +448,60 @@ describe('RateRow progress editor (Ф7-16)', () => {
         clickOn(trigger);
         await nextTick();
         expect(findAll(container, 'rate__progress-input')).toHaveLength(0);
+    });
+
+    // Ф7-19: Enter cannot hand the caret back on the spot — the trigger is
+    // disabled for the whole write — so it comes back when the lock lifts.
+    it('hands the caret back to the phrase once the write unlocks the row', async () => {
+        stubFocusOwner();
+        const { container, written, busy } = mountEditor(row({ progress: 5, total: 11 }));
+        const input = await openEditor(container);
+        typeInto(input, '7');
+        await nextTick();
+        keydownOn(input, 'Enter');
+        expect(written).toEqual([7]);
+
+        busy.value = true;
+        await nextTick();
+        // Nothing is focused meanwhile: the caret is not offered to a disabled
+        // button.
+        expect(find(container, 'rate__progress-btn').props.disabled).toBe(true);
+        expect(find(container, 'rate__progress-btn').focused).toBe(false);
+
+        busy.value = false;
+        await nextTick();
+        const trigger = find(container, 'rate__progress-btn');
+        expect(trigger.props.disabled).toBe(false);
+        expect(trigger.focused).toBe(true);
+    });
+
+    it('leaves the caret alone if the user moved on while the row was locked', async () => {
+        const doc = stubFocusOwner();
+        const { container, written, busy } = mountEditor(row({ progress: 5, total: 11 }));
+        const input = await openEditor(container);
+        typeInto(input, '7');
+        await nextTick();
+        keydownOn(input, 'Enter');
+        expect(written).toEqual([7]);
+
+        busy.value = true;
+        await nextTick();
+        // The user tabbed on to another row while the write was in flight.
+        doc.activeElement = createFakeElement('button');
+
+        busy.value = false;
+        await nextTick();
+        expect(find(container, 'rate__progress-btn').focused).toBe(false);
+    });
+
+    it('does not claim the caret when something else locked the row', async () => {
+        stubFocusOwner();
+        // No editing at all: [+1] (or a score/status write) took the lock.
+        const { container, busy } = mountEditor(row({ progress: 5, total: 11 }));
+        busy.value = true;
+        await nextTick();
+        busy.value = false;
+        await nextTick();
+        expect(find(container, 'rate__progress-btn').focused).toBe(false);
     });
 });
