@@ -191,8 +191,8 @@ export const i18n = {
         // no longer fits.
         sectionAccountShort: 'Аккаунт',
         // Ф8: last, and not a setting at all — the ways to support the project.
-        // The content of the section (methods and free ways to help) lives in
-        // src/lib/donations.ts, next to the links it carries.
+        // The payment methods live in src/lib/donations.ts, next to the links
+        // they carry; the rest of the section is spelled out below.
         sectionSupport: 'Поддержать',
 
         // --- «Вид» ---
@@ -236,6 +236,29 @@ export const i18n = {
         cacheCleared: 'Кэш очищен',
         logout: 'Выйти',
         version: 'Версия',
+
+        // --- «Поддержать» (Ф8-2) ---
+        // Two states, two intros. With at least one way to pay the section
+        // invites one; with none it says outright that no money is asked —
+        // an invitation without a single place to pay would be a promise
+        // nobody can keep. The heading of the free block moves with it: «ещё»
+        // only makes sense after a list of methods.
+        supportLabel: 'Поддержать разработку',
+        supportHint:
+            'ShikiFav бесплатен, без рекламы и не собирает данные. Если он экономит вам время, разработку можно поддержать — это не обязательно.',
+        supportEmptyLabel: 'Как помочь',
+        supportEmptyHint:
+            'ShikiFav бесплатен, без рекламы и не собирает данные. Денег он не просит — но помочь проекту всё равно можно.',
+        helpLabel: 'Как ещё помочь',
+        // Wording of the free ways to help; their ids and (optional) addresses
+        // live in src/lib/donations.ts. The note follows the name after an em
+        // dash, so it starts lowercase and carries no final period.
+        helpReview: 'Отзыв в Chrome Web Store',
+        helpReviewNote: 'оценка и пара слов помогают другим найти расширение',
+        helpShare: 'Рассказать знакомым',
+        helpShareNote: 'тем, кто ведёт списки на Shikimori',
+        helpBug: 'Сообщить об ошибке',
+        helpBugNote: 'опишите, что сломалось и на каком экране',
     },
     errors: {
         network: 'Нет соединения с Shikimori. Проверьте интернет и повторите.',

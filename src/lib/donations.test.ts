@@ -29,15 +29,10 @@ describe('donations', () => {
 
     describe('SUPPORT_ACTIONS', () => {
         // The free ways to help cost nothing to offer, so they are always there.
+        // Their wording is picked from i18n by these ids (options.help*), so a
+        // rename here silently empties a row.
         it('offers the three free ways to help', () => {
             expect(SUPPORT_ACTIONS.map((action) => action.id)).toEqual(['review', 'share', 'bug']);
-        });
-
-        it('gives every action a label and a hint', () => {
-            for (const action of SUPPORT_ACTIONS) {
-                expect(action.label).not.toBe('');
-                expect(action.hint).not.toBe('');
-            }
         });
 
         // The store listing does not exist yet and the repository is not
@@ -52,13 +47,21 @@ describe('donations', () => {
                 }
             }
         });
+
+        // A review is left on the store page and nowhere else, so the entry
+        // must stay out of the section until that page exists — the flag is
+        // what hides it, and the section knows nothing about ids.
+        it('marks the review as an action that is nothing but a link', () => {
+            const review = SUPPORT_ACTIONS.find((action) => action.id === 'review');
+            expect(review?.needsUrl).toBe(true);
+        });
     });
 
     describe('supportHref', () => {
         it('passes an https link through', () => {
-            expect(
-                supportHref({ id: 'x', label: 'x', hint: 'x', url: 'https://boosty.to/x' }),
-            ).toBe('https://boosty.to/x');
+            expect(supportHref({ id: 'share', url: 'https://boosty.to/x' })).toBe(
+                'https://boosty.to/x',
+            );
         });
 
         it.each([
@@ -68,7 +71,7 @@ describe('donations', () => {
             [''],
             [undefined],
         ])('refuses %s', (url) => {
-            expect(supportHref({ id: 'x', label: 'x', hint: 'x', url })).toBeNull();
+            expect(supportHref({ id: 'share', url })).toBeNull();
         });
     });
 });

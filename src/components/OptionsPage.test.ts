@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { nextTick } from 'vue';
 import { fakeBrowser } from 'wxt/testing';
 import type { ApiError, AuthState } from '@/src/lib/api/types';
+import type { DonationMethod, SupportAction } from '@/src/lib/donations';
 import type { MessageHandlers } from '@/src/lib/messaging';
 import type { LocalState, SessionState } from '@/src/lib/storage';
 import { DEFAULT_ORIGIN } from '@/src/lib/config';
@@ -48,12 +49,27 @@ async function mountPage(
         // Section handed over by the popup header (Ф8-3). A raw string, so a
         // value from another build is expressible.
         pendingSection?: string;
+        // Content of the «Поддержать» section (Ф8-2). The shipped config is
+        // empty on purpose, so every test states the list it renders instead of
+        // leaning on today's reality.
+        donations?: { methods?: readonly DonationMethod[]; actions?: readonly SupportAction[] };
         // Replaces a handler with a failing (or otherwise special) one; the
         // defaults below are the happy path.
         overrides?: Partial<MessageHandlers>;
     } = {},
 ): Promise<Mounted> {
     vi.resetModules();
+    if (options.donations) {
+        const { methods = [], actions = [] } = options.donations;
+        // doMock, not mock: the page is imported dynamically below, after this
+        // call, so hoisting would buy nothing.
+        vi.doMock('@/src/lib/donations', async () => ({
+            ...(await vi.importActual<typeof import('@/src/lib/donations')>('@/src/lib/donations')),
+            DONATION_METHODS: methods,
+            SUPPORT_ACTIONS: actions,
+        }));
+        cleanups.push(() => vi.doUnmock('@/src/lib/donations'));
+    }
     const storage = await import('@/src/lib/storage');
     if (options.seed) {
         await storage.setSettings(options.seed);
@@ -150,6 +166,16 @@ function chip(container: FakeElement, ariaLabel: string, label: string): FakeEle
 
 function activeChip(container: FakeElement, ariaLabel: string): string {
     return textOf(find(chipRow(container, ariaLabel), 'chip--active')).trim();
+}
+
+// One row of a «Поддержать» list, with the whitespace of the template squeezed
+// out: «Boosty — разовый донат».
+function supportRows(container: FakeElement): string[] {
+    return findAll(container, 'sup__item').map((el) => textOf(el).replace(/\s+/g, ' ').trim());
+}
+
+function panelHints(container: FakeElement): string[] {
+    return findAll(container, 'opt__hint').map((el) => textOf(el).trim());
 }
 
 function keydownOn(el: FakeElement, key: string): { preventDefault: ReturnType<typeof vi.fn> } {
@@ -581,6 +607,115 @@ describe('OptionsPage (Ф6-3)', () => {
                 await nextTick();
             }
             expect(activeTabLabel(container)).toBe(i18n.options.sectionBehavior);
+        });
+
+        // --- the panel itself (Ф8-2) ------------------------------------------
+
+        const BOOSTY = 'https://boosty.to/shikifav';
+        const boosty: DonationMethod = {
+            id: 'boosty',
+            label: 'Boosty',
+            hint: 'разовый или регулярный донат',
+            url: BOOSTY,
+        };
+
+        it('renders the ways to pay from the config, each opening in a new tab', async () => {
+            const { container } = await mountPage({
+                donations: { methods: [boosty], actions: [{ id: 'share' }] },
+            });
+            await openSection(container, 3);
+
+            expect(panelLabels(container)).toEqual([
+                i18n.options.supportLabel,
+                i18n.options.helpLabel,
+            ]);
+            // The intro belongs to the first block alone.
+            expect(panelHints(container)).toEqual([i18n.options.supportHint]);
+            expect(supportRows(container)).toEqual([
+                'Boosty — разовый или регулярный донат',
+                `${i18n.options.helpShare} — ${i18n.options.helpShareNote}`,
+            ]);
+
+            const link = find(container, 'sup__name');
+            expect(link.tag).toBe('a');
+            expect(link.props.href).toBe(BOOSTY);
+            // A tab of the store or a payment page must not be able to reach
+            // back into this page.
+            expect(link.props.target).toBe('_blank');
+            expect(link.props.rel).toBe('noopener noreferrer');
+        });
+
+        // An empty list of methods is a state, not a placeholder: no block, no
+        // «пока ничего нет», and the heading of the free block loses its «ещё».
+        it('drops the whole block of methods when there is none', async () => {
+            const { container } = await mountPage({
+                donations: { methods: [], actions: [{ id: 'share' }] },
+            });
+            await openSection(container, 3);
+
+            expect(panelLabels(container)).toEqual([i18n.options.supportEmptyLabel]);
+            expect(panelHints(container)).toEqual([i18n.options.supportEmptyHint]);
+            expect(findAll(container, 'sup')).toHaveLength(1);
+            expect(supportRows(container)).toEqual([
+                `${i18n.options.helpShare} — ${i18n.options.helpShareNote}`,
+            ]);
+        });
+
+        it('renders an entry without an address as text, not as a dead link', async () => {
+            const { container } = await mountPage({
+                donations: {
+                    methods: [],
+                    actions: [{ id: 'share' }, { id: 'bug', url: 'https://github.test/issues' }],
+                },
+            });
+            await openSection(container, 3);
+
+            const [share, bug] = findAll(container, 'sup__item').map((el) => find(el, 'sup__name'));
+            expect(share.tag).toBe('span');
+            expect(share.props.href).toBeUndefined();
+            expect(textOf(share).trim()).toBe(i18n.options.helpShare);
+
+            expect(bug.tag).toBe('a');
+            expect(bug.props.href).toBe('https://github.test/issues');
+        });
+
+        // The url is hand-edited text: only https reaches an href
+        // (src/lib/external-url.ts), the rest degrades to plain text.
+        it('keeps a non-https address out of the href', async () => {
+            const { container } = await mountPage({
+                donations: {
+                    methods: [{ ...boosty, url: 'javascript:alert(1)' }],
+                    actions: [{ id: 'share' }],
+                },
+            });
+            await openSection(container, 3);
+
+            const name = find(container, 'sup__name');
+            expect(name.tag).toBe('span');
+            expect(name.props.href).toBeUndefined();
+            expect(supportRows(container)[0]).toBe('Boosty — разовый или регулярный донат');
+        });
+
+        // Data, not a v-if by id: filling the url in donations.ts is the whole
+        // job of showing the entry once the extension is published.
+        it('hides an action that is nothing but a link until it has an address', async () => {
+            const hidden = await mountPage({
+                donations: { methods: [], actions: [{ id: 'review', needsUrl: true }] },
+            });
+            await openSection(hidden.container, 3);
+            expect(supportRows(hidden.container)).toEqual([]);
+
+            const shown = await mountPage({
+                donations: {
+                    methods: [],
+                    actions: [{ id: 'review', needsUrl: true, url: 'https://store.test/x' }],
+                },
+            });
+            await openSection(shown.container, 3);
+            expect(supportRows(shown.container)).toEqual([
+                `${i18n.options.helpReview} — ${i18n.options.helpReviewNote}`,
+            ]);
+            expect(find(shown.container, 'sup__name').props.href).toBe('https://store.test/x');
         });
     });
 });

@@ -207,11 +207,73 @@
 
                 <!-- --- «Поддержать» --- -->
                 <template v-else>
-                    <!-- TODO(Ф8-2): the section itself is drawn from the design
-                         card and rendered from DONATION_METHODS /
-                         SUPPORT_ACTIONS (src/lib/donations.ts). This stub only
-                         keeps the tab clickable and the panel non-empty. -->
-                    <section class="opt"></section>
+                    <!-- Both blocks are a heading over a list of links, so they
+                         share one template; which of them exist, and under what
+                         heading, is decided in the script from the data. -->
+                    <section
+                        v-for="block in SUPPORT_BLOCKS"
+                        :key="block.id"
+                        class="opt"
+                    >
+                        <div class="opt__label">{{ block.label }}</div>
+                        <p
+                            v-if="block.hint"
+                            class="opt__hint"
+                        >
+                            {{ block.hint }}
+                        </p>
+                        <ul class="sup">
+                            <li
+                                v-for="item in block.items"
+                                :key="item.id"
+                                class="sup__item"
+                            >
+                                <a
+                                    v-if="item.href"
+                                    class="sup__name"
+                                    :href="item.href"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                >
+                                    <!-- The underline lives on the text, not on
+                                         the link: on the link it would run
+                                         under the icon too. -->
+                                    <span class="sup__text">{{ item.label }}</span>
+                                    <!-- aria-hidden: «opens in a new tab» said
+                                         five times in a row is noise, the glyph
+                                         and the convention are enough. -->
+                                    <svg
+                                        class="sup__ext"
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        stroke-width="2"
+                                        stroke-linecap="round"
+                                        stroke-linejoin="round"
+                                        aria-hidden="true"
+                                    >
+                                        <path
+                                            d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"
+                                        />
+                                        <polyline points="15 3 21 3 21 9" />
+                                        <line
+                                            x1="10"
+                                            y1="14"
+                                            x2="21"
+                                            y2="3"
+                                        />
+                                    </svg>
+                                </a>
+                                <!-- No address — plain text, not a dead link. -->
+                                <span
+                                    v-else
+                                    class="sup__name"
+                                    >{{ item.label }}</span
+                                >
+                                <span class="sup__note"> — {{ item.note }}</span>
+                            </li>
+                        </ul>
+                    </section>
                 </template>
             </div>
 
@@ -244,6 +306,8 @@ import { useSettings } from '@/src/composables/use-settings';
 import type { SearchType, UserRateStatus } from '@/src/lib/api/types';
 import { DEFAULT_ORIGIN, ORIGINS } from '@/src/lib/config';
 import type { Origin } from '@/src/lib/config';
+import { DONATION_METHODS, SUPPORT_ACTIONS, supportHref } from '@/src/lib/donations';
+import type { SupportActionId } from '@/src/lib/donations';
 import { apiErrorMessage, i18n, statusLabel } from '@/src/lib/i18n';
 import { sendMessage } from '@/src/lib/messaging';
 import {
@@ -449,6 +513,77 @@ const ORIGIN_OPTIONS: readonly XSelectOption<Origin>[] = [
     DEFAULT_ORIGIN,
     ...ORIGINS.filter((origin) => origin !== DEFAULT_ORIGIN),
 ].map((origin) => ({ value: origin, label: new URL(origin).host }));
+
+// --- «Поддержать» content (Ф8-2) --------------------------------------------
+
+// One row of either list: a name that may or may not be a link, and a note
+// after it. Built once at setup — both lists are static imports, nothing here
+// ever changes while the page is open.
+interface SupportItem {
+    id: string;
+    label: string;
+    note: string;
+    href: string | null;
+}
+
+interface SupportBlock {
+    id: string;
+    label: string;
+    // Only the first block of the section carries the intro paragraph.
+    hint?: string;
+    items: readonly SupportItem[];
+}
+
+const METHOD_ITEMS: readonly SupportItem[] = DONATION_METHODS.map((method) => ({
+    id: method.id,
+    label: method.label,
+    note: method.hint,
+    href: supportHref(method),
+}));
+
+// The wording of a free action is keyed by its id: unlike a payment method, it
+// does not change together with an address, so it stays in i18n. The Record is
+// keyed by the union — a new action does not compile without its two strings.
+const SUPPORT_ACTION_TEXT: Record<SupportActionId, { label: string; note: string }> = {
+    review: { label: i18n.options.helpReview, note: i18n.options.helpReviewNote },
+    share: { label: i18n.options.helpShare, note: i18n.options.helpShareNote },
+    bug: { label: i18n.options.helpBug, note: i18n.options.helpBugNote },
+};
+
+const ACTION_ITEMS: readonly SupportItem[] = SUPPORT_ACTIONS.filter(
+    // Data, not a v-if by id: an ask that is nothing but a link waits for its
+    // address, everything else is shown as text.
+    (action) => !action.needsUrl || supportHref(action) !== null,
+).map((action) => ({
+    id: action.id,
+    ...SUPPORT_ACTION_TEXT[action.id],
+    href: supportHref(action),
+}));
+
+// An empty list of methods is a state of its own, not a plate saying «пусто»:
+// the block is absent from the section entirely, and the free one takes over
+// both the heading («Как помочь» instead of «Как ещё помочь» — «ещё» after
+// nothing hangs in the air) and the intro paragraph.
+const hasMethods = METHOD_ITEMS.length > 0;
+
+const SUPPORT_BLOCKS: readonly SupportBlock[] = [
+    ...(hasMethods
+        ? [
+              {
+                  id: 'methods',
+                  label: i18n.options.supportLabel,
+                  hint: i18n.options.supportHint,
+                  items: METHOD_ITEMS,
+              },
+          ]
+        : []),
+    {
+        id: 'help',
+        label: hasMethods ? i18n.options.helpLabel : i18n.options.supportEmptyLabel,
+        hint: hasMethods ? undefined : i18n.options.supportEmptyHint,
+        items: ACTION_ITEMS,
+    },
+];
 
 // --- actions ----------------------------------------------------------------
 
@@ -731,6 +866,60 @@ async function clearCache(): Promise<void> {
         border-color: color-mix(in srgb, var(--color-danger) 45%, transparent);
         background: color-mix(in srgb, var(--color-danger) 8%, transparent);
     }
+}
+
+/* --- «Поддержать»: a list of links, not a wall of cards ---
+   Same reading measure as the settings blocks; a way to support the project is
+   one line, so the list needs no boxes of its own. */
+
+.sup {
+    max-width: 560px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-size: 13px;
+}
+
+.sup__item {
+    padding: 4px 0;
+    line-height: 1.5;
+    /* Carries the muted colour for the note too — the name paints over it. */
+    color: var(--color-fg-muted);
+}
+
+/* A name without a link («Рассказать знакомым»): text colour, not the accent —
+   accent without an href reads as a broken link. */
+.sup__name {
+    color: var(--color-fg);
+    font-weight: 500;
+}
+
+a.sup__name {
+    color: var(--color-accent);
+    text-decoration: none;
+
+    /* The underline sits on the text, so the line stops before the icon. */
+    .sup__text {
+        text-decoration: underline;
+        text-decoration-color: color-mix(in srgb, var(--color-accent) 40%, transparent);
+        text-underline-offset: 2px;
+    }
+
+    &:hover {
+        color: var(--color-accent-hover);
+
+        .sup__text {
+            text-decoration-color: currentcolor;
+        }
+    }
+}
+
+.sup__ext {
+    width: 11px;
+    height: 11px;
+    margin-left: 4px;
+    vertical-align: -1px;
+    opacity: 0.85;
 }
 
 /* --- narrow window: the sidebar moves up as a horizontal row ---

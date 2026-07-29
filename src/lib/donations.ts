@@ -1,13 +1,14 @@
 import { httpsHref } from './external-url';
 
-// Content of the «Поддержать» section of the options page (Ф8-1).
+// Content of the «Поддержать» section of the options page (Ф8-1, Ф8-2).
 //
 // Deliberate exception to "every UI string lives in i18n.ts": the label and the
-// hint of a way to support the project sit here, next to its url, because all
-// three are one piece of content the owner edits in a single place — adding a
-// payment link means editing one record, not one record plus one i18n key. The
-// static text of the section (its heading, the paragraph above the list, the
-// «Как ещё помочь» subheading) stays in i18n.ts, where it belongs.
+// hint of a *payment method* sit here, next to its url, because all three are
+// one piece of content the owner edits in a single place — adding a payment
+// link means editing one record, not one record plus one i18n key. Everything
+// else stays in i18n.ts: the headings, the paragraph above the list, and the
+// wording of the free ways to help, which never changes together with an
+// address (hence a free action carries an id and a url, and nothing more).
 //
 // Both lists may be empty, and an entry without a url is a valid state: no
 // payment method is set up yet, and the repository is not published, so its
@@ -34,33 +35,32 @@ export const DONATION_METHODS: readonly DonationMethod[] = [
     // },
 ];
 
-// Free ways to help, always shown — they cost nothing to offer and work with an
-// empty DONATION_METHODS.
+// Free ways to help — they cost nothing to offer and work with an empty
+// DONATION_METHODS. The id picks the wording out of i18n (options.help*), so a
+// new action cannot be added without its two strings.
+export type SupportActionId = 'review' | 'share' | 'bug';
+
 export interface SupportAction {
-    id: string;
-    label: string;
-    hint: string;
+    id: SupportActionId;
     // Optional: the extension is not in the store yet and the repository is not
-    // published, so an action with nowhere to point still reads as an ask.
+    // published, so there is nowhere to point yet.
     url?: string;
+    // An ask that is nothing but a link: without an address it sends nobody
+    // anywhere, so the section leaves it out entirely instead of printing dead
+    // text. Publishing then costs one url here and no change to the template.
+    needsUrl?: boolean;
 }
 
 export const SUPPORT_ACTIONS: readonly SupportAction[] = [
-    {
-        id: 'review',
-        label: 'Оценить в Chrome Web Store',
-        hint: 'Оценка и пара слов в отзыве — расширение проще найти тем, кому оно нужно.',
-    },
-    {
-        id: 'share',
-        label: 'Рассказать знакомым',
-        hint: 'Тем, кто ведёт списки на Shikimori и открывает сайт по десять раз в день.',
-    },
-    {
-        id: 'bug',
-        label: 'Сообщить об ошибке',
-        hint: 'Что пошло не так и на каком шаге — этого хватает, чтобы починить.',
-    },
+    // Hidden until the listing exists: a review is left on the store page and
+    // nowhere else.
+    { id: 'review', needsUrl: true },
+    // Happens away from the screen — it reads as an ask with no address at all.
+    { id: 'share' },
+    // Has no address either while the repository is unpublished, but the line
+    // still says what a useful report contains; add `needsUrl` here too if it
+    // should wait for an issue tracker.
+    { id: 'bug' },
 ];
 
 // The one way an entry becomes a live link. The url is hand-edited text, so it
