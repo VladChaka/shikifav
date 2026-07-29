@@ -10,9 +10,12 @@ import { httpsHref } from './external-url';
 // wording of the free ways to help, which never changes together with an
 // address (hence a free action carries an id and a url, and nothing more).
 //
-// Both lists may be empty, and an entry without a url is a valid state: no
-// payment method is set up yet, and the repository is not published, so its
-// address is unknown. The UI renders a link-less entry as plain text.
+// Both lists may be empty: no payment method is set up yet, and the repository
+// is not published. The two lists differ in what a missing address means. A
+// free way to help is an ask, so it renders as plain text without one; a
+// payment method is nothing BUT its address, so an entry whose url does not
+// pass supportHref() is dropped from the section instead of printing the name
+// of a place nobody can pay through (Ф8-6).
 
 export interface DonationMethod {
     id: string;

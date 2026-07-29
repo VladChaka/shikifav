@@ -371,8 +371,20 @@ function tabId(id: OptionsSection): string {
     return `options-tab-${id}`;
 }
 
+// Never -1: the two lists of sections (OPTIONS_SECTIONS in storage.ts and the
+// labelled SECTIONS above) are kept in sync by hand — a test pins that — but a
+// miss must not reach activeId, where SECTIONS[-1].id would throw and leave the
+// settings page blank. A page that cannot draw is also the page a broken
+// profile would have to be fixed from (Ф6-23).
 function indexOfSection(id: OptionsSection): number {
-    return SECTIONS.findIndex((section) => section.id === id);
+    const index = SECTIONS.findIndex((section) => section.id === id);
+    if (index >= 0) {
+        return index;
+    }
+    const fallback = SECTIONS.findIndex((section) => section.id === FALLBACK_OPTIONS_SECTION);
+    // Both missing at once means SECTIONS itself is broken; the first tab is
+    // still a page, and a blank one is not.
+    return fallback >= 0 ? fallback : 0;
 }
 
 // The page always opens on «Вид»; the last opened section is not remembered —
@@ -534,12 +546,14 @@ interface SupportBlock {
     items: readonly SupportItem[];
 }
 
-const METHOD_ITEMS: readonly SupportItem[] = DONATION_METHODS.map((method) => ({
-    id: method.id,
-    label: method.label,
-    note: method.hint,
-    href: supportHref(method),
-}));
+// A way to pay IS its address: a name nobody can send money through is not an
+// offer, so an entry whose url does not survive the https guard is left out
+// entirely — unlike a free ask («Рассказать знакомым»), which reads fine as
+// plain text. Same shape as the ACTION_ITEMS filter below: data, not a v-if.
+const METHOD_ITEMS: readonly SupportItem[] = DONATION_METHODS.flatMap((method) => {
+    const href = supportHref(method);
+    return href === null ? [] : [{ id: method.id, label: method.label, note: method.hint, href }];
+});
 
 // The wording of a free action is keyed by its id: unlike a payment method, it
 // does not change together with an address, so it stays in i18n. The Record is

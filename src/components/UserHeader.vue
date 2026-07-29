@@ -96,7 +96,7 @@ import { browser } from 'wxt/browser';
 import type { User } from '@/src/lib/api/types';
 import { useAuth } from '@/src/composables/use-auth';
 import { i18n } from '@/src/lib/i18n';
-import { setSession } from '@/src/lib/storage';
+import { removeSession, setSession } from '@/src/lib/storage';
 
 // Shell header: avatar + nickname + icon actions.
 //
@@ -123,7 +123,16 @@ async function openSupport(): Promise<void> {
     // storage before the tab opens. A failed write costs the jump, not the
     // page — settings then simply open on «Вид».
     await setSession('pendingOptionsSection', 'support').catch(() => {});
-    void browser.runtime.openOptionsPage();
+    try {
+        await browser.runtime.openOptionsPage();
+    } catch (e) {
+        // Nothing opened, so nobody consumed the one-shot key: left behind, it
+        // would jump the section on the next visit to the settings — including
+        // one made from ⚙, which asked for no section at all. Same rule as the
+        // pending search of ф.5 (docs/02, §Жизненный цикл service worker).
+        console.debug('[header] failed to open the options page:', e);
+        await removeSession('pendingOptionsSection').catch(() => {});
+    }
 }
 </script>
 

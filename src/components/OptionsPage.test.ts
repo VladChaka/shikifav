@@ -7,6 +7,7 @@ import type { MessageHandlers } from '@/src/lib/messaging';
 import type { LocalState, SessionState } from '@/src/lib/storage';
 import { DEFAULT_ORIGIN } from '@/src/lib/config';
 import { i18n, statusLabel } from '@/src/lib/i18n';
+import { OPTIONS_SECTIONS } from '@/src/lib/storage';
 import {
     clickOn,
     createApp,
@@ -41,6 +42,12 @@ interface Mounted {
 }
 
 let cleanups: Array<() => void> = [];
+
+// Everything Vue would otherwise throw out of a render or a watcher. Without a
+// handler such an error only shows up as an unhandled rejection AFTER the test
+// has passed on a frozen tree — which is exactly how a page that stopped
+// rendering could stay green (Ф8-6).
+let renderErrors: unknown[] = [];
 
 async function mountPage(
     options: {
@@ -118,6 +125,9 @@ async function mountPage(
     const { default: OptionsPage } = await import('@/entrypoints/options/OptionsPage.vue');
     const container = createFakeElement('#container');
     const app = createApp(OptionsPage, { version: VERSION, iconUrl: ICON_URL });
+    app.config.errorHandler = (e) => {
+        renderErrors.push(e);
+    };
     app.mount(container);
     cleanups.push(() => app.unmount());
 
@@ -204,6 +214,7 @@ async function pickOrigin(container: FakeElement, host: string): Promise<void> {
 
 beforeEach(() => {
     fakeBrowser.reset();
+    renderErrors = [];
     // No DOM here; only the listener surface XSelect touches while open.
     vi.stubGlobal('document', {
         addEventListener: () => {},
@@ -217,6 +228,9 @@ afterEach(() => {
     }
     cleanups = [];
     vi.unstubAllGlobals();
+    // Any test, not just the one that looks for it: a throwing render leaves the
+    // last good tree in place, so the assertions above it can all still hold.
+    expect(renderErrors).toEqual([]);
 });
 
 describe('OptionsPage (Ф6-3)', () => {
@@ -246,6 +260,53 @@ describe('OptionsPage (Ф6-3)', () => {
             undefined,
             undefined,
         ]);
+        expect(panelLabels(container)).toEqual([
+            i18n.options.themeLabel,
+            i18n.options.titleLangLabel,
+        ]);
+    });
+
+    // Ф8-6: the vocabulary in storage.ts (which validates the handover) and the
+    // labelled list inside the component are two hand-kept lists that nothing
+    // else connects. The tab ids are built from the section ids, so this pins
+    // both the membership and the order.
+    it('renders exactly the sections storage knows about, in their order', async () => {
+        const { container } = await mountPage();
+        expect(tabs(container).map((el) => el.props.id)).toEqual(
+            OPTIONS_SECTIONS.map((id) => `options-tab-${id}`),
+        );
+    });
+
+    // The other half of the same problem: should the lists drift anyway, the
+    // page must still draw. A blank settings page is the one page a profile
+    // written by another build could have been fixed from (Ф6-23).
+    it('keeps drawing when storage names a section it has no tab for', async () => {
+        vi.doMock('@/src/lib/storage', async () => {
+            const actual =
+                await vi.importActual<typeof import('@/src/lib/storage')>('@/src/lib/storage');
+            return {
+                ...actual,
+                // A build that ships one section more than this component does.
+                OPTIONS_SECTIONS: [...actual.OPTIONS_SECTIONS, 'telemetry'],
+                isOptionsSection: (value: unknown) =>
+                    value === 'telemetry' || actual.isOptionsSection(value),
+            };
+        });
+        cleanups.push(() => vi.doUnmock('@/src/lib/storage'));
+
+        const { container, getSession } = await mountPage({ pendingSection: 'telemetry' });
+
+        await vi.waitFor(async () =>
+            expect(await getSession('pendingOptionsSection')).toBeUndefined(),
+        );
+        for (let i = 0; i < 10; i += 1) {
+            await nextTick();
+        }
+        // Falls back to the section the page opens on, with its panel intact —
+        // and, above all, without a render that threw (see renderErrors).
+        expect(renderErrors).toEqual([]);
+        expect(activeTabLabel(container)).toBe(i18n.options.sectionView);
+        expect(findAll(container, 'options__tab--active')).toHaveLength(1);
         expect(panelLabels(container)).toEqual([
             i18n.options.themeLabel,
             i18n.options.titleLangLabel,
@@ -680,8 +741,31 @@ describe('OptionsPage (Ф6-3)', () => {
         });
 
         // The url is hand-edited text: only https reaches an href
-        // (src/lib/external-url.ts), the rest degrades to plain text.
-        it('keeps a non-https address out of the href', async () => {
+        // (src/lib/external-url.ts). Ф8-6: for a payment method that is the end
+        // of it — a place nobody can pay through is no offer, so it is not
+        // shown as text either, the way a free ask without a link is.
+        it('leaves a method with an unusable address out of the list', async () => {
+            const { container } = await mountPage({
+                donations: {
+                    methods: [
+                        boosty,
+                        { ...boosty, id: 'dead', label: 'Касса', url: 'http://boosty.to/x' },
+                    ],
+                    actions: [{ id: 'share' }],
+                },
+            });
+            await openSection(container, 3);
+
+            expect(supportRows(container)).toEqual([
+                'Boosty — разовый или регулярный донат',
+                `${i18n.options.helpShare} — ${i18n.options.helpShareNote}`,
+            ]);
+            // The live method is a link, the free ask is text — and nothing else
+            // is rendered at all.
+            expect(findAll(container, 'sup__name').map((el) => el.tag)).toEqual(['a', 'span']);
+        });
+
+        it('drops the block when the only method has no live address', async () => {
             const { container } = await mountPage({
                 donations: {
                     methods: [{ ...boosty, url: 'javascript:alert(1)' }],
@@ -690,10 +774,12 @@ describe('OptionsPage (Ф6-3)', () => {
             });
             await openSection(container, 3);
 
-            const name = find(container, 'sup__name');
-            expect(name.tag).toBe('span');
-            expect(name.props.href).toBeUndefined();
-            expect(supportRows(container)[0]).toBe('Boosty — разовый или регулярный донат');
+            // Same state as no methods at all: no block, and the free one takes
+            // over the heading.
+            expect(panelLabels(container)).toEqual([i18n.options.supportEmptyLabel]);
+            expect(supportRows(container)).toEqual([
+                `${i18n.options.helpShare} — ${i18n.options.helpShareNote}`,
+            ]);
         });
 
         // Data, not a v-if by id: filling the url in donations.ts is the whole

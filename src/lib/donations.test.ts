@@ -20,8 +20,9 @@ describe('donations', () => {
                 expect(method.id).not.toBe('');
                 expect(method.label).not.toBe('');
                 expect(method.hint).not.toBe('');
-                // A donation link that does not survive the guard would render
-                // as dead text — worse than not offering the method at all.
+                // A donation link that does not survive the guard costs the
+                // whole entry: the section drops a method it cannot link to, so
+                // a typo here would silently show nothing at all (Ф8-6).
                 expect(supportHref(method)).toBe(method.url);
             }
         });

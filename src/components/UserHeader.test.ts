@@ -113,6 +113,24 @@ describe('UserHeader', () => {
         await vi.waitFor(() => expect(openOptionsPage).toHaveBeenCalledOnce());
     });
 
+    // Ф8-6: the key is one-shot and is consumed by the page it opens. If no page
+    // opened, it has to go — otherwise the next ⚙ lands on «Поддержать» without
+    // anyone asking for it.
+    it('drops the handover when the options page refuses to open', async () => {
+        const { container, getSession } = await mountHeader();
+        vi.spyOn(console, 'debug').mockImplementation(() => {});
+        const openOptionsPage = vi
+            .spyOn(fakeBrowser.runtime, 'openOptionsPage')
+            .mockRejectedValue(new Error('no active window'));
+
+        clickOn(button(container, i18n.header.support));
+
+        await vi.waitFor(() => expect(openOptionsPage).toHaveBeenCalledOnce());
+        await vi.waitFor(async () =>
+            expect(await getSession('pendingOptionsSection')).toBeUndefined(),
+        );
+    });
+
     it('opens the settings without asking for a section', async () => {
         const { container, getSession } = await mountHeader();
         const openOptionsPage = vi
