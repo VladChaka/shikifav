@@ -3,7 +3,7 @@ import { fakeBrowser } from 'wxt/testing';
 import { ref, watch } from 'vue';
 import type { MessageHandlers } from '../lib/messaging';
 import type { LocalState, SessionState } from '../lib/storage';
-import { i18n } from '../lib/i18n';
+import { i18n, statusLabel } from '../lib/i18n';
 import type { ApiError, RatePatch, RateRow, RateState } from '../lib/api/types';
 import type { UseLists } from './use-lists';
 
@@ -841,6 +841,140 @@ describe('use-lists', () => {
             expect(lists.warnings.value.get('1')).toBe(i18n.errors.editForbidden);
             expect(lists.items.value[0].progress).toBe(5); // rolled back
             expect(toasts).toEqual([]); // inline warning only, no toast
+        });
+    });
+
+    // Ф7-20: Shikimori completes a title by itself once the progress reaches the
+    // total (docs/03, owner-verified 2026-07-29). Both progress paths share
+    // applyProgressResult, so the announcement lives there — and only there: a
+    // status the user picked himself needs no toast.
+    describe('status changed by the server (Ф7-20)', () => {
+        it('toasts the new status when [+1] comes back completed', async () => {
+            const { lists, toasts } = await setup({
+                'rates.list': async () => ({
+                    items: [row('1', { progress: 11, total: 12 })],
+                    hasMore: false,
+                }),
+                'rates.increment': async () => ({
+                    rate: rateState('1', { episodes: 12, status: 'completed' }),
+                }),
+            });
+
+            lists.activate();
+            await vi.waitFor(() => expect(lists.listStatus.value).toBe('data'));
+
+            lists.increment(lists.items.value[0]);
+            await vi.waitFor(() => expect(lists.busyIds.value.size).toBe(0));
+            expect(toasts).toHaveLength(1);
+            expect(toasts[0]).toContain(statusLabel('completed')); // «Просмотрено»
+            expect(lists.items.value).toEqual([]); // and the row still leaves «Смотрю»
+        });
+
+        it('toasts the new status when a typed number comes back completed', async () => {
+            const { lists, toasts } = await setup({
+                'rates.list': async () => ({
+                    items: [row('1', { progress: 5, total: 12 })],
+                    hasMore: false,
+                }),
+                'rates.update': async () => ({
+                    rate: rateState('1', { episodes: 12, status: 'completed' }),
+                }),
+            });
+
+            lists.activate();
+            await vi.waitFor(() => expect(lists.listStatus.value).toBe('data'));
+
+            lists.setProgress(lists.items.value[0], 12);
+            await vi.waitFor(() => expect(lists.busyIds.value.size).toBe(0));
+            expect(toasts).toHaveLength(1);
+            expect(toasts[0]).toContain(statusLabel('completed'));
+        });
+
+        it('uses the book wording for a manga row', async () => {
+            const { lists, toasts } = await setup({
+                'rates.list': async () => ({
+                    items: [row('1', { targetType: 'Manga', progress: 39, total: 40 })],
+                    hasMore: false,
+                }),
+                'rates.update': async () => ({
+                    rate: rateState('1', { chapters: 40, status: 'completed' }),
+                }),
+            });
+
+            lists.activate();
+            await vi.waitFor(() => expect(lists.listStatus.value).toBe('data'));
+
+            lists.setProgress(lists.items.value[0], 40);
+            await vi.waitFor(() => expect(lists.busyIds.value.size).toBe(0));
+            expect(toasts).toHaveLength(1);
+            expect(toasts[0]).toContain(statusLabel('completed', 'book')); // «Прочитано»
+            expect(toasts[0]).not.toContain(statusLabel('completed')); // not «Просмотрено»
+        });
+
+        it('toasts even when the row stays in the list', async () => {
+            // Under the «Просмотрено» filter the row does not move anywhere, but
+            // the badge changed without the user asking — still worth saying.
+            const { lists, toasts } = await setup({
+                'rates.list': async ({ status }) =>
+                    status === 'completed'
+                        ? { items: [row('1', { status: 'rewatching', progress: 11, total: 12 })], hasMore: false }
+                        : { items: [row('seed')], hasMore: false },
+                'rates.increment': async () => ({
+                    rate: rateState('1', { episodes: 12, status: 'completed' }),
+                }),
+            });
+
+            lists.activate();
+            await vi.waitFor(() => expect(lists.listStatus.value).toBe('data'));
+            lists.setFilterStatus('completed');
+            await vi.waitFor(() => expect(lists.items.value).toHaveLength(1));
+
+            lists.increment(lists.items.value[0]);
+            await vi.waitFor(() => expect(lists.busyIds.value.size).toBe(0));
+            expect(toasts).toHaveLength(1);
+            expect(toasts[0]).toContain(statusLabel('completed'));
+            expect(lists.items.value[0].status).toBe('completed'); // the row stayed
+        });
+
+        it('stays silent when the server keeps the status', async () => {
+            const { lists, toasts } = await setup({
+                'rates.list': async () => ({
+                    items: [row('1', { progress: 5, total: 12 })],
+                    hasMore: false,
+                }),
+                'rates.increment': async () => ({ rate: rateState('1', { episodes: 6 }) }),
+                'rates.update': async () => ({ rate: rateState('1', { episodes: 7 }) }),
+            });
+
+            lists.activate();
+            await vi.waitFor(() => expect(lists.listStatus.value).toBe('data'));
+
+            lists.increment(lists.items.value[0]);
+            // Wait for the lock, not for the number: progress hits 6 on the
+            // optimistic patch, while the row is still busy and would swallow
+            // the setProgress below.
+            await vi.waitFor(() => expect(lists.busyIds.value.size).toBe(0));
+            expect(lists.items.value[0].progress).toBe(6);
+            lists.setProgress(lists.items.value[0], 7);
+            await vi.waitFor(() => expect(lists.busyIds.value.size).toBe(0));
+            expect(lists.items.value[0].progress).toBe(7);
+            expect(toasts).toEqual([]);
+        });
+
+        it('stays silent when the user changes the status himself', async () => {
+            const { lists, toasts } = await setup({
+                'rates.list': async () => ({ items: [row('1'), row('2')], hasMore: false }),
+                'rates.update': async () => ({ rate: rateState('1', { status: 'dropped' }) }),
+            });
+
+            lists.activate();
+            await vi.waitFor(() => expect(lists.listStatus.value).toBe('data'));
+
+            // The confirmed status differs from the row's previous one, but the
+            // user asked for it in the StatusMenu — a toast would be noise.
+            lists.changeStatus(lists.items.value[0], 'dropped');
+            await vi.waitFor(() => expect(lists.items.value).toEqual([row('2')]));
+            expect(toasts).toEqual([]);
         });
     });
 

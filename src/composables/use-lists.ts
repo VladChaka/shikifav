@@ -3,7 +3,7 @@ import type { Ref } from 'vue';
 import { sendMessage } from '../lib/messaging';
 import { applyPosters, fetchMissingPosters } from '../lib/poster-backfill';
 import { DEFAULT_SETTINGS, getSession, getSettings, setSession } from '../lib/storage';
-import { apiErrorMessage, i18n } from '../lib/i18n';
+import { apiErrorMessage, autoStatusMessage, i18n, mediaOf } from '../lib/i18n';
 import { failureToast, isEditForbidden } from './use-rates';
 import type {
     ApiError,
@@ -391,6 +391,18 @@ async function sendUpdate(
 // Shared reconciliation of a progress write — [+1] and a typed number differ
 // only in what they send, never in how the answer is read.
 function applyProgressResult(rateId: string, current: RateRow, rate: RateState): void {
+    if (rate.status !== current.status) {
+        // Ф7-20: a progress write never asks for a status, so a changed one is
+        // always the server's own doing — Shikimori completes a title once the
+        // progress reaches the total, and an explicit status in the same PATCH
+        // does not stop it (docs/03, owner-verified 2026-07-29). Said out loud
+        // in both cases: under «Смотрю» the row silently vanishes below,
+        // under «Просмотрено» it stays with a badge the user never asked for.
+        // The name of the title is deliberately left out: the toast follows the
+        // user's own edit of one row (per-row busy lock), while Shikimori titles
+        // are long enough to wrap the 13px band over the rows underneath.
+        showToastFn(autoStatusMessage(rate.status, mediaOf(current.targetType)));
+    }
     if (rate.status !== current.status && rate.status !== filterStatus.value) {
         // The write itself moved the title out of the current filter (e.g. the
         // site auto-completes on the last episode) — drop it like a manual

@@ -163,6 +163,12 @@ export const i18n = {
         progressHint: 'Enter — сохранить, Esc — отменить',
         // Out-of-range tail: `${progressMaxPrefix} ${total}` replaces «/ N эп.».
         progressMaxPrefix: 'макс.',
+        // Ф7-20: Shikimori moves a title to another status on its own once the
+        // progress reaches the total, and an explicit status in the same PATCH
+        // does not stop it (docs/03, owner-verified 2026-07-29). Without this
+        // toast the row silently disappears from the «Смотрю» filter. The
+        // placeholder is filled by autoStatusMessage(), never by hand.
+        autoStatusToast: 'Shikimori перевёл тайтл в «{status}»',
     },
     // Context menu item for a text selection (US-8). %s is substituted by
     // Chrome with the selected text — never interpolate it by hand.
@@ -262,6 +268,13 @@ export function statusLabel(status: UserRateStatus, media: MediaKind = 'anime'):
         }
     }
     return i18n.statuses[status];
+}
+
+// Ф7-20: the message about a status the server picked by itself. Built here,
+// next to the template, so the placeholder token never leaks into the callers;
+// the label follows the media — a manga reads «Прочитано», not «Просмотрено».
+export function autoStatusMessage(status: UserRateStatus, media: MediaKind): string {
+    return i18n.rates.autoStatusToast.replace('{status}', statusLabel(status, media));
 }
 
 // Kind/status of a title come from GraphQL as plain strings (not unions),
