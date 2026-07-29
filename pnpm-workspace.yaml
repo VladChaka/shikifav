@@ -1,4 +1,10 @@
 allowBuilds:
     # sass CLI watch-mode helper; build script not needed for Vite builds
     '@parcel/watcher': false
+    # A 2015 polyfill for child_process.spawnSync, reached only through the
+    # Firefox runner (wxt → web-ext-run → fx-runner). Its postinstall builds
+    # nothing on any Node that has spawnSync — it only drops a native dependency
+    # it would need on Node < 0.12. Left undecided, pnpm 11 refuses to run any
+    # script in a fresh clone and appends its own placeholder line here.
+    spawn-sync: false
     esbuild: true
