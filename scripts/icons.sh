@@ -2,17 +2,14 @@
 # Rebuild extension icons (public/icon/{16,32,48,128}.png) from the SVG
 # sources in assets/icon/.
 #
-# STALE as of 2026-07-29: the shipped icons are no longer the シ ink drawing
-# this script renders. The owner supplied an S+F monogram (ShikiFav) as ready
-# PNGs — they are in public/icon/ and archived in assets/icon/sf-monogram/.
-# Running this script right now would silently put the old mark back. It stays
-# here because the pipeline itself (Chrome at 4x + Pillow LANCZOS, two sources)
-# is what the monogram needs too: once the mark is vectorised, point SRC_BASE
-# and SRC_SMALL at the new files and drop this note.
+# The mark is the owner's S+F monogram; the owner's own PNGs are archived in
+# assets/icon/sf-monogram/ and the vector rebuild lives in assets/icon/*.svg.
 #
-# Why two sources: the base drawing loses its ink texture below ~32 px, so the
-# designer supplies a simplified variant (thicker stroke, glyph bleeding to the
-# canvas edges) used for 16 and 32.
+# Why two sources: scaled straight down, the base drawing puts every horizontal
+# edge on a fractional row — at 16 px each bar smears over three rows (one
+# black, two grey) and the seam between the S and the F fills in. So 16 and 32
+# come from a simplified variant drawn on the 16 px grid (thicker stroke, whole
+# pixel bars, 1 px white seams).
 #
 # Why Chrome: no rsvg/inkscape/ImageMagick on the dev machine. Chrome rasterizes
 # the SVG at 4x the target size, Pillow does the LANCZOS downscale (deeper
