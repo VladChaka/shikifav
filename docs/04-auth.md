@@ -19,6 +19,8 @@ WXT_SHIKI_CLIENT_SECRET="..."
 
 **Результат (2026-07-23):** `key` добавлен в манифест production-сборок (`pnpm build`/`pnpm zip`, см. wxt.config.ts; приватный ключ — `.keys/shikifav-key.pem`, в git не попадает). Prod extension ID = `ilcnkoocagmcjikbelobkiflaplolbak`, redirect URI = `https://ilcnkoocagmcjikbelobkiflaplolbak.chromiumapp.org/`. Dev-сборка (`pnpm dev`) ключ не получает — её ID `gakfmcmfpajejjdpdckpgeihgpneajpj` без изменений, обе версии могут стоять в Chrome одновременно. Прежний path-derived prod-ID `bmndfomfgheoloklpjlldgmicdlmgmda` больше не актуален.
 
+**Этот ID переживёт публикацию только по случайности — рассчитывать на это нельзя (2026-07-30).** У расширения в Chrome Web Store ключ, а значит и ID, выдаёт магазин при первой загрузке; документированный порядок обратный нашему — сначала загрузить пакет черновиком, забрать публичный ключ во вкладке Package и уже его вписать в манифест. Пока это не сделано, `redirect_uri` опубликованной версии не совпадёт с зарегистрированным, и `launchWebAuthFlow` вернёт ошибку у **каждого** пользователя. Полный порядок действий — docs/06, фаза 9, раздел «ID расширения: наш порядок обратный».
+
 ## 2. Поток входа (выполняется в background)
 ```ts
 // src/lib/api/auth.ts — референсная реализация
