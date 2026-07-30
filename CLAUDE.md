@@ -71,4 +71,6 @@ docs/               # проектная документация — ЧИТАТ
 | docs/03-shikimori-api.md | GraphQL и REST v2, заголовки, лимиты, чек-лист проверок |
 | docs/04-auth.md | регистрация приложения, OAuth-флоу, refresh, PKCE, безопасность |
 | docs/05-ui.md | экраны, состояния, перфоманс-бюджеты |
-| docs/06-roadmap.md | фазы 0–6 с DoD и smoke-чеклистами |
+| docs/06-roadmap.md | фазы с DoD и smoke-чеклистами; бэклог |
+| docs/07-store-listing.md | листинг Chrome Web Store: single purpose, обоснования permissions, раскрытие данных, скриншоты |
+| PRIVACY.md (в корне) | политика конфиденциальности, публикуется по внешнему адресу для магазина |
