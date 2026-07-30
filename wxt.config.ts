@@ -21,9 +21,12 @@ export default defineConfig({
     manifest: (env) => ({
         name: 'ShikiFav',
         // Explicit description: without it WXT falls back to the English
-        // `description` from package.json. Chrome Web Store caps it at 132 chars.
+        // `description` from package.json. Chrome Web Store caps it at 132
+        // chars; this one is 116. Kept identical to the store listing's short
+        // description (docs/07) — the two are shown side by side, one in
+        // chrome://extensions and one in the store.
         description:
-            'Быстрый доступ к спискам Shikimori: поиск аниме, манги и ранобэ, статусы, оценки и «+1 эпизод» без открытия сайта.',
+            'Списки Shikimori в панели браузера: поиск аниме, манги и ранобэ, статусы, оценки, «+1 эпизод» и календарь онгоингов.',
         ...(env.command === 'build' ? { key: PROD_MANIFEST_KEY } : {}),
         // declarativeNetRequestWithHostAccess, not declarativeNetRequest: the
         // UA rule (modifyHeaders) requires host permissions anyway, and this
