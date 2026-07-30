@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { nextTick } from 'vue';
 import { fakeBrowser } from 'wxt/testing';
+import type { AnalyticsEvent } from '@/src/lib/analytics-events';
 import type { ApiError, AuthState } from '@/src/lib/api/types';
 import type { DonationMethod, SupportAction } from '@/src/lib/donations';
 import type { MessageHandlers } from '@/src/lib/messaging';
@@ -423,6 +424,54 @@ describe('OptionsPage (Ф6-3)', () => {
         await vi.waitFor(async () => expect((await getSettings()).titleLang).toBe('romaji'));
         // The unrelated key is untouched: setSettings patches, never replaces.
         expect((await getSettings()).theme).toBe('dark');
+    });
+
+    // Ф10-14 --------------------------------------------------------------------
+
+    it('reports which setting was changed, with the theme value', async () => {
+        const events: AnalyticsEvent[] = [];
+        const { container } = await mountPage({
+            overrides: {
+                'analytics.track': async (event) => {
+                    events.push(event);
+                    return {};
+                },
+            },
+        });
+
+        clickOn(chip(container, i18n.options.themeLabel, i18n.options.themeDark));
+
+        await vi.waitFor(() =>
+            expect(events).toContainEqual({
+                name: 'setting_changed',
+                params: { setting: 'theme', value: 'dark' },
+            }),
+        );
+    });
+
+    it('says nothing when the user switches statistics off, and drops the id', async () => {
+        // The one setting deliberately left out of the reporting: the last act
+        // of an opt-out must not be to report the opt-out.
+        const events: AnalyticsEvent[] = [];
+        const storage = await import('@/src/lib/storage');
+        const { container, getSettings } = await mountPage({
+            overrides: {
+                'analytics.track': async (event) => {
+                    events.push(event);
+                    return {};
+                },
+            },
+        });
+        await storage.setLocal('analyticsClientId', 'to-be-forgotten');
+        await openSection(container, 2);
+
+        clickOn(chip(container, i18n.options.analyticsLabel, i18n.options.analyticsOff));
+
+        await vi.waitFor(async () => expect((await getSettings()).analytics).toBe(false));
+        await vi.waitFor(async () =>
+            expect(await storage.getLocal('analyticsClientId')).toBeUndefined(),
+        );
+        expect(events).toEqual([]);
     });
 
     it('writes the start tab', async () => {

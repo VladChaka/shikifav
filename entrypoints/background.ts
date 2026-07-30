@@ -6,6 +6,7 @@ import { fetchPosters } from '@/src/lib/api/posters';
 import { createRate, deleteRate, incrementRate, updateRate } from '@/src/lib/api/rates';
 import { registerUserAgentRule } from '@/src/lib/api/user-agent-rule';
 import { handleMenuClick, registerContextMenu } from '@/src/lib/context-menu';
+import { isApiError } from '@/src/lib/api/types';
 import { eventForMessage } from '@/src/lib/analytics-from-message';
 import { onMessage } from '@/src/lib/messaging';
 import type { MessageHandlers, MessageType } from '@/src/lib/messaging';
@@ -25,7 +26,25 @@ function measured(handlers: MessageHandlers): MessageHandlers {
         entries.map(([type, handler]) => [
             type,
             async (payload: unknown) => {
-                const data = await handler(payload);
+                let data: unknown;
+                try {
+                    data = await handler(payload);
+                } catch (e) {
+                    // Ф10-13: failures as the error model already classifies
+                    // them (docs/02). `kind` and, where the shape has one, the
+                    // HTTP status — never a message: an 'api' error carries the
+                    // server's text, and an 'internal' one carries ours.
+                    if (isApiError(e)) {
+                        await trackEvent({
+                            name: 'api_failed',
+                            params:
+                                e.kind === 'api'
+                                    ? { kind: e.kind, status: e.status }
+                                    : { kind: e.kind },
+                        });
+                    }
+                    throw e;
+                }
                 const event = eventForMessage(type, payload);
                 if (event) {
                     await trackEvent(event);
@@ -48,7 +67,11 @@ export default defineBackground(() => {
     // Listener is added synchronously on every SW start: a click on the menu
     // item wakes the worker up and must find the handler already attached.
     browser.contextMenus.onClicked.addListener((info) => {
-        void handleMenuClick(info);
+        // Ф10-12: only that the item was used. The click carries the selected
+        // text, and it goes no further than handleMenuClick.
+        void handleMenuClick(info).then(() =>
+            trackEvent({ name: 'context_menu_used', params: {} }),
+        );
     });
 
     // Menu items are persistent, so registering them once per install/update is

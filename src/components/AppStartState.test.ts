@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { nextTick } from 'vue';
 import { fakeBrowser } from 'wxt/testing';
+import type { AnalyticsEvent } from '@/src/lib/analytics-events';
 import type { MessageHandlers } from '@/src/lib/messaging';
 import type { CalendarItem, RateCreateParams, TitleCard } from '@/src/lib/api/types';
 import { clickOn, createApp, createFakeElement, find, findAll, textOf } from './fake-renderer';
@@ -424,6 +425,30 @@ describe('popup start state from the settings (Ф6-20)', () => {
                 expect(created).toEqual([
                     { targetId: '9', targetType: 'Anime', status: 'planned' },
                 ]),
+            );
+        });
+    });
+    // Ф10-11 --------------------------------------------------------------------
+
+    describe('opening report', () => {
+        it('reports the tab the popup actually landed on, once', async () => {
+            const events: AnalyticsEvent[] = [];
+            await mountPopup(
+                async (storage) => {
+                    await storage.setSettings({ startTab: 'calendar' });
+                },
+                {
+                    'analytics.track': async (event) => {
+                        events.push(event);
+                        return {};
+                    },
+                },
+            );
+
+            // Not FALLBACK_TAB: the event is sent after the settings read has
+            // been applied, so it names the tab the user is looking at.
+            await vi.waitFor(() =>
+                expect(events).toEqual([{ name: 'popup_opened', params: { tab: 'calendar' } }]),
             );
         });
     });

@@ -49,6 +49,13 @@ describe('eventForMessage', () => {
         });
     });
 
+    it('reports a removal without saying what was removed', () => {
+        expect(eventForMessage('rates.delete', { rateId: '42' })).toEqual({
+            name: 'rate_deleted',
+            params: {},
+        });
+    });
+
     it('reports nothing for a patch it has no event for', () => {
         // `text` is a user-written note: there is no event that could carry it,
         // and the mapping stays silent rather than inventing one.
@@ -64,7 +71,6 @@ describe('eventForMessage', () => {
         ['auth.logout'],
         ['rates.list'],
         ['posters.fetch'],
-        ['rates.delete'],
         ['settings.setOrigin'],
         ['analytics.track'],
     ])('stays silent for %s', (type) => {

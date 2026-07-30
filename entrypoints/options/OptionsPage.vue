@@ -319,6 +319,7 @@ import type { ChipOption } from '@/src/components/ChipGroup.vue';
 import Toast from '@/src/components/Toast.vue';
 import XSelect from '@/src/components/XSelect.vue';
 import type { XSelectOption } from '@/src/components/XSelect.vue';
+import { reportEvent } from '@/src/lib/analytics-report';
 import { useAuth } from '@/src/composables/use-auth';
 import { useSettings } from '@/src/composables/use-settings';
 import type { SearchType, UserRateStatus } from '@/src/lib/api/types';
@@ -645,6 +646,24 @@ function showToast(text: string): void {
 // controls have no local mirror that could drift from what is stored.
 function write(patch: Partial<LocalState['settings']>): void {
     void setSettings(patch);
+    reportSettingChange(patch);
+}
+
+// Ф10-14: which settings people actually touch. The name of the setting always,
+// the value only where the vocabulary is fixed and says nothing about the
+// person — the theme. A default status or search type would already be a hint
+// about what someone reads, and `analytics` itself is left out on principle:
+// the last thing an opt-out should do is report the opt-out.
+function reportSettingChange(patch: Partial<LocalState['settings']>): void {
+    for (const setting of Object.keys(patch)) {
+        if (setting === 'analytics') {
+            continue;
+        }
+        reportEvent({
+            name: 'setting_changed',
+            params: setting === 'theme' ? { setting, value: patch.theme } : { setting },
+        });
+    }
 }
 
 // Switching off has a second half: the stored random identifier is what makes
@@ -670,6 +689,13 @@ async function changeOrigin(origin: Origin): Promise<void> {
         showToast(apiErrorMessage(response.error));
         return;
     }
+    // Reported only after the switch actually happened: a failed one snaps the
+    // select back, and an event for it would count a change that never was.
+    // The domain is a fixed pair and belongs to the service, not to the person.
+    reportEvent({
+        name: 'setting_changed',
+        params: { setting: 'origin', value: origin === 'https://shikimori.one' ? 'one' : 'io' },
+    });
     // The session is over — re-read the auth state so the page stops
     // offering «Выйти» instead of pretending the user is still signed in.
     await refreshState();

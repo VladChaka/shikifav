@@ -37,11 +37,16 @@ ShikiFav — расширение для Chrome, которое даёт раб�
 
 **Что отправляется:**
 
+- открытие расширения и на какой вкладке оно открылось — поиск, списки или календарь;
 - факт поиска и по какому каталогу — аниме, манга или ранобэ;
 - добавление тайтла в список: тип (аниме или манга) и выбранный статус;
 - изменение записи: какой именно элемент управления использован — статус, оценка или прогресс;
 - отметка серии: кнопкой «+1» или вводом номера;
+- удаление записи из списка — только факт, без указания тайтла;
 - открытие календаря онгоингов;
+- использование пункта контекстного меню — только факт; выделенный текст не передаётся;
+- изменение настройки: какая именно настройка изменена. Значение передаётся только для темы и домена API; для остальных — лишь факт изменения. Переключение самой статистики не сообщается;
+- ошибки обращения к Shikimori: вид ошибки (нет сети, нет доступа, превышен лимит) и HTTP-код, без текстов и адресов;
 - версия расширения;
 - случайный идентификатор установки — он создаётся при первом событии, не связан с вашим аккаунтом Shikimori и **удаляется в тот момент, когда вы выключаете статистику**.
 
@@ -99,7 +104,7 @@ ShikiFav is a Chrome extension for managing your [Shikimori](https://shikimori.i
 
 **The extension collects no personal data and shows no ads.** There is no server behind it: your lists, scores and progress stay on Shikimori, tokens and settings stay in your browser.
 
-**Anonymous usage statistics** are the one exception. The extension reports which features are used — that a search happened and over which catalogue, that a title was added and with what status, which control was used to edit an entry, whether an episode was marked with the «+1» button or typed in, that the calendar was opened, plus the extension version and a random per-install identifier. **Never sent:** search queries, title names or ids, your scores as numbers, your nickname, id or avatar, tokens, list contents, selected text. The recipient is Google (Google Analytics 4). It is **on by default and switched off** in Settings → «Аккаунт и данные» → «Анонимная статистика»; switching it off stops every request and deletes the random identifier.
+**Anonymous usage statistics** are the one exception. The extension reports which features are used — which tab it opened on, that a search happened and over which catalogue, that a title was added and with what status, which control was used to edit an entry, whether an episode was marked with the «+1» button or typed in, that an entry was removed, that the calendar or the context-menu item was used, which setting was changed, and the kind and HTTP status of a failed request — plus the extension version and a random per-install identifier. **Never sent:** search queries, title names or ids, your scores as numbers, your nickname, id or avatar, tokens, list contents, selected text. The recipient is Google (Google Analytics 4). It is **on by default and switched off** in Settings → «Аккаунт и данные» → «Анонимная статистика»; switching it off stops every request and deletes the random identifier.
 
 **Stored in your browser only.** `chrome.storage.local` keeps your Shikimori access and refresh tokens, the profile Shikimori returns (nickname, id, avatar URL) and your settings. `chrome.storage.session`, cleared when the browser closes, keeps the last search results and list page so the popup opens instantly.
 

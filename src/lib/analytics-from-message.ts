@@ -10,7 +10,8 @@ import type { MessageMap, MessageType } from './messaging';
 // because it has to be added here on purpose.
 //
 // What it cannot see: things that never reach background. The opened tab and a
-// changed setting are UI-only, and they stay untracked for now (docs/06, Ф10).
+// changed setting are reported by the UI itself through analytics-report.ts,
+// and failures are reported by the wrapper in background that catches them.
 
 export function eventForMessage(type: MessageType, payload: unknown): AnalyticsEvent | null {
     switch (type) {
@@ -42,6 +43,10 @@ export function eventForMessage(type: MessageType, payload: unknown): AnalyticsE
         }
         case 'rates.increment':
             return { name: 'episode_incremented', params: { by: 'step' } };
+        case 'rates.delete':
+            // Only that a removal happened: which title it was is exactly the
+            // kind of thing that stays in the browser.
+            return { name: 'rate_deleted', params: {} };
         case 'calendar.list':
             return { name: 'calendar_opened', params: {} };
         default:

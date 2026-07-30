@@ -113,6 +113,7 @@ import TabBar from '@/src/components/TabBar.vue';
 import type { TabId } from '@/src/components/TabBar.vue';
 import Toast from '@/src/components/Toast.vue';
 import UserHeader from '@/src/components/UserHeader.vue';
+import { reportEvent } from '@/src/lib/analytics-report';
 import { useAuth } from '@/src/composables/use-auth';
 import { useCalendar } from '@/src/composables/use-calendar';
 import { useLists } from '@/src/composables/use-lists';
@@ -208,6 +209,15 @@ let pendingQuery: string | null = null;
 let sawAnonymous = false;
 
 onMounted(async () => {
+    await resolveStartTab();
+    // Ф10-11: the tab the popup actually landed on — after the context-menu
+    // handover, the restored session tab and the startTab setting have all had
+    // their say. Reported once per open and never on a later tab switch: the
+    // question is what people open the popup for, not how they browse it.
+    reportEvent({ name: 'popup_opened', params: { tab: activeTab.value } });
+});
+
+async function resolveStartTab(): Promise<void> {
     // All three reads are awaited as one, so the outcome cannot depend on which
     // storage promise settles first: a query handed over by the context menu
     // (Ф5-11) always beats both the restored tab and the startTab setting.
@@ -256,7 +266,7 @@ onMounted(async () => {
         return;
     }
     activeTab.value = settings.startTab;
-});
+}
 
 // The handed-over query is consumed only once it has run with a token: while
 // the user is signed out the key stays in storage, so after the login (which
