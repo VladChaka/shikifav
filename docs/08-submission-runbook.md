@@ -40,10 +40,12 @@ pnpm zip
 Проверка, что собралось именно то:
 
 ```bash
-node -e "const m=require('./.output/chrome-mv3/manifest.json'); console.log(m.version, m.permissions, 'key:', 'key' in m)"
+node -e "const m=require('./.output/chrome-mv3/manifest.json'); console.log(m.version, m.permissions, m.host_permissions, 'key:', 'key' in m)"
 ```
 
-Разрешения должны совпасть с теми, что обоснованы в docs/07: `identity`, `storage`, `declarativeNetRequestWithHostAccess`, `contextMenus`. Лишнее в этом списке — лишний вопрос от ревьюера.
+Разрешения должны совпасть с теми, что обоснованы в docs/07: `identity`, `storage`, `declarativeNetRequestWithHostAccess`, `contextMenus`. Хостов **три**: два домена Shikimori и `https://www.google-analytics.com/*` (фаза 10). Лишнее в этом списке — лишний вопрос от ревьюера.
+
+Отдельно про третий хост: он тянет за собой не только своё обоснование, но и ответ во вкладке Privacy practices — с фазы 10 сбор данных там **«да»** (docs/07). Обоснование и сертификация обязаны сойтись; расхождение ревьюер видит сразу.
 
 ---
 
