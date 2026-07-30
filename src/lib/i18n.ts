@@ -260,7 +260,7 @@ export const i18n = {
             'ShikiFav бесплатен и без рекламы. Если он экономит вам время, разработку можно поддержать — это не обязательно.',
         supportEmptyLabel: 'Как помочь',
         supportEmptyHint:
-            'ShikiFav бесплатен, без рекламы и не собирает данные. Денег он не просит — но помочь проекту всё равно можно.',
+            'ShikiFav бесплатен и без рекламы. Денег он не просит — но помочь проекту всё равно можно.',
         helpLabel: 'Как ещё помочь',
         // Wording of the free ways to help; their ids and (optional) addresses
         // live in src/lib/donations.ts. The note follows the name after an em
