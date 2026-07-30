@@ -63,9 +63,12 @@ export default defineConfigWithVueTs(
 
     {
         // Node build scripts: stdout IS their output (bundle-size report), and
-        // they never ship inside the extension.
+        // they never ship inside the extension. `manifest-key.ts` is the same
+        // kind of code — it runs while wxt.config.ts builds the manifest and no
+        // entrypoint imports it — and lives under src/ only so that `pnpm test`
+        // covers it.
         name: 'app/scripts',
-        files: ['scripts/**'],
+        files: ['scripts/**', 'src/lib/manifest-key.ts'],
         rules: {
             'no-console': 'off',
         },

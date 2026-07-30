@@ -48,7 +48,7 @@ chrome.identity.getRedirectURL();
 
 Важно: **у production-сборки и у dev-сборки ID разные**, значит и redirect URI разные.
 
-- **Production** (`pnpm build` / `pnpm zip`). ID зафиксирован публичным ключом `key` в манифесте (см. `wxt.config.ts`), поэтому он одинаков у всех и не зависит от пути к папке:
+- **Production** (`pnpm build` / `pnpm zip`). ID зафиксирован публичным ключом `key` в манифесте (значение — `WXT_MANIFEST_KEY` в `.env`, раздел 3), поэтому он одинаков у всех и не зависит от пути к папке:
   `https://ilcnkoocagmcjikbelobkiflaplolbak.chromiumapp.org/`
 - **Dev** (`pnpm dev`). Ключ в dev-сборку не подставляется, её ID вычисляется из абсолютного пути к папке сборки, то есть у каждого разработчика свой. Узнать — командой выше в консоли service worker dev-расширения.
 
@@ -73,6 +73,8 @@ WXT_SHIKI_APP_NAME="имя приложения — ровно как на Shiki
 WXT_SHIKI_CLIENT_ID="client_id из приложения"
 WXT_SHIKI_CLIENT_SECRET="client_secret из приложения"
 ```
+
+Четвёртая, `WXT_MANIFEST_KEY`, приходит из `.env.example` уже заполненной, и трогать её незачем — это **не секрет**, а публичный ключ, фиксирующий ID production-сборки (раздел 2). Менять её приходится ровно один раз: когда Chrome Web Store выдаст собственный ключ при первой черновой загрузке. Значение `none` собирает без ключа — этим и делается та самая первая загрузка. Пустая или отсутствующая переменная — ошибка сборки: сборка с чужим ID выглядит рабочей и ломается только на входе.
 
 - Префикс `WXT_` обязателен: только такие переменные WXT пробрасывает в код сборки (`src/lib/config.ts` читает их через `import.meta.env`).
 - `.env*` перечислен в `.gitignore` (исключение — `.env.example`). Реальные `client_id`, `client_secret` и токены в репозиторий не попадают, и в этом README их тоже нет.
@@ -198,6 +200,8 @@ pnpm format     # prettier --write
 ```bash
 WXT_SHIKI_APP_NAME=test WXT_SHIKI_CLIENT_ID=test WXT_SHIKI_CLIENT_SECRET=test pnpm test
 ```
+
+**`pnpm build` и `pnpm zip` требуют `WXT_MANIFEST_KEY`** и падают с `WXT_MANIFEST_KEY is not configured`, если переменной нет. Это сделано нарочно: без ключа сборка собирается, ставится и выглядит рабочей, а ID у неё другой — и вход ломается уже после установки, на redirect URI. `pnpm dev` переменную не читает вовсе, у dev-сборки ключа нет по замыслу.
 
 **`pnpm <команда>` может упасть на `spawn-sync`, не запустив сам скрипт.** Перед скриптом pnpm 11 сверяет зависимости через `pnpm install`, а тот выходит с `[ERR_PNPM_IGNORED_BUILDS] Ignored build scripts: spawn-sync@1.0.15` и кодом 1. Заодно install дописывает в отслеживаемый `pnpm-workspace.yaml` строку-плейсхолдер `spawn-sync: set this to true or false` — коммитить её нельзя, с ней падение повторится у всех. `spawn-sync` — транзитивная зависимость `wxt → web-ext-run → fx-runner` (запуск Firefox), её build-скрипт расширению не нужен, поэтому правильное решение — заменить плейсхолдер на `spawn-sync: false` в `allowBuilds`, как уже сделано для `@parcel/watcher`. Разовый обход — отключить саму сверку (`pnpm config set verify-deps-before-run false --location project`), она пишется в тот же `pnpm-workspace.yaml` и после прогона откатывается вместе с плейсхолдером.
 

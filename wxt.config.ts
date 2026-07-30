@@ -1,12 +1,21 @@
 import { defineConfig } from 'wxt';
+import { manifestKeyField } from './src/lib/manifest-key';
 
-// Public key (base64 DER SPKI) pinning the production extension ID to
-// ilcnkoocagmcjikbelobkiflaplolbak so the OAuth redirect URI stays stable
-// regardless of install path. Private key lives in .keys/ (gitignored).
-// Applied only to `build`/`zip`: the dev extension keeps its own ID and can
-// be installed alongside the production one.
-const PROD_MANIFEST_KEY =
-    'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAktDqts9CaYZZePn4wGOXO5oJJFuQ35gEibE8PZa+qY1xa9bIqlHMw3GS+l0OET/nReGNXUGlwl4VKB+48Vxc2TgXo/Z5UhknFO0+u/9OKXO1MxVYxiWSG61qPjAysK2sigOdUL6WBuvexYI8iB1ly/47g2PozMCxBTcL/9NroeyMiNuCuVBEohkNC0+Nw2ALG8aJhc6Pw6zms3y4kjMVnayWxyMcQPKKJHwh4Cw0SrbU3AcxjwS+B2sDIWt53F20o3iiLZEPcv/VBDKnRRceSKetNXfhsUlZvjhLLVDaKxebim+8aQeHedyLSUwIo36RM++RX/jy5a2pNEt5PYPeEQIDAQAB';
+declare global {
+    // Build-time only, and read exactly once — here. WXT loads .env before the
+    // manifest function runs, which is why the manifest is a function and not
+    // an object (wxt.dev/guide/essentials/config/environment-variables).
+    interface ImportMetaEnv {
+        // Public key (base64 DER SPKI) pinning the production extension ID, so
+        // the OAuth redirect URI stays stable regardless of install path. Not a
+        // secret — it ships inside every build; the private half lives in
+        // .keys/ (gitignored). It used to be a literal in this file and moved
+        // to .env because the store hands out its own key on the first draft
+        // upload (docs/06, phase 9): swapping it must cost one edited line, not
+        // a code change made while sitting in the developer console.
+        readonly WXT_MANIFEST_KEY?: string;
+    }
+}
 
 // See https://wxt.dev/api/config.html
 export default defineConfig({
@@ -27,7 +36,9 @@ export default defineConfig({
         // chrome://extensions and one in the store.
         description:
             'Списки Shikimori в панели браузера: поиск аниме, манги и ранобэ, статусы, оценки, «+1 эпизод» и календарь онгоингов.',
-        ...(env.command === 'build' ? { key: PROD_MANIFEST_KEY } : {}),
+        // Only `build`/`zip` get a key: the dev extension keeps its own
+        // path-derived ID and can be installed alongside the production one.
+        ...(env.command === 'build' ? manifestKeyField(import.meta.env.WXT_MANIFEST_KEY) : {}),
         // declarativeNetRequestWithHostAccess, not declarativeNetRequest: the
         // UA rule (modifyHeaders) requires host permissions anyway, and this
         // variant grants nothing beyond hosts we already have (CLAUDE.md rule 7).
