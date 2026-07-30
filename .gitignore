@@ -15,6 +15,10 @@ node_modules
 !.env.example
 # Extension signing key pair (private key must never be committed)
 .keys/
+# Локальные хуки Claude Code: в них абсолютные пути машины владельца, к проекту
+# отношения не имеют. Агенты в .claude/agents/ остаются в репозитории — это
+# проектная конфигурация.
+.claude/hooks/
 stats.html
 stats-*.json
 .wxt
