@@ -31,3 +31,11 @@ web-ext.config.ts
 *.njsproj
 *.sln
 *.sw?
+
+# Промежуточные файлы съёмки скриншотов (scripts/store-shots/README.md)
+scripts/store-shots/demo-data.json
+scripts/store-shots/seed.json
+scripts/store-shots/stubs.json
+scripts/store-shots/raw-*.png
+scripts/store-shots/store-*.png
+scripts/store-shots/__pycache__/
