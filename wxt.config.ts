@@ -45,6 +45,15 @@ export default defineConfig({
         // contextMenus arrives exactly in phase 5 (US-8, CLAUDE.md rule 7);
         // tabs.create({ url }) needs no "tabs" permission.
         permissions: ['identity', 'storage', 'declarativeNetRequestWithHostAccess', 'contextMenus'],
-        host_permissions: ['https://shikimori.one/*', 'https://shikimori.io/*'],
+        // google-analytics.com arrives in фаза 10 and is the only host here that
+        // is not Shikimori. It carries anonymous usage events and nothing else:
+        // the token and the app User-Agent belong to http.ts, which never talks
+        // to this host (src/lib/api/analytics.ts). Needs its own justification
+        // in the store listing — docs/07.
+        host_permissions: [
+            'https://shikimori.one/*',
+            'https://shikimori.io/*',
+            'https://www.google-analytics.com/*',
+        ],
     }),
 });

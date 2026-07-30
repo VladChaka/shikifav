@@ -76,7 +76,17 @@ export interface LocalState {
         quickStatus: UserRateStatus; // one-click add button on a search card
         defaultSearchType: SearchType;
         defaultListStatus: UserRateStatus; // status filter of "Мои списки"
+        // Anonymous usage statistics (фаза 10). Opt-out by owner's decision:
+        // enabled by default, switched off in «Настройки → Поведение». Off
+        // means no request is made at all — see src/lib/api/analytics.ts.
+        analytics: boolean;
     };
+    // Random per-install identifier for GA4, generated on the first reported
+    // event and deleted the moment analytics is switched off. Deliberately NOT
+    // derived from the Shikimori account: it must not be a way to connect a
+    // measurement to a person, and it must survive a logout without meaning
+    // anything on its own.
+    analyticsClientId?: string;
 }
 
 // chrome.storage.session — live cache, safe to lose (docs/02-architecture.md).
@@ -122,6 +132,7 @@ export const DEFAULT_SETTINGS: LocalState['settings'] = {
     quickStatus: 'planned',
     defaultSearchType: 'anime',
     defaultListStatus: 'watching',
+    analytics: true,
 };
 
 export async function getLocal<K extends keyof LocalState>(
@@ -170,6 +181,10 @@ export async function getSettings(): Promise<LocalState['settings']> {
         quickStatus: stored?.quickStatus ?? DEFAULT_SETTINGS.quickStatus,
         defaultSearchType: stored?.defaultSearchType ?? DEFAULT_SETTINGS.defaultSearchType,
         defaultListStatus: stored?.defaultListStatus ?? DEFAULT_SETTINGS.defaultListStatus,
+        // `?? true` and not `?? DEFAULT_SETTINGS.analytics` by accident: a
+        // profile written before this setting existed genuinely has no answer,
+        // and the documented default for it is the opt-out one.
+        analytics: stored?.analytics ?? DEFAULT_SETTINGS.analytics,
     };
 }
 
@@ -186,7 +201,18 @@ export async function setSettings(patch: Partial<LocalState['settings']>): Promi
         quickStatus: patch.quickStatus ?? current.quickStatus,
         defaultSearchType: patch.defaultSearchType ?? current.defaultSearchType,
         defaultListStatus: patch.defaultListStatus ?? current.defaultListStatus,
+        // `??` and not `||`: switching analytics off patches `false`, and `||`
+        // would read that as "not provided" and silently turn it back on.
+        analytics: patch.analytics ?? current.analytics,
     });
+}
+
+// Lives here and not next to the analytics client on purpose: it is a storage
+// delete, and the options page must be able to call it without importing
+// anything from api/ — that would pull the GA4 endpoint and its key into a
+// bundle that makes no network requests at all (CLAUDE.md rule 1).
+export async function forgetAnalyticsClientId(): Promise<void> {
+    await removeLocal('analyticsClientId');
 }
 
 export async function getSession<K extends keyof SessionState>(

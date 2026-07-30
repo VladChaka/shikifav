@@ -75,6 +75,7 @@ function handlers(overrides: Partial<MessageHandlers>): MessageHandlers {
         'rates.delete': async () => ({}),
         'rates.increment': async () => ({ rate: rateState('100') }),
         'settings.setOrigin': async () => ({}),
+        'analytics.track': async () => ({}),
         ...overrides,
     };
 }
@@ -917,7 +918,10 @@ describe('use-lists', () => {
             const { lists, toasts } = await setup({
                 'rates.list': async ({ status }) =>
                     status === 'completed'
-                        ? { items: [row('1', { status: 'rewatching', progress: 11, total: 12 })], hasMore: false }
+                        ? {
+                              items: [row('1', { status: 'rewatching', progress: 11, total: 12 })],
+                              hasMore: false,
+                          }
                         : { items: [row('seed')], hasMore: false },
                 'rates.increment': async () => ({
                     rate: rateState('1', { episodes: 12, status: 'completed' }),

@@ -66,6 +66,7 @@ function handlers(overrides: Partial<MessageHandlers>): MessageHandlers {
         'rates.delete': async () => ({}),
         'rates.increment': async () => ({ rate: rateState('100') }),
         'settings.setOrigin': async () => ({}),
+        'analytics.track': async () => ({}),
         ...overrides,
     };
 }

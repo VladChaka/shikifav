@@ -74,6 +74,7 @@ function handlers(overrides: Partial<MessageHandlers>): MessageHandlers {
             rate: { id: '1', status: 'watching', score: 0, episodes: 0, chapters: 0, volumes: 0 },
         }),
         'settings.setOrigin': async () => ({}),
+        'analytics.track': async () => ({}),
         ...overrides,
     };
 }
@@ -669,9 +670,7 @@ describe('use-search', () => {
             await vi.advanceTimersByTimeAsync(DEBOUNCE_MS); // the anime request hangs
 
             search.setType('manga');
-            await vi.waitFor(() =>
-                expect(search.items.value).toEqual([mangaCard('7', 'Berserk')]),
-            );
+            await vi.waitFor(() => expect(search.items.value).toEqual([mangaCard('7', 'Berserk')]));
 
             animeResponse.resolve({ items: [card('1', 'Berserk (anime)')] }); // stale
             await vi.advanceTimersByTimeAsync(0);

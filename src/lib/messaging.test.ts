@@ -32,6 +32,7 @@ function makeHandlers(overrides: Partial<MessageHandlers> = {}): MessageHandlers
             rate: { id: '1', status: 'watching', score: 0, episodes: 0, chapters: 0, volumes: 0 },
         }),
         'settings.setOrigin': async () => ({}),
+        'analytics.track': async () => ({}),
         ...overrides,
     };
 }

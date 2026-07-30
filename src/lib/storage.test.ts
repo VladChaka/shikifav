@@ -48,6 +48,10 @@ describe('storage', () => {
                 quickStatus: 'planned',
                 defaultSearchType: 'anime',
                 defaultListStatus: 'watching',
+                // Opt-out by decision of the owner (фаза 10): on unless turned
+                // off. The one default here that is not "behave as before the
+                // setting existed" — see docs/06.
+                analytics: true,
             });
         });
 
@@ -132,6 +136,7 @@ describe('storage', () => {
                 quickStatus: 'watching',
                 defaultSearchType: 'manga',
                 defaultListStatus: 'completed',
+                analytics: false,
             };
             await setLocal('settings', stored);
             await expect(getSettings()).resolves.toEqual(stored);

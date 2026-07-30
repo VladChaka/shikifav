@@ -129,6 +129,7 @@ function setup(initial: TitleCard[], overrides: Partial<MessageHandlers> = {}): 
             rate: { id: '100', status: 'watching', score: 0, episodes: 0, chapters: 0, volumes: 0 },
         }),
         'settings.setOrigin': async () => ({}),
+        'analytics.track': async () => ({}),
         ...overrides,
     });
     const items = ref(initial);
@@ -304,28 +305,25 @@ describe('use-rates', () => {
         // forbidden (use-rates.ts invariant). Normally unreachable via the busy
         // lock; this covers the defensive guard directly.
         let calls = 0;
-        const { items, rates } = setup(
-            [card('1', { id: OPTIMISTIC_RATE_ID, status: 'planned' })],
-            {
-                'rates.update': async () => {
-                    calls += 1;
-                    return {
-                        rate: {
-                            id: '1',
-                            status: 'watching',
-                            score: 0,
-                            episodes: 0,
-                            chapters: 0,
-                            volumes: 0,
-                        },
-                    };
-                },
-                'rates.delete': async () => {
-                    calls += 1;
-                    return {};
-                },
+        const { items, rates } = setup([card('1', { id: OPTIMISTIC_RATE_ID, status: 'planned' })], {
+            'rates.update': async () => {
+                calls += 1;
+                return {
+                    rate: {
+                        id: '1',
+                        status: 'watching',
+                        score: 0,
+                        episodes: 0,
+                        chapters: 0,
+                        volumes: 0,
+                    },
+                };
             },
-        );
+            'rates.delete': async () => {
+                calls += 1;
+                return {};
+            },
+        });
 
         await rates.performAction(items.value[0], { type: 'update', status: 'watching' });
         await rates.performAction(items.value[0], { type: 'delete' });

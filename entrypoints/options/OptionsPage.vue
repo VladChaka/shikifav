@@ -10,7 +10,7 @@
                     alt=""
                     width="26"
                     height="26"
-                >
+                />
                 <h1 class="options__heading">{{ i18n.options.title }}</h1>
                 <div class="options__app">{{ i18n.app.name }}</div>
             </div>
@@ -203,6 +203,24 @@
                             </button>
                         </div>
                     </section>
+
+                    <!-- Статистика стоит здесь, а не в «Поведении»: это про
+                         данные, а не про то, как расширение себя ведёт.
+                         Переключатель — тот же ChipGroup, что и у остальных
+                         настроек: отдельный чекбокс стоил бы новых стилей, а
+                         запас бюджета options CSS — 0,3 КБ (docs/05). -->
+                    <section class="opt">
+                        <div class="opt__label">{{ i18n.options.analyticsLabel }}</div>
+                        <p class="opt__hint">{{ i18n.options.analyticsHint }}</p>
+                        <div class="opt__chips">
+                            <ChipGroup
+                                :options="ANALYTICS_OPTIONS"
+                                :model-value="settings.analytics ? ANALYTICS_ON : 'off'"
+                                :aria-label="i18n.options.analyticsLabel"
+                                @update:model-value="setAnalytics"
+                            />
+                        </div>
+                    </section>
                 </template>
 
                 <!-- --- «Поддержать» --- -->
@@ -313,6 +331,7 @@ import { sendMessage } from '@/src/lib/messaging';
 import {
     clearSession,
     FALLBACK_OPTIONS_SECTION,
+    forgetAnalyticsClientId,
     getSession,
     isOptionsSection,
     removeSession,
@@ -521,6 +540,19 @@ const STATUS_OPTIONS: readonly ChipOption<UserRateStatus>[] = STATUSES.map((valu
 }));
 
 // Domains come from config (CLAUDE.md rule 4), the working one first.
+// Boolean over two chips instead of a checkbox — see the comment in the
+// template. «Включена» first: it is the default, and the row reads as the
+// current state rather than as an offer. ChipGroup is keyed by strings, so the
+// setting is mapped on the edge rather than the component being widened for
+// one caller.
+const ANALYTICS_ON = 'on';
+type AnalyticsChoice = typeof ANALYTICS_ON | 'off';
+
+const ANALYTICS_OPTIONS: readonly ChipOption<AnalyticsChoice>[] = [
+    { value: ANALYTICS_ON, label: i18n.options.analyticsOn },
+    { value: 'off', label: i18n.options.analyticsOff },
+];
+
 const ORIGIN_OPTIONS: readonly XSelectOption<Origin>[] = [
     DEFAULT_ORIGIN,
     ...ORIGINS.filter((origin) => origin !== DEFAULT_ORIGIN),
@@ -613,6 +645,19 @@ function showToast(text: string): void {
 // controls have no local mirror that could drift from what is stored.
 function write(patch: Partial<LocalState['settings']>): void {
     void setSettings(patch);
+}
+
+// Switching off has a second half: the stored random identifier is what makes
+// past events one anonymous timeline, so it is dropped together with consent
+// (src/lib/api/analytics.ts). Storage-only, no message — rule 1 restricts
+// network, and waking the service worker for a local delete costs the popup
+// budget for nothing.
+function setAnalytics(choice: AnalyticsChoice): void {
+    const analytics = choice === ANALYTICS_ON;
+    write({ analytics });
+    if (!analytics) {
+        void forgetAnalyticsClientId();
+    }
 }
 
 async function changeOrigin(origin: Origin): Promise<void> {

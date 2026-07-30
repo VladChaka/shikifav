@@ -94,6 +94,7 @@ async function mountPage(
     const messaging = await import('@/src/lib/messaging');
     const handlers: MessageHandlers = {
         ping: async () => ({ pong: true }),
+        'analytics.track': async () => ({}),
         'auth.getState': async () => auth,
         'auth.login': async () => ({ user: { id: 1, nickname: 'tester', avatarUrl: '' } }),
         'auth.logout': async () => {
@@ -343,7 +344,13 @@ describe('OptionsPage (Ф6-3)', () => {
         );
 
         await openSection(container, 2);
-        expect(panelLabels(container)).toEqual([i18n.options.originLabel, i18n.options.dataLabel]);
+        expect(panelLabels(container)).toEqual([
+            i18n.options.originLabel,
+            i18n.options.dataLabel,
+            // Ф10-2: статистика — это про данные, поэтому она в этом разделе,
+            // а не в «Поведении».
+            i18n.options.analyticsLabel,
+        ]);
     });
 
     it.each([

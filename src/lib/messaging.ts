@@ -14,6 +14,7 @@ import type {
     UserRateRef,
     UserRateStatus,
 } from './api/types';
+import type { AnalyticsEvent } from './analytics-events';
 import type { Origin } from './config';
 
 // Typed popup/options <-> background protocol (docs/02-architecture.md).
@@ -61,6 +62,12 @@ export interface MessageMap {
     // rule 1 restricts network, not storage, and an extra message would wake the
     // service worker for nothing (popup open budget, docs/05).
     'settings.setOrigin': { payload: { origin: Origin }; data: Record<string, never> };
+    // Anonymous usage statistics (фаза 10). Network from background only, like
+    // everything else (rule 1) — but this one also carries a payload the wire
+    // must never widen: AnalyticsEvent is a closed union, so a query or a title
+    // cannot be attached to a message even by mistake. Fire-and-forget on the
+    // UI side: nothing on screen waits for a measurement.
+    'analytics.track': { payload: AnalyticsEvent; data: Record<string, never> };
 }
 
 export type MessageType = keyof MessageMap;
