@@ -11,7 +11,9 @@ python3 scripts/store-shots/capture.py           # headless Chrome → raw-*.png
 python3 scripts/store-shots/compose.py           # → store-*.png 1280×800
 ```
 
-Требуется `google-chrome` и python3 с Pillow. Промежуточные файлы (`demo-data.json`, `seed.json`, `stubs.json`, `raw-*.png`) появляются рядом со скриптами и в git не хранятся.
+Готовые кадры `compose.py` кладёт рядом с собой — перенести в витрину: `cp scripts/store-shots/store-*.png store-assets/screenshots/`.
+
+Требуется `google-chrome` и python3 с Pillow. Промежуточные файлы (`demo-data.json`, `seed.json`, `stubs.json`, `raw-*.png`) появляются рядом со скриптами и в git не хранятся — **с 2026-07-30 это правда**: до того три скрипта писали их в текущий каталог, то есть в корень репозитория, где их не покрывал `.gitignore`, а `capture.py` искал рядом с собой и падал с `FileNotFoundError`. Пайплайн из этого README работал только при запуске из самого каталога скриптов.
 
 ## Почему так, а не проще
 

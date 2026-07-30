@@ -1,5 +1,11 @@
 import json, random
-d = json.load(open('demo-data.json')); random.seed(11)
+import os
+# Промежуточные файлы лежат рядом со скриптами — там же их ищет
+# capture.py, и ровно эти пути перечислены в .gitignore. Каталог
+# запуска роли не играет: README зовёт скрипты из корня репозитория.
+HERE = os.path.dirname(os.path.abspath(__file__))
+
+d = json.load(open(f'{HERE}/demo-data.json')); random.seed(11)
 
 def p(a):
     q = a.get('poster') or {}
@@ -34,5 +40,5 @@ json.dump({
   'SearchAnimes':  {'data': {'animes': [search(a, i) for i, a in enumerate(d['search'])]}},
   'MylistAnimes':  {'data': {'animes': [mylist(a, i) for i, a in enumerate(d['popular'][:8])]}},
   'CalendarAnimes':{'data': {'animes': [calendar(a, i) for i, a in enumerate(d['ongoing'])]}},
-}, open('stubs.json','w'), ensure_ascii=False)
+}, open(f'{HERE}/stubs.json','w'), ensure_ascii=False)
 print('заглушки готовы')

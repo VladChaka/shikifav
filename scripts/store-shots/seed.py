@@ -1,5 +1,11 @@
 import json, random
-d = json.load(open('demo-data.json'))
+import os
+# Промежуточные файлы лежат рядом со скриптами — там же их ищет
+# capture.py, и ровно эти пути перечислены в .gitignore. Каталог
+# запуска роли не играет: README зовёт скрипты из корня репозитория.
+HERE = os.path.dirname(os.path.abspath(__file__))
+
+d = json.load(open(f'{HERE}/demo-data.json'))
 random.seed(7)
 
 def poster(a):
@@ -59,5 +65,5 @@ seed = {
     'lastCalendar': {'items': cal, 'fetchedAt': 0},
   },
 }
-json.dump(seed, open('seed.json','w'), ensure_ascii=False)
+json.dump(seed, open(f'{HERE}/seed.json','w'), ensure_ascii=False)
 print('поиск:', len(search_items), '| строк списка:', len(rows), '| календарь:', len(cal))
