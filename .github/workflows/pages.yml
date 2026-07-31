@@ -1,0 +1,58 @@
+name: pages
+
+# Publishes PRIVACY.md as https://vladchaka.github.io/shikifav/ — the address the Chrome
+# Web Store listing points at. The file itself stays the single source: it is copied into
+# the build, never duplicated in the repository.
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - PRIVACY.md
+      - .github/workflows/pages.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Assemble the site source
+        run: |
+          mkdir -p .pages-src
+          # baseurl comes from the repository name: the site lives under /<repo>/.
+          {
+            printf 'baseurl: "/%s"\n' "${GITHUB_REPOSITORY#*/}"
+            printf 'description: "Политика конфиденциальности ShikiFav"\n'
+            printf 'theme: jekyll-theme-primer\n'
+            printf 'lang: ru\n'
+          } > .pages-src/_config.yml
+          {
+            printf -- '---\nlayout: default\ntitle: "Политика конфиденциальности ShikiFav"\n---\n\n'
+            cat PRIVACY.md
+          } > .pages-src/index.md
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/jekyll-build-pages@v1
+        with:
+          source: ./.pages-src
+          destination: ./_site
+
+      - uses: actions/upload-pages-artifact@v3
+
+      - id: deploy
+        uses: actions/deploy-pages@v4
