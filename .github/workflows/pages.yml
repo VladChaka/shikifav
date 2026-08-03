@@ -44,6 +44,8 @@ jobs:
             printf -- '---\nlayout: default\ntitle: "Политика конфиденциальности ShikiFav"\n---\n\n'
             cat PRIVACY.md
           } > .pages-src/index.md
+          # Without CNAME in the build output the custom domain is dropped on the next deploy.
+          printf 'shikifav.chakalabs.com\n' > .pages-src/CNAME
 
       - uses: actions/configure-pages@v5
 

@@ -1,6 +1,6 @@
 # Политика конфиденциальности ShikiFav
 
-Дата последнего изменения: 2026-07-30
+Дата последнего изменения: 2026-07-31
 
 ShikiFav — расширение для Chrome, которое даёт работать со списками аниме, манги и ранобэ на [Shikimori](https://shikimori.io) без открытия сайта.
 
@@ -90,15 +90,15 @@ ShikiFav — расширение для Chrome, которое даёт раб�
 
 ## Контакты
 
-<!-- TODO(владелец): вписать адрес для связи до подачи в Chrome Web Store. -->
+Вопросы по расширению и этой политике: **support@chakalabs.com**.
 
-Вопросы по расширению и этой политике: **адрес будет указан здесь**.
+Актуальная версия этой политики опубликована по адресу <https://shikifav.chakalabs.com/> — на него же ссылается карточка расширения в Chrome Web Store.
 
 ---
 
 # Privacy Policy (English summary)
 
-Last updated: 2026-07-30
+Last updated: 2026-07-31
 
 ShikiFav is a Chrome extension for managing your [Shikimori](https://shikimori.io) anime, manga and light-novel lists without opening the site.
 
@@ -118,4 +118,4 @@ ShikiFav is a Chrome extension for managing your [Shikimori](https://shikimori.i
 
 **Permissions:** `identity` for the official Shikimori OAuth window; `storage` for tokens, settings and cache; `declarativeNetRequestWithHostAccess` to set the User-Agent header Shikimori's API requires, which Chrome does not allow a normal fetch to change; `contextMenus` for a single search item; host access to `shikimori.one` and `shikimori.io`, where the API lives, and to `www.google-analytics.com` for the anonymous statistics.
 
-Contact: <!-- TODO(owner): add before submitting --> to be provided.
+Contact: **support@chakalabs.com**. The current version of this policy is published at <https://shikifav.chakalabs.com/>, the address the Chrome Web Store listing points at.
