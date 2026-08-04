@@ -35,10 +35,13 @@ Content-Type: application/json  # (или x-www-form-urlencoded для /oauth/to
   },
   "condition": {
     "requestDomains": ["shikimori.one", "shikimori.io"],
+    "excludedInitiatorDomains": ["shikimori.one", "shikimori.io"],
     "resourceTypes": ["xmlhttprequest"]
   }
 }
 ```
+
+**`excludedInitiatorDomains` — не украшение.** `modifyHeaders` срабатывает там, где host-доступ есть и к URL запроса, и к инициатору, а оба домена Shikimori лежат в `host_permissions`. Без исключения правило переписывало бы User-Agent и у AJAX самого сайта в обычной вкладке пользователя: его браузинг уходил бы под именем нашего приложения — ровно тот бан IP, от которого правило и защищает. Запросы из service worker'а инициируются origin'ом расширения, под исключение не попадают и заголовок получают. Альтернатива точнее, но дороже: session-правило с `tabIds: [chrome.tabs.TAB_ID_NONE]` — условие `tabIds` поддерживается только для session-scoped правил, то есть `updateSessionRules` вместо `updateDynamicRules`. (Найдено аудитом 2026-08-04.)
 
 ## Лимиты
 **5 запросов/сек и 90/мин.** Наш клиент держит 4 rps / 80 rpm (docs/02). Систематическое превышение → 429 и риск бана IP.
@@ -376,6 +379,8 @@ GET {origin}/api/users/whoami
   - Как проверялось: временный дев-код в `entrypoints/background.ts` (`TEMP UA-check (task 6)`, удалён 2026-07-22 после подтверждения) отправлял один запрос, заголовки смотрелись в DevTools service worker'а → Network → Request Headers → `User-Agent`.
 - [x] DNR-правило реально подменяет UA на APP_NAME
   - ДА (Chrome 150, проверка владельца 2026-07-22): в Request Headers боевого запроса к shikimori.io виден `User-Agent: ShikiFav`. TEMP UA-check из `entrypoints/background.ts` удалён.
+- [ ] DNR-правило НЕ трогает запросы самого сайта (после правки `excludedInitiatorDomains`, 2026-08-04)
+  - Как проверять: открыть shikimori.io обычной вкладкой при установленной сборке, DevTools вкладки → Network → любой XHR страницы → Request Headers → `User-Agent` должен быть браузерным (`Mozilla/5.0 ...`), а не `ShikiFav`. Заодно убедиться, что в DevTools service worker'а запросы расширения по-прежнему уходят с `ShikiFav`.
 - [x] Отвечает ли API на shikimori.io идентично shikimori.one, включая Bearer-авторизацию (иначе оставить в настройках только .one)
   - Bearer на .io подтверждён живым входом 2026-07-22 (token + whoami на .io, это дефолтный origin). GraphQL на .io подтверждён 2026-07-23 (интроспекция + публичный поиск animes/mangas). Прямое сравнение с .one не требуется: .one отдаёт 301 на .io и как API-origin непригоден (см. заметку «301 на shikimori.one» выше).
 - [x] Поддержка PKCE сервером (детали в docs/04 §5)

@@ -16,6 +16,7 @@ export async function registerUserAgentRule(): Promise<void> {
         console.debug('[dnr] APP_NAME is not configured, User-Agent rule skipped');
         return;
     }
+    const hostnames = ORIGINS.map((origin) => new URL(origin).hostname);
     const rule: Browser.declarativeNetRequest.Rule = {
         id: UA_RULE_ID,
         priority: 1,
@@ -24,7 +25,15 @@ export async function registerUserAgentRule(): Promise<void> {
             requestHeaders: [{ header: 'User-Agent', operation: 'set', value: APP_NAME }],
         },
         condition: {
-            requestDomains: ORIGINS.map((origin) => new URL(origin).hostname),
+            requestDomains: hostnames,
+            // Without this the rule also rewrites the header for the *site's own*
+            // XHR in an ordinary tab: modifyHeaders needs host access to the url
+            // and to the initiator, and both Shikimori domains are in
+            // host_permissions. That would attribute plain browsing to the OAuth
+            // application name — the IP ban rule 3 of CLAUDE.md exists to avoid.
+            // Requests from the service worker are initiated by the extension
+            // origin, so they stay matched.
+            excludedInitiatorDomains: hostnames,
             resourceTypes: ['xmlhttprequest'],
         },
     };

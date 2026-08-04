@@ -41,6 +41,19 @@ describe('registerUserAgentRule', () => {
         );
     });
 
+    it('excludes the site itself as an initiator, so a plain tab keeps the browser UA', async () => {
+        await registerUserAgentRule();
+
+        const rule = updateDynamicRules.mock.calls[0][0].addRules?.[0];
+        // Without this the header would be rewritten for the XHR Shikimori
+        // itself makes in an ordinary tab: host access covers the url and the
+        // initiator alike, so plain browsing would go out under APP_NAME.
+        expect(rule?.condition.excludedInitiatorDomains).toEqual(
+            expect.arrayContaining(['shikimori.one', 'shikimori.io']),
+        );
+        expect(rule?.condition.excludedInitiatorDomains).toHaveLength(2);
+    });
+
     it('is idempotent: every call removes rule 1 before adding it back', async () => {
         await registerUserAgentRule();
         await registerUserAgentRule();
