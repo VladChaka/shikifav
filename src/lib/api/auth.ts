@@ -1,5 +1,6 @@
 import { browser } from 'wxt/browser';
 import { CLIENT_ID, CLIENT_SECRET } from '../config';
+import { httpsHref } from '../external-url';
 import { clearSession, getLocal, getSettings, removeLocal, setLocal } from '../storage';
 import { apiRequest, oauthRequest, setTokenProvider } from './http';
 import type { ApiRequestOptions, HttpResult } from './http';
@@ -187,7 +188,10 @@ async function whoami(): Promise<User> {
     return {
         id: result.data.id,
         nickname: result.data.nickname,
-        avatarUrl: result.data.avatar ?? '',
+        // The avatar goes straight into an <img src>, so it passes the same
+        // https guard as an outbound link; a refused url is stored as '', which
+        // the header already renders as "no avatar" instead of a broken image.
+        avatarUrl: httpsHref(result.data.avatar) ?? '',
     };
 }
 
@@ -304,7 +308,14 @@ export async function authorizedRequest<T>(
 // (docs/05 "Никаких блокирующих запросов при открытии popup").
 export async function getAuthState(): Promise<AuthState> {
     const auth = await getLocal('auth');
-    return auth ? { status: 'authorized', user: auth.user } : { status: 'anonymous' };
+    if (!auth) return { status: 'anonymous' };
+    // The stored avatar predates the guard in whoami() for anyone who logged in
+    // on an earlier build, and unlike the poster cache it survives restarts —
+    // so it is filtered on the way out too, not only on the way in.
+    return {
+        status: 'authorized',
+        user: { ...auth.user, avatarUrl: httpsHref(auth.user.avatarUrl) ?? '' },
+    };
 }
 
 export async function logout(): Promise<void> {

@@ -1,7 +1,9 @@
 import type { AnalyticsEvent } from './analytics-events';
+import type { ApiError } from './api/types';
 import type { MessageMap, MessageType } from './messaging';
 
-// Which messages are worth a measurement, decided in one place.
+// Which messages — and which of their failures — are worth a measurement,
+// decided in one place.
 //
 // The alternative was a trackEvent() call inside every composable. This is
 // cheaper and safer: background already sees every action the UI takes, so
@@ -10,8 +12,9 @@ import type { MessageMap, MessageType } from './messaging';
 // because it has to be added here on purpose.
 //
 // What it cannot see: things that never reach background. The opened tab and a
-// changed setting are reported by the UI itself through analytics-report.ts,
-// and failures are reported by the wrapper in background that catches them.
+// changed setting are reported by the UI itself through analytics-report.ts;
+// failures come back here through eventForError(), called by the wrapper in
+// background that catches them.
 
 export function eventForMessage(type: MessageType, payload: unknown): AnalyticsEvent | null {
     switch (type) {
@@ -53,6 +56,32 @@ export function eventForMessage(type: MessageType, payload: unknown): AnalyticsE
             // Everything else is either infrastructure (ping, posters, auth
             // state) or carries something personal by nature. Silence is the
             // default on purpose: an unlisted message reports nothing.
+            return null;
+    }
+}
+
+// Which failures are a failure of Shikimori. The switch is exhaustive over
+// ApiError on purpose: a new kind stops compiling here until someone decides
+// whether it is one of ours or one of theirs.
+export function eventForError(error: ApiError): AnalyticsEvent | null {
+    switch (error.kind) {
+        case 'network':
+        case 'unauthorized':
+        case 'rate_limited':
+            return { name: 'api_failed', params: { kind: error.kind } };
+        case 'api':
+            // The only kind carrying an HTTP code. `message` is the server's
+            // text and stays out — see the event declaration.
+            return { name: 'api_failed', params: { kind: error.kind, status: error.status } };
+        case 'internal':
+            // The unclassified pile: a closed OAuth window, an unconfigured
+            // APP_NAME, a body that failed to parse. Some of it is ours and
+            // some is theirs, and the kind carries free-form text either way —
+            // reporting it would widen the event past what PRIVACY.md
+            // describes. The two cases that are genuinely the server's (an
+            // unparseable body, a GraphQL answer with no data) are lost to this
+            // silence; classifying them as `api` at the source is the fix, and
+            // it changes the message the user sees, so it is its own task.
             return null;
     }
 }

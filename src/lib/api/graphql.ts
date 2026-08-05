@@ -1,3 +1,4 @@
+import { httpsHref } from '../external-url';
 import { apiRequest } from './http';
 import type {
     ApiError,
@@ -233,6 +234,11 @@ interface GraphqlResponse<T> {
     errors?: { message?: string }[];
 }
 
+// Poster urls of every mapper below pass the same https guard as an outbound
+// link (src/lib/external-url.ts): they are server data that also survives in the
+// session cache, and they end up in an <img src>. A refused url becomes null —
+// the "no poster" state the cards already draw with the local fallback image.
+
 // Pure mapper, exported for tests. mapMangaToTitleCard is the manga/ranobe
 // counterpart: chapters/volumes instead of episodes/episodesAired.
 export function mapAnimeToTitleCard(raw: RawAnime): TitleCard {
@@ -247,8 +253,8 @@ export function mapAnimeToTitleCard(raw: RawAnime): TitleCard {
         episodes: raw.episodes,
         episodesAired: raw.episodesAired,
         year: raw.airedOn?.year ?? null,
-        posterUrl: raw.poster?.miniUrl ?? null,
-        posterUrl2x: raw.poster?.mini2xUrl ?? null,
+        posterUrl: httpsHref(raw.poster?.miniUrl),
+        posterUrl2x: httpsHref(raw.poster?.mini2xUrl),
         userRate:
             raw.userRate === null ? null : { id: raw.userRate.id, status: raw.userRate.status },
         url: raw.url,
@@ -269,8 +275,8 @@ export function mapMangaToTitleCard(raw: RawManga): TitleCard {
         chapters: raw.chapters,
         volumes: raw.volumes,
         year: raw.airedOn?.year ?? null,
-        posterUrl: raw.poster?.miniUrl ?? null,
-        posterUrl2x: raw.poster?.mini2xUrl ?? null,
+        posterUrl: httpsHref(raw.poster?.miniUrl),
+        posterUrl2x: httpsHref(raw.poster?.mini2xUrl),
         userRate:
             raw.userRate === null ? null : { id: raw.userRate.id, status: raw.userRate.status },
         url: raw.url,
@@ -312,8 +318,8 @@ export function mapAnimeToRateRow(raw: RawMylistAnime): RateRow | null {
         targetType: 'Anime',
         name: raw.name,
         russian: raw.russian,
-        posterUrl: raw.poster?.miniUrl ?? null,
-        posterUrl2x: raw.poster?.mini2xUrl ?? null,
+        posterUrl: httpsHref(raw.poster?.miniUrl),
+        posterUrl2x: httpsHref(raw.poster?.mini2xUrl),
         status: raw.userRate.status,
         score: raw.userRate.score,
         progress: raw.userRate.episodes,
@@ -334,8 +340,8 @@ export function mapMangaToRateRow(raw: RawMylistManga): RateRow | null {
         targetType: 'Manga',
         name: raw.name,
         russian: raw.russian,
-        posterUrl: raw.poster?.miniUrl ?? null,
-        posterUrl2x: raw.poster?.mini2xUrl ?? null,
+        posterUrl: httpsHref(raw.poster?.miniUrl),
+        posterUrl2x: httpsHref(raw.poster?.mini2xUrl),
         status: raw.userRate.status,
         score: raw.userRate.score,
         progress: raw.userRate.chapters,
@@ -408,8 +414,8 @@ export function mapAnimeToCalendarItem(raw: RawCalendarAnime): CalendarItem | nu
         name: raw.name,
         russian: raw.russian,
         status: raw.userRate.status,
-        posterUrl: raw.poster?.miniUrl ?? null,
-        posterUrl2x: raw.poster?.mini2xUrl ?? null,
+        posterUrl: httpsHref(raw.poster?.miniUrl),
+        posterUrl2x: httpsHref(raw.poster?.mini2xUrl),
         // Raw ISO through to the UI layer: only calendar-schedule.ts parses it.
         nextEpisodeAt: raw.nextEpisodeAt,
         episodes: raw.episodes,

@@ -1,4 +1,4 @@
-import type { RateTargetType, SearchType, UserRateStatus } from './api/types';
+import type { ApiError, RateTargetType, SearchType, UserRateStatus } from './api/types';
 import type { PopupTab, Theme } from './storage';
 
 // The complete vocabulary of what the extension is allowed to report.
@@ -42,7 +42,14 @@ export type AnalyticsEvent =
     // ApiError kind and, when there is one, the HTTP status. Never a message
     // and never a URL — `tabs.create` taught that a URL can quote the user's
     // own selection back (README of the context menu work).
-    | { name: 'api_failed'; params: { kind: string; status?: number } };
+    | { name: 'api_failed'; params: { kind: ReportedErrorKind; status?: number } };
+
+// The event promises «ошибки обращения к Shikimori» (PRIVACY.md, docs/07), and
+// 'internal' is not one: it is the extension's own fault — a closed OAuth
+// window, an unregistered token provider — with no request behind it. Excluded
+// by type so no caller can report one, and derived from ApiError rather than
+// spelled out so a future kind has to be classified in eventForError() first.
+export type ReportedErrorKind = Exclude<ApiError['kind'], 'internal'>;
 
 export type AnalyticsEventName = AnalyticsEvent['name'];
 

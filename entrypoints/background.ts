@@ -7,7 +7,7 @@ import { createRate, deleteRate, incrementRate, updateRate } from '@/src/lib/api
 import { registerUserAgentRule } from '@/src/lib/api/user-agent-rule';
 import { handleMenuClick, registerContextMenu } from '@/src/lib/context-menu';
 import { isApiError } from '@/src/lib/api/types';
-import { eventForMessage } from '@/src/lib/analytics-from-message';
+import { eventForError, eventForMessage } from '@/src/lib/analytics-from-message';
 import { onMessage } from '@/src/lib/messaging';
 import type { MessageHandlers, MessageType } from '@/src/lib/messaging';
 import { setSettings } from '@/src/lib/storage';
@@ -31,17 +31,12 @@ function measured(handlers: MessageHandlers): MessageHandlers {
                     data = await handler(payload);
                 } catch (e) {
                     // Ф10-13: failures as the error model already classifies
-                    // them (docs/02). `kind` and, where the shape has one, the
-                    // HTTP status — never a message: an 'api' error carries the
-                    // server's text, and an 'internal' one carries ours.
-                    if (isApiError(e)) {
-                        await trackEvent({
-                            name: 'api_failed',
-                            params:
-                                e.kind === 'api'
-                                    ? { kind: e.kind, status: e.status }
-                                    : { kind: e.kind },
-                        });
+                    // them (docs/02), and only those that are actually a
+                    // request to Shikimori — eventForError decides, the same
+                    // way eventForMessage decides for successes.
+                    const failure = isApiError(e) ? eventForError(e) : null;
+                    if (failure) {
+                        await trackEvent(failure);
                     }
                     throw e;
                 }

@@ -25,10 +25,19 @@ beforeEach(() => {
     fetchMock.mockReset();
     fetchMock.mockResolvedValue(new Response(null, { status: 204 }));
     vi.stubGlobal('fetch', fetchMock);
+    // fakeBrowser ships no manifest, and the client reads the extension version
+    // out of it before sending. Without this the send throws on the way to
+    // fetch, is swallowed by design, and the request-shaped expectations below
+    // see no call at all — which is how they passed unnoticed for as long as
+    // the checkout had no GA4 keys and skipped them.
+    vi.spyOn(fakeBrowser.runtime, 'getManifest').mockReturnValue({
+        version: '1.0.0',
+    } as ReturnType<typeof fakeBrowser.runtime.getManifest>);
 });
 
 afterEach(() => {
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
 });
 
 describe('trackEvent', () => {

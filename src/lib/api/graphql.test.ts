@@ -526,6 +526,66 @@ describe('graphql', () => {
         });
     });
 
+    // Poster urls end up in an <img src>, so they pass the same https guard as
+    // an outbound link: a refused url is mapped to null, and the component then
+    // draws the local fallback image (`posterUrl || posterFallback`) instead of
+    // an <img> with a broken src.
+    describe('poster https guard', () => {
+        // One scheme that would run code in the page, one plain downgrade.
+        const refusedPoster = {
+            miniUrl: 'javascript:alert(1)',
+            mini2xUrl: 'http://desu.shikimori.one/uploads/poster/animes/52991/mini@2x.webp',
+        };
+
+        it('drops both urls of an anime card', () => {
+            const card = mapAnimeToTitleCard({ ...fullRawAnime, poster: refusedPoster });
+            expect(card.posterUrl).toBeNull();
+            expect(card.posterUrl2x).toBeNull();
+        });
+
+        it('drops both urls of a manga card', () => {
+            const card = mapMangaToTitleCard({ ...fullRawManga, poster: refusedPoster });
+            expect(card.posterUrl).toBeNull();
+            expect(card.posterUrl2x).toBeNull();
+        });
+
+        it('drops both urls of a mylist row', () => {
+            const rows = [
+                mapAnimeToRateRow({ ...fullRawMylistAnime, poster: refusedPoster }),
+                mapMangaToRateRow({ ...fullRawMylistManga, poster: refusedPoster }),
+            ];
+            for (const row of rows) {
+                expect(row?.posterUrl).toBeNull();
+                expect(row?.posterUrl2x).toBeNull();
+            }
+        });
+
+        it('drops both urls of a calendar row', () => {
+            const item = mapAnimeToCalendarItem({
+                ...fullRawCalendarAnime,
+                poster: refusedPoster,
+            });
+            expect(item?.posterUrl).toBeNull();
+            expect(item?.posterUrl2x).toBeNull();
+        });
+
+        // The 1x url is a complete poster on its own — only the srcset pair is
+        // lost, so a refused retina url must not cost the visible image.
+        it('keeps the 1x url when only the retina one is refused', () => {
+            const card = mapAnimeToTitleCard({
+                ...fullRawAnime,
+                poster: {
+                    miniUrl: 'https://desu.shikimori.one/uploads/poster/animes/52991/mini.webp',
+                    mini2xUrl: '//evil.test/mini@2x.webp',
+                },
+            });
+            expect(card.posterUrl).toBe(
+                'https://desu.shikimori.one/uploads/poster/animes/52991/mini.webp',
+            );
+            expect(card.posterUrl2x).toBeNull();
+        });
+    });
+
     // CalendarItem must stay assignable to ScheduleItem: the schedule layer is
     // generic over it, so a renamed field would otherwise surface only in the
     // UI. The assignment below is the actual check (pnpm compile covers the

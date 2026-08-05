@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { eventForMessage } from './analytics-from-message';
+import { eventForError, eventForMessage } from './analytics-from-message';
 import type { MessageType } from './messaging';
 
 // This file is the answer to "what does the extension report?", so the tests
@@ -77,5 +77,43 @@ describe('eventForMessage', () => {
         // Silence is the default: a message has to be added to the mapping on
         // purpose before it reports anything.
         expect(eventForMessage(type as MessageType, {})).toBeNull();
+    });
+});
+
+// PRIVACY.md promises this event covers «ошибки обращения к Shikimori», so the
+// line these tests hold is which failures are that and which are the
+// extension's own.
+describe('eventForError', () => {
+    it.each(['network', 'unauthorized', 'rate_limited'] as const)(
+        'reports a %s failure without an HTTP code',
+        (kind) => {
+            expect(eventForError({ kind })).toEqual({ name: 'api_failed', params: { kind } });
+        },
+    );
+
+    it('reports the HTTP code of an api error and not the server text', () => {
+        const event = eventForError({ kind: 'api', status: 422, message: 'Score is invalid' });
+
+        expect(event).toEqual({ name: 'api_failed', params: { kind: 'api', status: 422 } });
+        expect(JSON.stringify(event)).not.toContain('Score');
+    });
+
+    it('keeps the retry hint of a rate limit out of the event', () => {
+        // retryAfterMs is the server's pacing advice, not a fact about usage.
+        expect(eventForError({ kind: 'rate_limited', retryAfterMs: 30_000 })).toEqual({
+            name: 'api_failed',
+            params: { kind: 'rate_limited' },
+        });
+    });
+
+    it('reports nothing for an internal error — no request was made', () => {
+        // Closing the OAuth window is the case the audit found: it never
+        // touches Shikimori, so it must not be counted as its failure.
+        expect(
+            eventForError({ kind: 'internal', message: 'Authorization window was closed' }),
+        ).toBeNull();
+        expect(
+            eventForError({ kind: 'internal', message: 'APP_NAME is not configured' }),
+        ).toBeNull();
     });
 });

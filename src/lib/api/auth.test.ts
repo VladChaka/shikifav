@@ -417,7 +417,7 @@ describe('auth', () => {
     });
 
     describe('login', () => {
-        function mockLoginNetwork(): void {
+        function mockLoginNetwork(avatar: string | null = 'https://cdn.test/x160.png'): void {
             fetchMock.mockImplementation(async (input) => {
                 const url = String(input);
                 if (url.endsWith('/oauth/token')) {
@@ -429,11 +429,7 @@ describe('auth', () => {
                     });
                 }
                 if (url.endsWith('/api/users/whoami')) {
-                    return jsonResponse(200, {
-                        id: 7,
-                        nickname: 'tester',
-                        avatar: 'https://cdn.test/x160.png',
-                    });
+                    return jsonResponse(200, { id: 7, nickname: 'tester', avatar });
                 }
                 throw new Error(`Unexpected request: ${url}`);
             });
@@ -463,6 +459,24 @@ describe('auth', () => {
             expect(whoami.url).toBe('https://shikimori.io/api/users/whoami');
             expect(whoami.headers['Authorization']).toBe('Bearer fresh-access');
         });
+
+        // The avatar reaches an <img src>, so it passes the same https guard as
+        // an outbound link. A refused url is stored as '' — the state the header
+        // already draws as "no avatar", never an <img> with a broken src.
+        it.each(['javascript:alert(1)', 'http://cdn.test/x160.png', '//evil.test/x160.png', null])(
+            'stores %s as an empty avatarUrl',
+            async (avatar) => {
+                stubIdentity(`${REDIRECT_URI}?code=auth-code`);
+                mockLoginNetwork(avatar);
+
+                const user = await login();
+
+                expect(user).toEqual({ id: 7, nickname: 'tester', avatarUrl: '' });
+                await expect(getLocal('auth')).resolves.toMatchObject({
+                    user: { avatarUrl: '' },
+                });
+            },
+        );
 
         it('requests authorization with code response type and the user_rates scope', async () => {
             let authorizeUrl = '';
