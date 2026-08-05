@@ -1,6 +1,6 @@
 # Политика конфиденциальности ShikiFav
 
-Дата последнего изменения: 2026-07-31
+Дата последнего изменения: 2026-08-05
 
 ShikiFav — расширение для Chrome, которое даёт работать со списками аниме, манги и ранобэ на [Shikimori](https://shikimori.io) без открытия сайта.
 
@@ -50,13 +50,15 @@ ShikiFav — расширение для Chrome, которое даёт раб�
 - версия расширения;
 - случайный идентификатор установки — он создаётся при первом событии, не связан с вашим аккаунтом Shikimori и **удаляется в тот момент, когда вы выключаете статистику**.
 
-**Что не отправляется никогда:** тексты поисковых запросов, названия и идентификаторы тайтлов, ваши оценки как числа, ник, идентификатор и аватар аккаунта, токены, содержимое списков, выделенный на странице текст, IP-адрес в качестве идентификатора.
+**Что не отправляется никогда:** тексты поисковых запросов, названия и идентификаторы тайтлов, ваши оценки как числа, ник, идентификатор и аватар аккаунта, токены, содержимое списков, выделенный на странице текст.
 
 Получатель данных — Google (Google Analytics 4). Отправка идёт из расширения напрямую, без промежуточных серверов; запросы к Google не содержат вашего токена Shikimori.
 
+Как и любой сетевой запрос, обращение к Google Analytics уходит с вашего IP-адреса. Расширение его не читает и не хранит, но Google определяет по нему примерную страну и регион. Выключение статистики прекращает и это.
+
 ## Выделенный текст
 
-Пункт контекстного меню «Найти … на Shikimori» берёт выделенный вами текст и подставляет его в поиск расширения. Это происходит **только** когда вы сами выбрали пункт меню. Текст не сохраняется и никуда не отправляется, кроме поискового запроса к Shikimori.
+Пункт контекстного меню «Найти … на Shikimori» берёт выделенный вами текст и подставляет его в поиск расширения. Это происходит **только** когда вы сами выбрали пункт меню. Текст уходит поисковым запросом к Shikimori и вместе с результатами сохраняется в хранилище сессии браузера до его закрытия — стереть раньше можно кнопкой «Очистить кэш» в настройках. Никуда, кроме Shikimori, он не отправляется.
 
 ## Ссылки на пожертвования
 
@@ -98,7 +100,7 @@ ShikiFav — расширение для Chrome, которое даёт раб�
 
 # Privacy Policy (English summary)
 
-Last updated: 2026-07-31
+Last updated: 2026-08-05
 
 ShikiFav is a Chrome extension for managing your [Shikimori](https://shikimori.io) anime, manga and light-novel lists without opening the site.
 
@@ -110,7 +112,7 @@ ShikiFav is a Chrome extension for managing your [Shikimori](https://shikimori.i
 
 **Network requests go to `shikimori.one` and `shikimori.io`** — searching, reading your lists, and updating statuses, scores and progress. Requests carry your token; site cookies are deliberately not sent. Posters and avatars are loaded by the browser directly from Shikimori. The only other host is `www.google-analytics.com`, and only while the statistics above are on; those requests never carry your token.
 
-**Selected text** is passed to the extension's own search only when you choose the context-menu item, and is not stored.
+**Selected text** is passed to the extension's own search only when you choose the context-menu item. It is sent to Shikimori as a search query and cached with the results in `chrome.storage.session` until the browser closes (or until you press «Очистить кэш»); it goes nowhere else. Like any network request, the calls to Google Analytics carry your IP address: the extension neither reads nor stores it, but Google derives an approximate country and region from it, and switching the statistics off stops that too.
 
 **The support section** contains outbound links only: no payments are processed and no payment details are requested.
 
