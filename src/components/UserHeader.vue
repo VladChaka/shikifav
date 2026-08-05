@@ -1,12 +1,19 @@
 <template>
     <header class="header">
+        <!-- No url, no <img>: an image element without a src draws the broken
+             icon, and an avatar can now be absent for a second reason besides
+             a fresh account — the https guard rejects anything the API returns
+             over another scheme. The span keeps the neutral circle the styles
+             already draw while a real avatar loads. -->
         <img
+            v-if="user.avatarUrl"
             class="header__avatar"
-            :src="user.avatarUrl || undefined"
+            :src="user.avatarUrl"
             width="28"
             height="28"
             alt=""
         />
+        <span v-else class="header__avatar" aria-hidden="true" />
         <span class="header__nickname">{{ user.nickname }}</span>
         <!-- Feather "heart": the same options page, opened on its «Поддержать»
              section (Ф8-3). Stands before ⚙ so the closing action of the bar

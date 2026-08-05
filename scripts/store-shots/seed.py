@@ -53,7 +53,13 @@ seed = {
     'auth': {'accessToken': 'demo-token', 'refreshToken': 'demo-refresh',
              'expiresAt': 4102444800000,
              'user': {'id': 1, 'nickname': 'shikifav',
-                      'avatarUrl': "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='56' height='56'><circle cx='28' cy='28' r='28' fill='%231a7f5a'/><text x='28' y='38' font-family='system-ui,sans-serif' font-size='26' font-weight='700' fill='%23ffffff' text-anchor='middle'>S</text></svg>"}},
+                      # Empty on purpose, so the shot shows what the header
+                      # really draws here: the neutral circle. The inline SVG
+                      # that used to stand in stopped rendering when the https
+                      # guard landed (2026-08-05) — it rejects data: URIs, and
+                      # an avatar in the store screenshot is not worth relaxing
+                      # a rule that decides which host the browser talks to.
+                      'avatarUrl': ''}},
     'settings': {'origin': 'https://shikimori.io', 'titleLang': 'ru', 'theme': 'system',
                  'startTab': 'last', 'quickStatus': 'planned', 'defaultSearchType': 'anime',
                  'defaultListStatus': 'watching'},

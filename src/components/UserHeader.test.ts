@@ -26,13 +26,13 @@ let cleanups: Array<() => void> = [];
 // No background listener is registered on purpose: useAuth() only needs the
 // header to render, and a failed auth.getState leaves it in the anonymous state
 // the component does not draw anything from.
-async function mountHeader(): Promise<Mounted> {
+async function mountHeader(user: User = USER): Promise<Mounted> {
     vi.resetModules();
     const storage = await import('@/src/lib/storage');
     const { default: UserHeader } = await import('@/src/components/UserHeader.vue');
 
     const container = createFakeElement('#container');
-    const app = createApp(UserHeader, { user: USER });
+    const app = createApp(UserHeader, { user });
     app.mount(container);
     cleanups.push(() => app.unmount());
 
@@ -142,5 +142,25 @@ describe('UserHeader', () => {
         expect(openOptionsPage).toHaveBeenCalledOnce();
         // ⚙ must land on «Вид», not on the section ♥ asked for last time.
         expect(await getSession('pendingOptionsSection')).toBeUndefined();
+    });
+
+    it('draws an img for an avatar it has', async () => {
+        const { container } = await mountHeader();
+
+        const avatar = findAll(container, 'header__avatar');
+        expect(avatar).toHaveLength(1);
+        expect(avatar[0].tag).toBe('img');
+        expect(avatar[0].props.src).toBe(USER.avatarUrl);
+    });
+
+    it('falls back to the neutral circle instead of a broken image', async () => {
+        // Empty is what whoami() and getAuthState() produce for an avatar the
+        // https guard rejected, not only for an account without a picture.
+        const { container } = await mountHeader({ ...USER, avatarUrl: '' });
+
+        const avatar = findAll(container, 'header__avatar');
+        expect(avatar).toHaveLength(1);
+        expect(avatar[0].tag).not.toBe('img');
+        expect(avatar[0].props.src).toBeUndefined();
     });
 });
