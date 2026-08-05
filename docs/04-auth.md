@@ -6,7 +6,8 @@
 1. Залогиниться на Shikimori → открыть `{origin}/oauth/applications` → создать приложение.
 2. **Имя** — выбрать и записать: оно же обязано быть в User-Agent (`WXT_SHIKI_APP_NAME`).
 3. **Redirect URI** — значение `chrome.identity.getRedirectURL()`, вид: `https://<EXTENSION_ID>.chromiumapp.org/`.
-4. Полученные client_id и client_secret положить в `.env` (файл в .gitignore):
+4. **Картинка приложения (320×320)** — `store-assets/shikimori-app-320x320.png`, собирается `scripts/store-shots/promo_images.py`. Поле необязательное, но пустым его лучше не оставлять: Shikimori рисует вместо картинки свою заглушку «404 not found», и человек видит её на экране согласия — в тот момент, когда решает, дать ли расширению доступ к аккаунту.
+5. Полученные client_id и client_secret положить в `.env` (файл в .gitignore):
 ```
 WXT_SHIKI_APP_NAME="..."
 WXT_SHIKI_CLIENT_ID="..."

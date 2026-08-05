@@ -106,9 +106,32 @@ def render(
     print(f'{out.relative_to(ROOT)}: {image.size[0]}x{image.size[1]}, mode {image.mode}')
 
 
+def render_square(size: int, monogram_px: int, out: Path) -> None:
+    """The square avatar of the OAuth application on Shikimori.
+
+    Not a store asset: it is what a user sees on the consent screen while
+    deciding whether to hand the extension their account. Left empty, Shikimori
+    draws its own «404 not found» placeholder there.
+
+    Monogram only — the name is already written next to the picture, and a
+    wordmark inside a square this small competes with it.
+    """
+    image = Image.new('RGB', (size, size), ACCENT)
+    shape = ImageOps.invert(Image.open(ICON).convert('L')).resize(
+        (monogram_px, monogram_px), Image.LANCZOS
+    )
+    offset = (size - monogram_px) // 2
+    image.paste(Image.new('RGB', shape.size, FOREGROUND), (offset, offset), shape)
+
+    out.parent.mkdir(parents=True, exist_ok=True)
+    image.save(out, 'PNG')
+    print(f'{out.relative_to(ROOT)}: {size}x{size}, mode {image.mode}')
+
+
 def main() -> None:
     render((440, 280), 92, 54, OUT_DIR / 'promo-tile-440x280.png')
     render((1400, 560), 260, 150, OUT_DIR / 'promo-marquee-1400x560.png', tagline_px=52)
+    render_square(320, 200, ROOT / 'store-assets' / 'shikimori-app-320x320.png')
 
 
 if __name__ == '__main__':
