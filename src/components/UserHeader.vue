@@ -3,8 +3,8 @@
         <!-- No url, no <img>: an image element without a src draws the broken
              icon, and an avatar can now be absent for a second reason besides
              a fresh account — the https guard rejects anything the API returns
-             over another scheme. The span keeps the neutral circle the styles
-             already draw while a real avatar loads. -->
+             over another scheme. The letter takes its place, on the accent, so
+             the corner is not an empty hole in either theme. -->
         <img
             v-if="user.avatarUrl"
             class="header__avatar"
@@ -13,7 +13,9 @@
             height="28"
             alt=""
         />
-        <span v-else class="header__avatar" aria-hidden="true" />
+        <span v-else class="header__avatar header__avatar--initial" aria-hidden="true">{{
+            initial
+        }}</span>
         <span class="header__nickname">{{ user.nickname }}</span>
         <!-- Feather "heart": the same options page, opened on its «Поддержать»
              section (Ф8-3). Stands before ⚙ so the closing action of the bar
@@ -99,6 +101,7 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue';
 import { browser } from 'wxt/browser';
 import type { User } from '@/src/lib/api/types';
 import { useAuth } from '@/src/composables/use-auth';
@@ -111,7 +114,13 @@ import { removeSession, setSession } from '@/src/lib/storage';
 // the outside — Ф6-6):
 //   --header-pad            padding of the bar,           default 10px 12px
 //   --header-border-bottom  its closing line,             default 1px solid var(--color-border)
-defineProps<{ user: User }>();
+const props = defineProps<{ user: User }>();
+
+// Stands in for a missing picture. Uppercased because Shikimori nicknames are
+// free-form and a lowercase glyph reads as a typo at 28px, and cut with
+// Array.from so a nickname starting with an astral character (an emoji) gives
+// one whole symbol instead of half a surrogate pair.
+const initial = computed(() => Array.from(props.user.nickname.trim())[0]?.toUpperCase() ?? '');
 
 const { pending, logout } = useAuth();
 
@@ -164,6 +173,20 @@ async function openSupport(): Promise<void> {
     /* Neutral circle while the image loads: no flash, no layout shift. */
     background: var(--color-surface);
     object-fit: cover;
+}
+
+/* The letter stands in for a missing picture. Accent pair rather than the
+   surface one: both themes define it with contrast already checked, so the
+   corner reads the same in light and dark without a second set of tokens. */
+.header__avatar--initial {
+    display: grid;
+    place-items: center;
+    background: var(--color-accent);
+    color: var(--color-accent-fg);
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+    user-select: none;
 }
 
 .header__nickname {

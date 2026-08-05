@@ -153,7 +153,7 @@ describe('UserHeader', () => {
         expect(avatar[0].props.src).toBe(USER.avatarUrl);
     });
 
-    it('falls back to the neutral circle instead of a broken image', async () => {
+    it('falls back to the first letter instead of a broken image', async () => {
         // Empty is what whoami() and getAuthState() produce for an avatar the
         // https guard rejected, not only for an account without a picture.
         const { container } = await mountHeader({ ...USER, avatarUrl: '' });
@@ -162,5 +162,13 @@ describe('UserHeader', () => {
         expect(avatar).toHaveLength(1);
         expect(avatar[0].tag).not.toBe('img');
         expect(avatar[0].props.src).toBeUndefined();
+        expect(avatar[0].children[0]?.text).toBe('T');
+    });
+
+    it('takes one whole symbol from a nickname that starts with an emoji', async () => {
+        // Array.from, not [0]: indexing a surrogate pair would draw half of it.
+        const { container } = await mountHeader({ ...USER, avatarUrl: '', nickname: '🍥maki' });
+
+        expect(findAll(container, 'header__avatar')[0].children[0]?.text).toBe('🍥');
     });
 });
