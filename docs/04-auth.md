@@ -132,7 +132,7 @@ grant_type=refresh_token&client_id=...&client_secret=...&refresh_token=...
 невозможным честную интеграцию для клиентов, которые физически не могут
 хранить секрет, — браузерных расширений и мобильных приложений.
 
-Что проверено на живом API (приложение «ShikiFav», id 2175):
+Что проверено на живом API (приложение «ShikiFAV», id 2175):
 
 1. /oauth/authorize с code_challenge + code_challenge_method=S256 проходит
    нормально — PKCE на стороне authorize работает.

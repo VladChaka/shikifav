@@ -9,7 +9,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 def gql(q):
     req = urllib.request.Request('https://shikimori.io/api/graphql',
         data=json.dumps({'query': q}).encode(),
-        headers={'Content-Type': 'application/json', 'User-Agent': 'ShikiFav'})
+        headers={'Content-Type': 'application/json', 'User-Agent': 'ShikiFAV'})
     return json.load(urllib.request.urlopen(req, timeout=20))['data']['animes']
 
 search = gql('{animes(search:"kimetsu", limit:6, order:popularity){id name russian kind score status episodes episodesAired airedOn{year} poster{miniUrl mini2xUrl} url}}')

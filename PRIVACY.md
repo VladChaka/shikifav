@@ -1,8 +1,8 @@
-# Политика конфиденциальности ShikiFav
+# Политика конфиденциальности ShikiFAV
 
 Дата последнего изменения: 2026-08-05
 
-ShikiFav — расширение для Chrome, которое даёт работать со списками аниме, манги и ранобэ на [Shikimori](https://shikimori.io) без открытия сайта.
+ShikiFAV — расширение для Chrome, которое даёт работать со списками аниме, манги и ранобэ на [Shikimori](https://shikimori.io) без открытия сайта.
 
 ## Коротко
 
@@ -102,7 +102,7 @@ ShikiFav — расширение для Chrome, которое даёт раб�
 
 Last updated: 2026-08-05
 
-ShikiFav is a Chrome extension for managing your [Shikimori](https://shikimori.io) anime, manga and light-novel lists without opening the site.
+ShikiFAV is a Chrome extension for managing your [Shikimori](https://shikimori.io) anime, manga and light-novel lists without opening the site.
 
 **The extension collects no personal data and shows no ads.** There is no server behind it: your lists, scores and progress stay on Shikimori, tokens and settings stay in your browser.
 

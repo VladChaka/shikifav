@@ -65,7 +65,7 @@ def render(
     monogram = Image.new('RGB', shape.size, FOREGROUND)
 
     wordmark_font = ImageFont.truetype(str(FONT_BOLD), wordmark_px)
-    w_left, w_top, w_right, w_bottom = draw.textbbox((0, 0), 'ShikiFav', font=wordmark_font)
+    w_left, w_top, w_right, w_bottom = draw.textbbox((0, 0), 'ShikiFAV', font=wordmark_font)
     wordmark_w, wordmark_h = w_right - w_left, w_bottom - w_top
 
     gap = round(monogram_px * 0.28)
@@ -89,7 +89,7 @@ def render(
     image.paste(monogram, (x, y + (lockup_h - monogram_px) // 2), shape)
     draw.text(
         (x + monogram_px + gap - w_left, y + (lockup_h - wordmark_h) // 2 - w_top),
-        'ShikiFav',
+        'ShikiFAV',
         font=wordmark_font,
         fill=FOREGROUND,
     )

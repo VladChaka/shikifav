@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
   <!--
-    ShikiFav — the owner's S+F monogram, simplified source for 16 and 32 px.
+    ShikiFAV — the owner's S+F monogram, simplified source for 16 and 32 px.
     Base drawing: icon.svg. Raster pipeline: scripts/icons.sh.
 
     The white sheet is part of the drawing, not transparency. It also has to

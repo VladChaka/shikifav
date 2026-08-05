@@ -36,12 +36,12 @@ jobs:
           # baseurl comes from the repository name: the site lives under /<repo>/.
           {
             printf 'baseurl: "/%s"\n' "${GITHUB_REPOSITORY#*/}"
-            printf 'description: "Политика конфиденциальности ShikiFav"\n'
+            printf 'description: "Политика конфиденциальности ShikiFAV"\n'
             printf 'theme: jekyll-theme-primer\n'
             printf 'lang: ru\n'
           } > .pages-src/_config.yml
           {
-            printf -- '---\nlayout: default\ntitle: "Политика конфиденциальности ShikiFav"\n---\n\n'
+            printf -- '---\nlayout: default\ntitle: "Политика конфиденциальности ShikiFAV"\n---\n\n'
             cat PRIVACY.md
           } > .pages-src/index.md
           # Without CNAME in the build output the custom domain is dropped on the next deploy.

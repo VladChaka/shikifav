@@ -15,7 +15,7 @@ const statusesBook = {
 // No i18n libraries: the extension is single-user and Russian-only.
 export const i18n = {
     app: {
-        name: 'ShikiFav',
+        name: 'ShikiFAV',
     },
     login: {
         lead: 'Войдите, чтобы управлять своими списками',
@@ -257,10 +257,10 @@ export const i18n = {
         // only makes sense after a list of methods.
         supportLabel: 'Поддержать разработку',
         supportHint:
-            'ShikiFav бесплатен и без рекламы. Если он экономит вам время, разработку можно поддержать — это не обязательно.',
+            'ShikiFAV бесплатен и без рекламы. Если он экономит вам время, разработку можно поддержать — это не обязательно.',
         supportEmptyLabel: 'Как помочь',
         supportEmptyHint:
-            'ShikiFav бесплатен и без рекламы. Денег он не просит — но помочь проекту всё равно можно.',
+            'ShikiFAV бесплатен и без рекламы. Денег он не просит — но помочь проекту всё равно можно.',
         helpLabel: 'Как ещё помочь',
         // Wording of the free ways to help; their ids and (optional) addresses
         // live in src/lib/donations.ts. The note follows the name after an em

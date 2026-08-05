@@ -28,7 +28,7 @@ export default defineConfig({
     // left to chance.
     vite: () => ({ build: { assetsInlineLimit: 0 } }),
     manifest: (env) => ({
-        name: 'ShikiFav',
+        name: 'ShikiFAV',
         // Explicit description: without it WXT falls back to the English
         // `description` from package.json. Chrome Web Store caps it at 132
         // chars; this one is 116. Kept identical to the store listing's short

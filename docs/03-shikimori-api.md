@@ -310,14 +310,14 @@ GET {origin}/api/users/whoami
     # 1) mylist + kind вместе: ожидаются ТОЛЬКО мои тайтлы из «Читаю» и ТОЛЬКО ранобэ
     #    (kind = light_novel | novel), у каждого userRate ненулевой, status=watching
     curl -s -X POST https://shikimori.io/api/graphql \
-      -H 'Content-Type: application/json' -H 'User-Agent: ShikiFav' \
+      -H 'Content-Type: application/json' -H 'User-Agent: ShikiFAV' \
       -H 'Authorization: Bearer <живой access token>' \
       -d '{"query":"{ mangas(mylist: \"watching\", kind: \"light_novel,novel\", limit: 5) { id name kind userRate { id status chapters score } } }"}'
 
     # 2) контрольный, тот же mylist БЕЗ kind: по-прежнему только мои «Читаю»,
     #    но в выдаче манга и ранобэ вместе
     curl -s -X POST https://shikimori.io/api/graphql \
-      -H 'Content-Type: application/json' -H 'User-Agent: ShikiFav' \
+      -H 'Content-Type: application/json' -H 'User-Agent: ShikiFAV' \
       -H 'Authorization: Bearer <живой access token>' \
       -d '{"query":"{ mangas(mylist: \"watching\", limit: 5) { id name kind userRate { id status chapters score } } }"}'
     ```
@@ -330,7 +330,7 @@ GET {origin}/api/users/whoami
     # 1) целевой: ожидаются ТОЛЬКО мои тайтлы из «Смотрю»/«Пересматриваю» и ТОЛЬКО онгоинги
     #    (status=ongoing у каждого), userRate ненулевой
     curl -s -X POST https://shikimori.io/api/graphql \
-      -H 'Content-Type: application/json' -H 'User-Agent: ShikiFav' \
+      -H 'Content-Type: application/json' -H 'User-Agent: ShikiFAV' \
       -H 'Authorization: Bearer <живой access token>' \
       -d '{"query":"{ animes(mylist: \"watching,rewatching\", status: \"ongoing\", limit: 50) { id name status nextEpisodeAt episodes episodesAired userRate { id status episodes } } }"}'
 
@@ -338,7 +338,7 @@ GET {origin}/api/users/whoami
     #    но в выдаче вместе с онгоингами есть released — значит фильтр из запроса 1 сработал,
     #    а не совпал с содержимым списка
     curl -s -X POST https://shikimori.io/api/graphql \
-      -H 'Content-Type: application/json' -H 'User-Agent: ShikiFav' \
+      -H 'Content-Type: application/json' -H 'User-Agent: ShikiFAV' \
       -H 'Authorization: Bearer <живой access token>' \
       -d '{"query":"{ animes(mylist: \"watching,rewatching\", limit: 50) { id name status userRate { id status } } }"}'
     ```
@@ -352,7 +352,7 @@ GET {origin}/api/users/whoami
     ```
     # 1) создать тестовую запись (ожидается 201; из тела сохранить "id" — это <rate_id>)
     curl -s -X POST https://shikimori.io/api/v2/user_rates \
-      -H 'Content-Type: application/json' -H 'User-Agent: ShikiFav' \
+      -H 'Content-Type: application/json' -H 'User-Agent: ShikiFAV' \
       -H 'Authorization: Bearer <живой access token>' \
       -d '{"user_rate":{"user_id":<мой id из whoami>,"target_id":<id манги>,"target_type":"Manga","status":"planned"}}'
 
@@ -360,11 +360,11 @@ GET {origin}/api/users/whoami
     #    volumes остался 0); заодно проверить, что chapters/volumes/episodes/score
     #    присутствуют в теле и являются числами (не null/строки)
     curl -s -X POST https://shikimori.io/api/v2/user_rates/<rate_id>/increment \
-      -H 'User-Agent: ShikiFav' -H 'Authorization: Bearer <живой access token>'
+      -H 'User-Agent: ShikiFAV' -H 'Authorization: Bearer <живой access token>'
 
     # 3) удалить тестовую запись (ожидается 204)
     curl -s -o /dev/null -w '%{http_code}\n' -X DELETE https://shikimori.io/api/v2/user_rates/<rate_id> \
-      -H 'User-Agent: ShikiFav' -H 'Authorization: Bearer <живой access token>'
+      -H 'User-Agent: ShikiFAV' -H 'Authorization: Bearer <живой access token>'
     ```
     Результат: подтверждено функционально smoke-ом владельца 2026-07-27 («всё работает»): «+1 глава» в popup инкрементировал именно главы, значения совпадали с сайтом; реконсиляция UI по chapters из тела ответа отработала (NaN/undefined не наблюдалось) — форма тела increment для манги косвенно подтверждена. Формальный REST-цикл create→increment→delete не прогонялся; команды выше оставлены на случай перепроверки.
   - **Contingency (не понадобился):** если бы increment бампил НЕ chapters — «+1» для Manga делался бы через `PATCH /api/v2/user_rates/{rate_id}` с телом `{"user_rate":{"chapters":<progress+1>}}`. Итог: остаёмся на `increment`.
@@ -378,9 +378,9 @@ GET {origin}/api/users/whoami
   - НЕТ (Chrome 150, проверка владельца 2026-07-22): кастомный UA из fetch в MV3 SW подменяется на браузерный `Mozilla/5.0 ...` → включён DNR-fallback (permission `declarativeNetRequestWithHostAccess`, правило id=1 в `src/lib/api/user-agent-rule.ts`).
   - Как проверялось: временный дев-код в `entrypoints/background.ts` (`TEMP UA-check (task 6)`, удалён 2026-07-22 после подтверждения) отправлял один запрос, заголовки смотрелись в DevTools service worker'а → Network → Request Headers → `User-Agent`.
 - [x] DNR-правило реально подменяет UA на APP_NAME
-  - ДА (Chrome 150, проверка владельца 2026-07-22): в Request Headers боевого запроса к shikimori.io виден `User-Agent: ShikiFav`. TEMP UA-check из `entrypoints/background.ts` удалён.
+  - ДА (Chrome 150, проверка владельца 2026-07-22): в Request Headers боевого запроса к shikimori.io виден `User-Agent: ShikiFAV`. TEMP UA-check из `entrypoints/background.ts` удалён.
 - [ ] DNR-правило НЕ трогает запросы самого сайта (после правки `excludedInitiatorDomains`, 2026-08-04)
-  - Как проверять: открыть shikimori.io обычной вкладкой при установленной сборке, DevTools вкладки → Network → любой XHR страницы → Request Headers → `User-Agent` должен быть браузерным (`Mozilla/5.0 ...`), а не `ShikiFav`. Заодно убедиться, что в DevTools service worker'а запросы расширения по-прежнему уходят с `ShikiFav`.
+  - Как проверять: открыть shikimori.io обычной вкладкой при установленной сборке, DevTools вкладки → Network → любой XHR страницы → Request Headers → `User-Agent` должен быть браузерным (`Mozilla/5.0 ...`), а не `ShikiFAV`. Заодно убедиться, что в DevTools service worker'а запросы расширения по-прежнему уходят с `ShikiFAV`.
 - [x] Отвечает ли API на shikimori.io идентично shikimori.one, включая Bearer-авторизацию (иначе оставить в настройках только .one)
   - Bearer на .io подтверждён живым входом 2026-07-22 (token + whoami на .io, это дефолтный origin). GraphQL на .io подтверждён 2026-07-23 (интроспекция + публичный поиск animes/mangas). Прямое сравнение с .one не требуется: .one отдаёт 301 на .io и как API-origin непригоден (см. заметку «301 на shikimori.one» выше).
 - [x] Поддержка PKCE сервером (детали в docs/04 §5)
