@@ -1,3 +1,4 @@
+import { httpsHref } from '../external-url';
 import { getSettings } from '../storage';
 import { apiRequest } from './http';
 import type { ApiError, SearchType } from './types';
@@ -94,8 +95,10 @@ export async function fetchPosters(
 }
 
 // Relative path + origin from the settings (CLAUDE.md rule 4): the domain is
-// never written out in code. An absolute https url is taken as is, in case the
-// API ever starts returning one; anything else is dropped.
+// never written out in code. An absolute url goes through the shared guard
+// (src/lib/external-url.ts) instead of a second literal spelling of the same
+// rule — this value ends up in an <img src>, which is exactly what that guard
+// exists for; anything it refuses is dropped.
 function posterUrl(item: RestTitle, origin: string): string | null {
     const path = item.image?.[POSTER_SIZE];
     if (typeof path !== 'string' || path === '' || path.startsWith(MISSING_PREFIX)) {
@@ -104,5 +107,5 @@ function posterUrl(item: RestTitle, origin: string): string | null {
     if (path.startsWith('/')) {
         return `${origin}${path}`;
     }
-    return path.startsWith('https://') ? path : null;
+    return httpsHref(path);
 }
