@@ -29,64 +29,109 @@
                 {{ apiErrorMessage(error) }}
             </p>
 
-            <TabBar
-                :active="activeTab"
-                @update:active="selectTab"
-            />
+            <!-- Everything the «Связанные» overlay covers: the tab row and the
+                 tab content, never the header (Ф12, design card
+                 screens/related). The tabs stay mounted under it — a covered
+                 tab keeps its state and its scroll position, which is what
+                 makes the return one step and not a reload. -->
+            <div class="app__body">
+                <!-- Everything under the overlay is inert while it is open: without
+                     it Tab walks straight out of the screen into the covered
+                     tab, and a screen reader reads rows the user cannot see.
+                     Bound to `true`/`undefined`, never to `false` — `inert` is
+                     not in Vue's special-boolean list, so `:inert="false"` would
+                     render inert="false" and, since presence is what counts,
+                     freeze the tabs permanently. `undefined` drops the attribute
+                     instead. -->
+                <div
+                    class="app__tabs"
+                    :inert="relatedTarget ? true : undefined"
+                >
+                    <TabBar
+                        :active="activeTab"
+                        @update:active="selectTab"
+                    />
 
-            <SearchTab
-                v-show="activeTab === 'search'"
-                :model-value="searchQuery"
-                :search-type="searchType"
-                @update:model-value="setQuery"
-                @update:search-type="setSearchType"
-            >
-                <SearchResults
-                    v-model:open-menu-key="openMenuKey"
-                    :items="searchItems"
-                    :status="searchStatus"
-                    :error="searchError"
-                    :busy-ids="busyIds"
-                    :warnings="warnings"
-                    @retry="retry"
-                    @add="onQuickAdd"
-                    @set-status="onSetStatus"
-                    @remove="onRemove"
+                    <SearchTab
+                        v-show="activeTab === 'search'"
+                        :model-value="searchQuery"
+                        :search-type="searchType"
+                        @update:model-value="setQuery"
+                        @update:search-type="setSearchType"
+                    >
+                        <SearchResults
+                            v-model:open-menu-key="openMenuKey"
+                            :items="searchItems"
+                            :status="searchStatus"
+                            :error="searchError"
+                            :busy-ids="busyIds"
+                            :warnings="warnings"
+                            can-open-related
+                            @retry="retry"
+                            @add="onQuickAdd"
+                            @set-status="onSetStatus"
+                            @remove="onRemove"
+                            @open-related="openRelatedFromCard"
+                        />
+                    </SearchTab>
+
+                    <MyListsTab
+                        v-show="activeTab === 'lists'"
+                        :items="listItems"
+                        :list-status="listStatus"
+                        :error-text="listErrorText"
+                        :has-more="listHasMore"
+                        :loading-more="listLoadingMore"
+                        :filter-type="listFilterType"
+                        :filter-status="listFilterStatus"
+                        :busy-ids="listBusyIds"
+                        :suggest-ids="listSuggestIds"
+                        :warnings="listWarnings"
+                        @update:filter-type="setListType"
+                        @update:filter-status="setListStatus"
+                        @load-more="loadMoreList"
+                        @retry="retryList"
+                        @increment="incrementRate"
+                        @set-progress="setRateProgress"
+                        @set-score="setRateScore"
+                        @change-status="changeRateStatus"
+                        @remove="removeRate"
+                        @mark-completed="markRateCompleted"
+                        @dismiss-suggest="dismissRateSuggest"
+                        @open-related="openRelatedFromRow"
+                    />
+
+                    <CalendarTab
+                        v-show="activeTab === 'calendar'"
+                        :days="calendarDays"
+                        :screen-status="calendarStatus"
+                        :error-text="calendarErrorText"
+                        @retry="retryCalendar"
+                    />
+                </div>
+
+                <!-- v-if, not v-show: the overlay is entered rarely, and while
+                     it is closed it must cost the popup nothing — neither a
+                     row in the DOM nor a document keydown listener. -->
+                <RelatedScreen
+                    v-if="relatedTarget"
+                    :target="relatedTarget"
+                    :screen-status="relatedStatus"
+                    :error-text="relatedErrorText"
+                    :groups="relatedGroups"
+                    :shown="relatedShown"
+                    :total="relatedTotal"
+                    :has-more="relatedHasMore"
+                    :busy-ids="relatedBusyIds"
+                    :warnings="relatedWarnings"
+                    @close="closeRelated"
+                    @retry="retryRelated"
+                    @load-more="loadMoreRelated"
+                    @add="quickAddRelated"
+                    @set-status="setRelatedStatus"
+                    @remove="removeRelated"
                 />
-            </SearchTab>
-
-            <MyListsTab
-                v-show="activeTab === 'lists'"
-                :items="listItems"
-                :list-status="listStatus"
-                :error-text="listErrorText"
-                :has-more="listHasMore"
-                :loading-more="listLoadingMore"
-                :filter-type="listFilterType"
-                :filter-status="listFilterStatus"
-                :busy-ids="listBusyIds"
-                :suggest-ids="listSuggestIds"
-                :warnings="listWarnings"
-                @update:filter-type="setListType"
-                @update:filter-status="setListStatus"
-                @load-more="loadMoreList"
-                @retry="retryList"
-                @increment="incrementRate"
-                @set-progress="setRateProgress"
-                @set-score="setRateScore"
-                @change-status="changeRateStatus"
-                @remove="removeRate"
-                @mark-completed="markRateCompleted"
-                @dismiss-suggest="dismissRateSuggest"
-            />
-
-            <CalendarTab
-                v-show="activeTab === 'calendar'"
-                :days="calendarDays"
-                :screen-status="calendarStatus"
-                :error-text="calendarErrorText"
-                @retry="retryCalendar"
-            />
+            </div>
 
             <!-- :key re-mounts the toast, restarting its auto-close timer even
                  when the same text is shown twice in a row. -->
@@ -103,10 +148,11 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue';
+import { nextTick, onMounted, ref, watch } from 'vue';
 import CalendarTab from '@/src/components/CalendarTab.vue';
 import LoginScreen from '@/src/components/LoginScreen.vue';
 import MyListsTab from '@/src/components/MyListsTab.vue';
+import RelatedScreen from '@/src/components/RelatedScreen.vue';
 import SearchResults from '@/src/components/SearchResults.vue';
 import SearchTab from '@/src/components/SearchTab.vue';
 import TabBar from '@/src/components/TabBar.vue';
@@ -117,7 +163,10 @@ import { reportEvent } from '@/src/lib/analytics-report';
 import { useAuth } from '@/src/composables/use-auth';
 import { useCalendar } from '@/src/composables/use-calendar';
 import { useLists } from '@/src/composables/use-lists';
+import { useRelated } from '@/src/composables/use-related';
+import type { RelatedTarget } from '@/src/composables/use-related';
 import { useSearchScreen } from '@/src/composables/use-search-screen';
+import type { RateRow, TitleCard } from '@/src/lib/api/types';
 import {
     DEFAULT_SETTINGS,
     FALLBACK_TAB,
@@ -193,6 +242,79 @@ const {
     activate: activateCalendar,
     retry: retryCalendar,
 } = useCalendar();
+
+// «Связанные» (US-11): an overlay over the tabs, opened from a search card or a
+// list row. Nothing here runs until one of them is clicked — the composable
+// sends its single request on open() and never on mount, so a popup that never
+// visits the screen still costs 0 requests (docs/06, DoD of phase 12).
+const {
+    target: relatedTarget,
+    screenStatus: relatedStatus,
+    errorText: relatedErrorText,
+    groups: relatedGroups,
+    shown: relatedShown,
+    total: relatedTotal,
+    hasMore: relatedHasMore,
+    busyIds: relatedBusyIds,
+    warnings: relatedWarnings,
+    open: openRelated,
+    close: closeRelatedScreen,
+    loadMore: loadMoreRelated,
+    retry: retryRelated,
+    onSetStatus: setRelatedStatus,
+    onQuickAdd: quickAddRelated,
+    onRemove: removeRelated,
+} = useRelated(showToast);
+
+// The control the overlay was opened from, remembered so the caret can go back
+// to it (docs/06, Ф12-8). It is read off the focused element rather than passed
+// down, because the two entry points of one row are two different elements: the
+// word in the line focuses itself by being clicked, and the StatusMenu item
+// hands the focus to its trigger before emitting (TitleCard/RateRow.onRelated).
+// Structural typing instead of `instanceof HTMLElement`: the component tests run
+// without a DOM, where that global does not exist.
+let relatedReturnFocus: { focus: () => void } | null = null;
+
+function focusableActiveElement(): { focus: () => void } | null {
+    const active: unknown = typeof document === 'undefined' ? null : document.activeElement;
+    const candidate = active as { focus?: unknown } | null;
+    return typeof candidate?.focus === 'function' ? (candidate as { focus: () => void }) : null;
+}
+
+function openRelatedScreen(target: RelatedTarget): void {
+    relatedReturnFocus = focusableActiveElement();
+    openRelated(target);
+}
+
+// A search card: its `id` is the title id the screen asks about.
+function openRelatedFromCard(card: TitleCard): void {
+    openRelatedScreen({
+        targetId: card.id,
+        targetType: card.targetType,
+        name: card.name,
+        russian: card.russian,
+    });
+}
+
+// A list row: `targetId` is the title, `rateId` is my rate over it — the screen
+// wants the former.
+function openRelatedFromRow(row: RateRow): void {
+    openRelatedScreen({
+        targetId: row.targetId,
+        targetType: row.targetType,
+        name: row.name,
+        russian: row.russian,
+    });
+}
+
+function closeRelated(): void {
+    closeRelatedScreen();
+    const control = relatedReturnFocus;
+    relatedReturnFocus = null;
+    // After the overlay is gone: the control is behind it until Vue has patched
+    // the tree, and focusing a covered element would scroll the tab underneath.
+    void nextTick(() => control?.focus());
+}
 
 // Active top-level tab (docs/05). Which tab opens is the `startTab` setting:
 // 'last' restores session.lastTab, a tab name pins that tab (Ф6-20, Ф7-9). The
@@ -329,6 +451,33 @@ watch(
     display: flex;
     flex-direction: column;
     height: 100%;
+}
+
+/* Positioning context of the «Связанные» overlay (Ф12): it is `position:
+   absolute; inset: 0` inside this box, so it covers the tab row and the tab
+   content and leaves the header above it — ⚙ and «Выйти» must stay reachable
+   from every screen (design card screens/related). Otherwise the same flex
+   column the tabs were direct children of, so the layout is unchanged.
+   Nothing here or above may get a `transform`: it would become the containing
+   block of the fixed StatusMenu and take every popover with it
+   (src/composables/use-popover-position.ts). */
+.app__body {
+    position: relative;
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-height: 0;
+}
+
+/* Carries what the tab row and the tab content used to get from .app__body, so
+   wrapping them for `inert` costs no layout change: the flex column is simply
+   one level deeper, and .app__body keeps only the positioning context the
+   overlay needs. */
+.app__tabs {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-height: 0;
 }
 
 .app__error {

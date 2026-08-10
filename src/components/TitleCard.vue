@@ -56,7 +56,10 @@
                 {{ meta }}
             </p>
 
-            <div class="card__control">
+            <div
+                class="card__control"
+                :class="{ 'card__control--two': canOpenRelated }"
+            >
                 <!-- Not in my list: split button — primary part adds with the
                      quickStatus setting in one click, the caret opens the full
                      status menu (docs/05). -->
@@ -73,6 +76,7 @@
                         {{ addLabel }}
                     </button>
                     <button
+                        ref="menuTrigger"
                         class="card__caret"
                         type="button"
                         :disabled="busy"
@@ -87,6 +91,7 @@
                      click opens the menu. -->
                 <button
                     v-else
+                    ref="menuTrigger"
                     class="card__badge badge"
                     :class="`st-${card.userRate.status}`"
                     type="button"
@@ -106,12 +111,34 @@
                     >
                 </button>
 
+                <!-- Ф12, first approved way into «Связанные»: a word at the
+                     opposite end of the same line. Not disabled by `busy` —
+                     looking at the links of a title while a write is in flight
+                     is nobody's business but the reader's. -->
+                <button
+                    v-if="canOpenRelated"
+                    class="card__related"
+                    type="button"
+                    :aria-label="i18n.related.open"
+                    :title="i18n.related.open"
+                    @click="emit('open-related')"
+                >
+                    {{ i18n.related.openLabel }}
+                    <span
+                        class="card__related-chevron"
+                        aria-hidden="true"
+                        >›</span
+                    >
+                </button>
+
                 <StatusMenu
                     v-if="menuOpen"
                     :current="card.userRate?.status ?? null"
                     :media="media"
+                    :with-related="canOpenRelated"
                     @select="onSelect"
                     @remove="onRemove"
+                    @related="onRelated"
                     @close="emit('update:menuOpen', false)"
                 />
             </div>
@@ -129,7 +156,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import StatusMenu from '@/src/components/StatusMenu.vue';
 import posterFallback from '@/src/assets/poster-fallback.png';
 import { useSettings } from '@/src/composables/use-settings';
@@ -151,8 +178,17 @@ const props = withDefaults(
         // Whether this card's status menu is open (single-open coordination
         // lives in the list owner via update:menuOpen).
         menuOpen?: boolean;
+        // Ф12: draw the two ways into «Связанные» (the word in the action line
+        // and the StatusMenu item). Nothing about the card's DATA gates them —
+        // there is no franchise check, a title without links answers with a
+        // text (design card components/title-card). This is about the SHELL:
+        // the overlay lives inside the popup, and the full-screen search page
+        // renders the very same card with nowhere to open it. Off by default,
+        // so a host that cannot show the screen cannot show a dead control
+        // either.
+        canOpenRelated?: boolean;
     }>(),
-    { busy: false, warning: null, menuOpen: false },
+    { busy: false, warning: null, menuOpen: false, canOpenRelated: false },
 );
 
 const emit = defineEmits<{
@@ -163,8 +199,15 @@ const emit = defineEmits<{
     // "create with that status", for a card with userRate — "update".
     'set-status': [status: UserRateStatus];
     remove: [];
+    // Ф12: both ways into «Связанные» end here; the owner turns the card into a
+    // target and opens the overlay.
+    'open-related': [];
     'update:menuOpen': [open: boolean];
 }>();
+
+// The status menu trigger — the caret or the badge, whichever the card is
+// showing. Needed only to hand the caret back: see onRelated().
+const menuTrigger = ref<HTMLElement | null>(null);
 
 // Which name goes first is a setting (docs/05 «Названия»); the card data keeps
 // both names, so switching the setting re-renders without a refetch.
@@ -282,6 +325,16 @@ function onRemove(): void {
     emit('update:menuOpen', false);
     emit('remove');
 }
+
+// The overlay owes the caret back to the control it was opened from, and it
+// reads that control off document.activeElement. Through the menu that would be
+// the item that is about to unmount, so the trigger takes the focus first —
+// synchronously, before the event leaves the card.
+function onRelated(): void {
+    emit('update:menuOpen', false);
+    menuTrigger.value?.focus();
+    emit('open-related');
+}
 </script>
 
 <style scoped lang="scss">
@@ -398,6 +451,47 @@ a.card__poster-box:hover .card__poster {
     align-self: flex-start;
     margin-top: auto;
     padding-top: 6px;
+}
+
+/* Ф12: with the entry control the action line becomes a row — the write control
+   keeps the left edge, the navigation is pushed to the opposite end. Stretched
+   instead of shrink-to-fit, because that push is a margin-left: auto. The left
+   edge of the box (and so the placement of the menu anchored to it) does not
+   move: a column flex child starts at the same x either way. */
+.card__control--two {
+    display: flex;
+    align-items: center;
+    align-self: stretch;
+    gap: 10px;
+}
+
+/* A word, not an icon: the line already carries a caret and a badge chevron,
+   and a third glyph would have to be guessed. Muted and borderless — the one
+   primary button of the card stays the primary one. */
+.card__related {
+    display: inline-flex;
+    align-items: center;
+    flex-shrink: 0;
+    gap: 3px;
+    margin-left: auto;
+    padding: 2px 0;
+    border: none;
+    background: transparent;
+    color: var(--color-fg-muted);
+    font: inherit;
+    font-size: 11.5px;
+    font-weight: 600;
+    white-space: nowrap;
+
+    &:hover {
+        color: var(--color-fg);
+        text-decoration: underline;
+    }
+}
+
+.card__related-chevron {
+    font-size: 11px;
+    opacity: 0.7;
 }
 
 /* Split button "+ Запланировано ▾" (components-title-card card). */

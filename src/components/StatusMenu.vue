@@ -26,6 +26,31 @@
                 >✓</span
             >
         </button>
+        <!-- Ф12, second approved way into «Связанные»: after the statuses (the
+             reason the menu was opened stays first under the cursor) and before
+             the removal, in ascending price of a misclick. Rendered only where
+             there is an overlay to open — the related screen itself passes
+             nothing, because it must not lead from one title's links to
+             another's (docs/06, decision 4). -->
+        <button
+            v-if="withRelated"
+            class="menu__item menu__item--nav"
+            type="button"
+            role="menuitem"
+            @click="emit('related')"
+        >
+            <span
+                class="menu__glyph"
+                aria-hidden="true"
+                >⧉</span
+            >
+            {{ i18n.related.open }}
+            <span
+                class="menu__chevron"
+                aria-hidden="true"
+                >›</span
+            >
+        </button>
         <button
             v-if="current !== null"
             class="menu__item menu__item--danger"
@@ -34,7 +59,7 @@
             @click="emit('remove')"
         >
             <span
-                class="menu__cross"
+                class="menu__glyph"
                 aria-hidden="true"
                 >×</span
             >
@@ -51,8 +76,8 @@ import { i18n, statusLabel } from '@/src/lib/i18n';
 import type { MediaKind } from '@/src/lib/i18n';
 
 // Dropdown with the 6 user rate statuses (US-3 order) + "remove from list"
-// for titles already in my list. Purely presentational: the parent owns the
-// open/closed state and the actual mutation.
+// for titles already in my list + the way into «Связанные» (Ф12). Purely
+// presentational: the parent owns the open/closed state and the actual mutation.
 withDefaults(
     defineProps<{
         // Current status of the title, null when it is not in my list
@@ -61,13 +86,19 @@ withDefaults(
         // Wording variant: anime «Смотрю/Просмотрено», book «Читаю/Прочитано»
         // for manga/ranobe (phase 4).
         media?: MediaKind;
+        // Ф12: show «Связанные тайтлы». Off by default so a menu whose host
+        // cannot open the overlay — the related screen itself, and the
+        // full-screen search page — never draws a dead item; the two hosts
+        // that can say so explicitly.
+        withRelated?: boolean;
     }>(),
-    { media: 'anime' },
+    { media: 'anime', withRelated: false },
 );
 
 const emit = defineEmits<{
     select: [status: UserRateStatus];
     remove: [];
+    related: [];
     close: [];
 }>();
 
@@ -174,12 +205,35 @@ onBeforeUnmount(() => {
     font-size: 12px;
 }
 
+/* Ф12: not a status and it writes nothing — muted, own line above it, and a
+   glyph instead of a colored dot, so the six statuses stay one block. */
+.menu__item--nav {
+    border-top: 1px solid var(--color-border);
+    color: var(--color-fg-muted);
+}
+
+.menu__chevron {
+    margin-left: auto;
+    font-size: 11px;
+    opacity: 0.7;
+}
+
+/* Ф12: the destructive row keeps its line and gains a 6px gap above it. Until
+   now one line was enough — above it stood six interchangeable statuses, and a
+   misclick cost nothing. With navigation to another screen right above it, two
+   neighbours differ in consequence more than any other pair in this UI, so the
+   gap gives 6px of dead zone where a click does nothing. It hangs on the danger
+   row itself, so every menu with a removal looks the same — including the one
+   of the related screen, where the item above is a status again. */
 .menu__item--danger {
+    margin-top: 6px;
     border-top: 1px solid var(--color-border);
     color: var(--color-danger);
 }
 
-.menu__cross {
+/* The column where the statuses draw their dots: ⧉ for the navigation, × for
+   the removal. One width (9px) keeps every label on the same vertical. */
+.menu__glyph {
     flex: 0 0 auto;
     width: 9px;
     text-align: center;

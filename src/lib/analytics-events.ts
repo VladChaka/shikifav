@@ -33,6 +33,14 @@ export type AnalyticsEvent =
     // paths exist to answer exactly this question.
     | { name: 'episode_incremented'; params: { by: 'step' | 'typed' } }
     | { name: 'calendar_opened'; params: Record<string, never> }
+    // The «Связанные» screen (Ф12), reported with the write target of the title
+    // it was opened FROM — 'Anime' vs 'Manga' answers whether the screen is used
+    // from anime or from the manga/ranobe side, and that is the whole question.
+    // The number of links is NOT a parameter and must not become one: a count is
+    // a fingerprint of one specific title (92 links is One Piece and nothing
+    // else), so it would name what the user is reading just as plainly as the id
+    // or the title itself would.
+    | { name: 'related_opened'; params: { type: RateTargetType } }
     | { name: 'context_menu_used'; params: Record<string, never> }
     // Which settings people actually change. Values are only sent for settings
     // whose vocabulary is fixed and impersonal; `origin` and `theme` qualify,

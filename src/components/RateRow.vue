@@ -55,6 +55,31 @@
                         @close="emit('update:scoreOpen', false)"
                     />
                 </div>
+                <!-- Ф12, first approved way into «Связанные». Last in the title
+                     line and deliberately short: here the control is subtracted
+                     from the width of the NAME (45,4px against 79,2 for the
+                     full word), and «Провожающая в последний путь Фрирен» fits
+                     whole only with «Связи» (design card components/rate-row).
+                     `busy` does not lock it: reading the links of a title while
+                     a write is in flight harms nothing. -->
+                <!-- No aria-label here, unlike the card: it would read
+                     «Связанные тайтлы» over the visible «Связи», and an
+                     accessible name that does not contain the visible text
+                     breaks voice control (WCAG 2.5.3). The visible word is the
+                     name; `title` only spells it out on hover. -->
+                <button
+                    class="rate__related"
+                    type="button"
+                    :title="i18n.related.open"
+                    @click="emit('open-related')"
+                >
+                    {{ i18n.related.openLabelShort }}
+                    <span
+                        class="rate__related-chevron"
+                        aria-hidden="true"
+                        >›</span
+                    >
+                </button>
             </div>
 
             <!-- The row itself is the anchor for the absolutely positioned
@@ -128,6 +153,7 @@
                 <!-- Current status badge pill (global .badge/.st-*, compact
                      sizes), click opens the StatusMenu — same as TitleCard. -->
                 <button
+                    ref="statusTriggerEl"
                     class="rate__badge badge"
                     :class="`st-${rate.status}`"
                     type="button"
@@ -150,8 +176,10 @@
                     v-if="statusOpen"
                     :current="rate.status"
                     :media="media"
+                    with-related
                     @select="onStatus"
                     @remove="onRemove"
+                    @related="onRelated"
                     @close="emit('update:statusOpen', false)"
                 />
             </div>
@@ -224,6 +252,11 @@ import { titleHref } from '@/src/lib/title-url';
 //   remove                   — «Удалить из списка» picked in the StatusMenu
 //   mark-completed           — accepted the "перевести в «Просмотрено»?" offer
 //   dismiss-suggest          — postponed that offer
+//   open-related             — Ф12: «Связи» or the StatusMenu item; the owner
+//                              opens the overlay. Unlike TitleCard this row
+//                              needs no permission prop: it exists only inside
+//                              «Мои списки», which exists only in the popup —
+//                              the one shell that has the overlay
 //   update:scoreOpen(open)   — toggle/close the score picker
 //   update:statusOpen(open)  — toggle/close the status menu
 const props = withDefaults(
@@ -253,9 +286,14 @@ const emit = defineEmits<{
     remove: [];
     'mark-completed': [];
     'dismiss-suggest': [];
+    'open-related': [];
     'update:scoreOpen': [open: boolean];
     'update:statusOpen': [open: boolean];
 }>();
+
+// The badge that opens the status menu. Kept only to hand the caret back — see
+// onRelated(); the progress editor has its own trigger ref below.
+const statusTriggerEl = ref<HTMLElement | null>(null);
 
 // Which name goes first is a setting (docs/05 «Названия»). A list row shows one
 // name only, so the second one from displayTitle is deliberately dropped.
@@ -483,6 +521,16 @@ function onRemove(): void {
     emit('update:statusOpen', false);
     emit('remove');
 }
+
+// Same reason as in TitleCard: the overlay gives the caret back to whatever
+// document.activeElement was when it opened, and the menu item it was clicked
+// on is about to unmount — so the badge takes the focus before the event leaves
+// the row.
+function onRelated(): void {
+    emit('update:statusOpen', false);
+    statusTriggerEl.value?.focus();
+    emit('open-related');
+}
 </script>
 
 <style scoped lang="scss">
@@ -600,6 +648,38 @@ a.rate__poster-box:hover .rate__poster {
 
 .rate__score-btn--empty {
     color: var(--color-fg-muted);
+}
+
+/* Ф12 entry control: the same muted borderless word as in the search card, one
+   line up — here it closes the title line instead of the action line. */
+.rate__related {
+    display: inline-flex;
+    align-items: center;
+    flex-shrink: 0;
+    gap: 3px;
+    padding: 2px 0;
+    border: none;
+    background: transparent;
+    color: var(--color-fg-muted);
+    font: inherit;
+    font-size: 11.5px;
+    font-weight: 600;
+    white-space: nowrap;
+
+    &:hover {
+        color: var(--color-fg);
+        text-decoration: underline;
+    }
+
+    /* Tighter ring, as everywhere in this dense row. */
+    &:focus-visible {
+        outline-offset: 1px;
+    }
+}
+
+.rate__related-chevron {
+    font-size: 11px;
+    opacity: 0.7;
 }
 
 .rate__progress-row {

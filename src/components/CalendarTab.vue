@@ -20,7 +20,10 @@
                     :key="day.key"
                     class="calendar__day"
                 >
-                    <h3 class="calendar__day-title">{{ day.label }}</h3>
+                    <!-- Shared with the group heading of «Связанные» (Ф12):
+                         one .list-heading in src/styles/list.scss instead of
+                         two identical scoped copies. -->
+                    <h3 class="list-heading">{{ day.label }}</h3>
                     <CalendarRow
                         v-for="entry in day.entries"
                         :key="entry.item.targetId"
@@ -86,19 +89,5 @@ const emit = defineEmits<{
     min-height: 0;
     overflow-y: auto;
     scrollbar-width: thin;
-}
-
-.calendar__day-title {
-    position: sticky;
-    top: 0;
-    z-index: 1;
-    margin: 0;
-    padding: 6px 12px;
-    border-bottom: 1px solid var(--color-border);
-    background: var(--color-surface);
-    color: var(--color-fg-muted);
-    font-size: 11.5px;
-    font-weight: 600;
-    letter-spacing: 0.02em;
 }
 </style>

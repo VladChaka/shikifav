@@ -76,7 +76,9 @@ function mountTab(props: {
 }
 
 function dayTitles(container: FakeElement): string[] {
-    return findAll(container, 'calendar__day-title').map((el) => textOf(el).trim());
+    // .list-heading since Ф12: the day header shares one rule with the group
+    // header of «Связанные» (src/styles/list.scss).
+    return findAll(container, 'list-heading').map((el) => textOf(el).trim());
 }
 
 afterEach(() => {

@@ -56,6 +56,18 @@ describe('eventForMessage', () => {
         });
     });
 
+    it.each([['Anime'], ['Manga']])(
+        'reports which side the related screen was opened from (%s)',
+        (targetType) => {
+            const event = eventForMessage('titles.related', { targetId: '21', targetType });
+
+            expect(event).toEqual({ name: 'related_opened', params: { type: targetType } });
+            // The host title stays home: neither its id nor — the trap of this
+            // screen — the number of links it has ever enters the event.
+            expect(JSON.stringify(event)).not.toContain('21');
+        },
+    );
+
     it('reports nothing for a patch it has no event for', () => {
         // `text` is a user-written note: there is no event that could carry it,
         // and the mapping stays silent rather than inventing one.

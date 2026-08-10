@@ -1,0 +1,46 @@
+/* Parts shared by the scrolling lists of the popup: the sticky group heading
+   and the «показать ещё» button. Each of them is rendered by two screens — the
+   heading by «Календарь» and «Связанные», the button by «Мои списки» and
+   «Связанные» — and the design cards describe them as one control in both
+   places (screens/related: «заголовок группы — тот же липкий бар, что и
+   заголовок дня календаря»). One rule instead of two copies is what keeps the
+   next tweak from landing on one screen only.
+
+   Separate from foundation.scss for the same reason as badge.scss: the options
+   page and the search page render neither, so they never pull this file in. */
+
+.list-heading {
+    /* Sticky inside its own group, so scrolling swaps the bars one by one; the
+       menus above it are fixed at z-index 10 and stay on top. */
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    /* Flex for the trailing counter of the related screen (margin-left: auto);
+       with a single text child — the calendar day — it renders identically. */
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin: 0;
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--color-border);
+    background: var(--color-surface);
+    color: var(--color-fg-muted);
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+}
+
+.list-more-btn {
+    padding: 6px 20px;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    background: var(--color-surface);
+    color: var(--color-fg);
+    font: inherit;
+    font-size: 13px;
+    font-weight: 600;
+
+    &:hover:not(:disabled) {
+        border-color: var(--color-accent);
+    }
+}

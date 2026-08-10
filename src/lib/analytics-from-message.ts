@@ -52,6 +52,16 @@ export function eventForMessage(type: MessageType, payload: unknown): AnalyticsE
             return { name: 'rate_deleted', params: {} };
         case 'calendar.list':
             return { name: 'calendar_opened', params: {} };
+        case 'titles.related': {
+            // Only the type of the host title: `targetId` names one title and
+            // stops here, exactly like the search query above. The answer is not
+            // looked at either — its length would identify the title on its own
+            // (see the event declaration). Counted per LOAD, not per open: the
+            // screen is cached in memory, so the same title reopened within one
+            // popup session sends no message and reports nothing (use-related).
+            const { targetType } = payload as MessageMap['titles.related']['payload'];
+            return { name: 'related_opened', params: { type: targetType } };
+        }
         default:
             // Everything else is either infrastructure (ping, posters, auth
             // state) or carries something personal by nature. Silence is the

@@ -21,10 +21,12 @@
             :busy="busyIds.has(rateKey(card))"
             :warning="warnings.get(rateKey(card)) ?? null"
             :menu-open="openMenuKey === rateKey(card)"
+            :can-open-related="canOpenRelated"
             @update:menu-open="emit('update:openMenuKey', $event ? rateKey(card) : null)"
             @add="emit('add', card)"
             @set-status="emit('set-status', card, $event)"
             @remove="emit('remove', card)"
+            @open-related="emit('open-related', card)"
         />
     </template>
 </template>
@@ -67,6 +69,9 @@ import { apiErrorMessage, i18n } from '@/src/lib/i18n';
 //   busyIds      — rateKeys with a write in flight (locks that card)
 //   warnings     — rateKey -> inline warning text (revoked edit access)
 //   openMenuKey  — rateKey of the card whose status menu is open, at most one
+//   canOpenRelated — Ф12: the owner can show the «Связанные» overlay, so the
+//                  cards may offer the way in. True in the popup, absent on the
+//                  full-screen search page, which has no overlay to open.
 //
 // Emits:
 //   retry                      — error state's retry button
@@ -74,6 +79,7 @@ import { apiErrorMessage, i18n } from '@/src/lib/i18n';
 //   add(card)                  — one-click add (status = the quickStatus setting)
 //   set-status(card, status)   — status picked in the menu
 //   remove(card)               — removed from my list
+//   open-related(card)         — Ф12: open the links of that card
 withDefaults(
     defineProps<{
         items: TitleCardData[];
@@ -82,11 +88,13 @@ withDefaults(
         busyIds?: ReadonlySet<string>;
         warnings?: ReadonlyMap<string, string>;
         openMenuKey: string | null;
+        canOpenRelated?: boolean;
     }>(),
     {
         error: undefined,
         busyIds: () => new Set(),
         warnings: () => new Map(),
+        canOpenRelated: false,
     },
 );
 
@@ -96,5 +104,6 @@ const emit = defineEmits<{
     add: [card: TitleCardData];
     'set-status': [card: TitleCardData, status: UserRateStatus];
     remove: [card: TitleCardData];
+    'open-related': [card: TitleCardData];
 }>();
 </script>

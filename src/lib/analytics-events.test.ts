@@ -38,6 +38,24 @@ describe('toMeasurementPayload', () => {
         expect(payload.events[0].params.kind).toBe('network');
     });
 
+    it('sends a related screen open as its type and nothing else', () => {
+        // The screen the count would give away: the body must hold the type and
+        // the two params the payload adds itself, and no third fact.
+        const payload = toMeasurementPayload(
+            'abc-123',
+            { name: 'related_opened', params: { type: 'Manga' } },
+            '1.0.0',
+        );
+
+        expect(payload.events[0].name).toBe('related_opened');
+        expect(payload.events[0].params.type).toBe('Manga');
+        expect(Object.keys(payload.events[0].params).sort()).toEqual([
+            'engagement_time_msec',
+            'extension_version',
+            'type',
+        ]);
+    });
+
     it('sends nothing beyond the declared params', () => {
         // The guard against a future event quietly gaining a field: whatever is
         // in the body is either a declared param or one of the two the payload

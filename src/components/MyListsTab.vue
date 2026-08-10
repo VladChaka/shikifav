@@ -44,6 +44,7 @@
                     @remove="emit('remove', row)"
                     @mark-completed="emit('mark-completed', row)"
                     @dismiss-suggest="emit('dismiss-suggest', row)"
+                    @open-related="emit('open-related', row)"
                     @update:score-open="setPopover('score', row.rateId, $event)"
                     @update:status-open="setPopover('status', row.rateId, $event)"
                 />
@@ -52,7 +53,7 @@
                     class="lists__more"
                 >
                     <button
-                        class="lists__more-btn"
+                        class="list-more-btn"
                         type="button"
                         :disabled="loadingMore"
                         @click="emit('load-more')"
@@ -104,6 +105,10 @@ import type { MediaKind } from '@/src/lib/i18n';
 //   remove(row) / mark-completed(row) /
 //   dismiss-suggest(row)                                   — row actions, tagged
 //                                                            with their RateRow
+//   open-related(row)                                      — Ф12: «Связи» / the
+//                                                            StatusMenu item of
+//                                                            the row; the owner
+//                                                            opens the overlay
 const props = withDefaults(
     defineProps<{
         items: RateRowData[];
@@ -157,6 +162,7 @@ const emit = defineEmits<{
     remove: [row: RateRowData];
     'mark-completed': [row: RateRowData];
     'dismiss-suggest': [row: RateRowData];
+    'open-related': [row: RateRowData];
 }>();
 
 // US-3 status order, reused for the filter (default lives in use-lists).
@@ -217,18 +223,6 @@ const statusOptions = computed<readonly ChipOption<UserRateStatus>[]>(() =>
     padding: 12px;
 }
 
-.lists__more-btn {
-    padding: 6px 20px;
-    border: 1px solid var(--color-border);
-    border-radius: 6px;
-    background: var(--color-surface);
-    color: var(--color-fg);
-    font: inherit;
-    font-size: 13px;
-    font-weight: 600;
-
-    &:hover:not(:disabled) {
-        border-color: var(--color-accent);
-    }
-}
+/* The button itself is .list-more-btn (src/styles/list.scss): «Показать ещё»
+   of «Связанные» is the same control, and the design card says so out loud. */
 </style>

@@ -5,7 +5,15 @@ import type { MessageHandlers } from '@/src/lib/messaging';
 import { i18n } from '@/src/lib/i18n';
 import type { AuthState, SearchType, TitleCard } from '@/src/lib/api/types';
 import type { UseSearch } from '@/src/composables/use-search';
-import { clickOn, createApp, createFakeElement, find, findAll, textOf } from './fake-renderer';
+import {
+    clickOn,
+    createApp,
+    createFakeElement,
+    find,
+    findAll,
+    fire,
+    textOf,
+} from './fake-renderer';
 import type { FakeElement } from './fake-renderer';
 
 // Ф5 search page (US-8): opened by the context menu as search.html?q=…, the
@@ -334,5 +342,27 @@ describe('SearchPage (ф.5)', () => {
         // lands back on the error state.
         expect(findAll(container, 'skeleton')).toHaveLength(1);
         await vi.waitFor(() => expect(findAll(container, 'error')).toHaveLength(1));
+    });
+
+    // Ф12-8: «Связанные» is an overlay INSIDE the popup, and this page is not
+    // the popup. The same card component renders here, so both of its ways in
+    // must stay off — a control that cannot open anything is worse than none.
+    it('offers no way into «Связанные»: this shell has no overlay to open', async () => {
+        const { container } = await mountPage('berserk', {
+            'search.titles': async () => ({ items: [card('9', 'Berserk')] }),
+        });
+        await vi.waitFor(() => expect(findAll(container, 'card')).toHaveLength(1));
+
+        expect(findAll(container, 'card__related')).toHaveLength(0);
+
+        // ...and the status menu of that card carries no item either.
+        fire(find(container, 'card__caret'), 'click', {
+            target: find(container, 'card__caret'),
+            stopPropagation: () => {},
+        });
+        await nextTick();
+        expect(findAll(container, 'menu')).toHaveLength(1);
+        expect(findAll(container, 'menu__item--nav')).toHaveLength(0);
+        expect(textOf(find(container, 'menu'))).not.toContain(i18n.related.open);
     });
 });
