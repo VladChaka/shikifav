@@ -18,7 +18,8 @@ interface TokenResponse {
     created_at?: number; // unix seconds
 }
 
-// TODO(verify): confirm the real whoami shape on the first live login (docs/03).
+// Shape confirmed on the first live login, 2026-07-22 (docs/03, checkbox
+// «Форма ответа whoami»): id, nickname and avatar arrive as typed below.
 interface WhoamiResponse {
     id: number;
     nickname: string;

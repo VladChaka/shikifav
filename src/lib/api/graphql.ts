@@ -427,7 +427,8 @@ export function mapAnimeToRateRow(raw: RawMylistAnime): RateRow | null {
 }
 
 // Pure mapper, exported for tests; same userRate==null guard as the anime one.
-// Progress unit is chapters (docs/03 status: increment-for-manga pending).
+// Progress unit is chapters — confirmed by the owner smoke of 2026-07-27
+// (docs/03, checkbox «`increment` для манги»).
 export function mapMangaToRateRow(raw: RawMylistManga): RateRow | null {
     if (raw.userRate === null) {
         return null;

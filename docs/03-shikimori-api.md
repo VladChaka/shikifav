@@ -7,10 +7,11 @@
 // src/lib/config.ts
 export const ORIGINS = ['https://shikimori.one', 'https://shikimori.io'] as const;
 // Дефолтный origin — 'https://shikimori.io' (DEFAULT_ORIGIN в src/lib/config.ts)
-export const APP_NAME = import.meta.env.WXT_SHIKI_APP_NAME as string; // = имя OAuth-приложения (docs/04)
-export const CLIENT_ID = import.meta.env.WXT_SHIKI_CLIENT_ID as string;
-export const CLIENT_SECRET = import.meta.env.WXT_SHIKI_CLIENT_SECRET as string;
+export const APP_NAME: string = import.meta.env.WXT_SHIKI_APP_NAME ?? ''; // = имя OAuth-приложения (docs/04)
+export const CLIENT_ID: string = import.meta.env.WXT_SHIKI_CLIENT_ID ?? '';
+export const CLIENT_SECRET: string = import.meta.env.WXT_SHIKI_CLIENT_SECRET ?? '';
 ```
+Аннотация типа с `?? ''`, а не каст `as string`: переменная окружения объявлена необязательной, и ненастроенный `.env` даёт пустую строку, которую `http.ts` ловит перед первым `fetch` (`APP_NAME is not configured`), а не `undefined` в заголовке.
 Домены сайта менялись (org → one → me → io), поэтому origin хранится в настройках и оба присутствуют в host_permissions.
 
 **301 на shikimori.one (проверка владельца 2026-07-22).** `POST https://shikimori.one/oauth/token` отвечает 301 на shikimori.io; при следовании редиректу браузер превращает POST в GET → 404 (плюс браузеры срезают Authorization на cross-origin редиректах). Поэтому .one сейчас непригоден как API-origin и дефолт переключён на shikimori.io; .one остаётся в настройках на случай очередной смены доменов.
@@ -196,12 +197,12 @@ query CalendarAnimes($limit: PositiveInt, $page: PositiveInt) {
 | `related { anime { <полная карточка> } }` | проходит |
 | `related { anime { <полная> } manga { <полная> } }` | **проходит** (это главный запрос фазы) |
 | `chronology { <полная карточка> }` отдельно | проходит |
-| `related { <оба типа полностью> } + chronology { <полная> }` | **207 — отказ** |
-| `related { <оба полностью> } + chronology { id franchise }` | **210 — отказ** |
+| `related { anime { <полная> } } + chronology { <полная карточка> }` | **207 — отказ** |
+| `related { anime { <полная> } manga { <полная> } } + chronology { id franchise }` | **210 — отказ** |
 
 То есть **`related` и `chronology` в одном запросе не уживаются ни в каком виде** — даже когда у `chronology` просят два скалярных поля. Второй раздел на экране = второй запрос.
 
-Отказ по сложности приходит как `errors[]` при HTTP 200, то есть `unwrapGraphqlResponse` превращает его в `{kind: 'api', status: 200}` и UI показывает пользователю английский текст сервера. Русский текст для этого случая — задача фазы, а не «тишина, которую надо чинить».
+Отказ по сложности приходит как `errors[]` при HTTP 200, то есть `unwrapGraphqlResponse` превращает его в `{kind: 'api', status: 200}` с английским текстом сервера в `message`. До пользователя этот текст **не доходит**: `apiErrorMessage()` для `kind: 'api'` всегда отдаёт общее `i18n.errors.api` («Shikimori ответил ошибкой. Попробуйте ещё раз.»), а серверное `message` читается ровно в одном месте — `src/composables/use-rates.ts`, и только при `status === 422` (валидация записи). Так что экран связанных на отказе по сложности покажет общий русский текст, а конкретная причина останется только в `ApiError.message` — в логи она тоже не попадает (`http.ts` пишет лишь `kind` и `status`, docs/02).
 
 ### `Anime.franchise` / `Manga.franchise`
 `String`, nullable. Слаг вида `fullmetal_alchemist`, `one_piece`, `detective_conan`, `pretty_cure`.
@@ -314,7 +315,7 @@ DELETE {origin}/api/v2/user_rates/{rate_id}   → 204
 ```
 POST {origin}/api/v2/user_rates/{rate_id}/increment
 ```
-Инкрементирует прогресс (у аниме — episodes; у манги — chapters, TODO(verify) — команды owner-verification фазы 4 в чекбоксе «`increment` для манги» ниже; contingency: если бампится не chapters, «+1» для Manga делаем через PATCH `{chapters: progress+1}`).
+Инкрементирует прогресс: у аниме — `episodes`, у манги и ранобэ — `chapters`. Подтверждено smoke владельца 2026-07-27 (чекбокс «`increment` для манги» ниже закрыт), contingency с `PATCH {chapters: progress+1}` не понадобился — «+1» остаётся на `increment`.
 
 ### Сервер сам переводит в `completed` (проверено 2026-07-29)
 **Когда прогресс достигает общего числа серий, Shikimori ставит `status: "completed"` сам — отменить это запросом нельзя.** Проверено живым PATCH владельца на «Провожающая в последний путь Фрирен» (28 эп., прогресс 3, статус `watching`):
@@ -361,12 +362,12 @@ GET {origin}/api/users/whoami
 ## Обработка ошибок API
 | Код | Действие |
 |---|---|
-| 401 | refresh токена → повтор 1 раз → при неудаче logout-состояние |
-| 403 | не хватает scope — проверить, что при авторизации запрошен `user_rates` |
+| 401 | **только в `authorizedRequest`** (`src/lib/api/auth.ts`): refresh токена → повтор 1 раз → при неудаче `clearAuth()` и logout-состояние. Через него идут **записи** (`rates.ts`); чтения (`graphql.ts`, `posters.ts`) зовут `apiRequest` напрямую и на 401 просто отдают `{kind: 'unauthorized'}` без refresh (то же — docs/04 §3, «Где применяется политика п.6») |
+| 403 | не хватает scope — проверить, что при авторизации запрошен `user_rates`. Отдельной ветки в коде нет: маппится в `{kind: 'api', status: 403}` |
 | 404 (user_rate) | запись удалили на сайте → убрать из UI, не фатал |
-| 422 | валидация; показать message из тела ответа |
-| 429 | backoff по правилам limiter (docs/02) |
-| 5xx | тост «Shikimori недоступен», retry только для GET |
+| 422 | валидация; единственный код, у которого `message` из тела ответа реально показывается пользователю (`use-rates.ts`) |
+| 429 | `{kind: 'rate_limited'}` + backoff по правилам limiter (docs/02) — **единственный вид ошибки, который повторяется автоматически** |
+| 5xx | `{kind: 'api', status}` и общий текст `i18n.errors.api` («Shikimori ответил ошибкой. Попробуйте ещё раз.») в состоянии ошибки экрана или в тосте. Отдельного текста «Shikimori недоступен» в `i18n.ts` нет, автоматического повтора для 5xx (в том числе для GET) в `http.ts` тоже: `retryOn429` управляет ровно повтором на 429. Повтор 5xx остаётся ручным — кнопка «Повторить» |
 
 ## Проверить при реализации (результат фиксировать здесь же: чекбокс + заметка)
 - [x] Точные поля типа `Poster` — нужен URL маленького превью для списков (интроспекция)
@@ -408,7 +409,7 @@ GET {origin}/api/users/whoami
     ```
     Если в «Читаю» нет ни одного ранобэ, запрос 1 вернёт пустой список — тогда повторить оба curl со статусом, где ранобэ точно есть (например `planned`).
     Результат: подтверждено функционально smoke-ом владельца 2026-07-27 («всё работает»): вкладки Манга/Ранобэ показывали только свои тайтлы с корректным разделением kind (расширение шлёт `mylist` + `kind` в одном запросе — см. `MYLIST_MANGAS_QUERY`). Формальные curl из пакета выше не прогонялись; при странностях в списках манги перепроверить ими.
-- [ ] Комбинация `mylist` + `status` под Bearer фильтрует по владельцу (календарь, фаза 7)
+- [x] Комбинация `mylist` + `status` под Bearer фильтрует по владельцу (календарь, фаза 7)
   - Отдельно каждый аргумент проверен: `mylist` под Bearer фильтрует по владельцу токена (фаза 3, чекбокс выше), `status: "ongoing"` работает публично (запросы 2026-07-28). Вместе под Bearer — нет.
   - **Owner-verification фазы 7 (Bearer).** Два запроса:
     ```
@@ -429,7 +430,7 @@ GET {origin}/api/users/whoami
     ```
     Результат (владелец, 2026-07-28): **`status` под `mylist` не игнорируется** — тот же `mylist` без `status` вернул 2 тайтла, с `status: "ongoing"` — 0. Строк с чужим статусом или без `userRate` не было.
     **Список статусов через запятую подтверждён тем же прогоном:** по статусам поодиночке `watching` 1, `rewatching` 1, `planned` 2, `on_hold` 0 — то есть `"watching,rewatching"` вернул ровно объединение (2), а не первый статус из списка.
-    **Проверка неполная:** реальная строка календаря (`nextEpisodeAt` + `userRate` под Bearer) не наблюдалась — единственный онгоинг аккаунта лежит в «Запланировано», а тот прогон его не запрашивал. Закрыть при первом же онгоинге в выдаче календаря (пункт smoke-чеклиста фазы 7).
+    **Закрыто 2026-07-29 owner-smoke фазы 7.** В прогоне 2026-07-28 не хватало одного: реальной строки календаря (`nextEpisodeAt` + `userRate` под Bearer) — единственный онгоинг аккаунта лежал в «Запланировано», а тот прогон его не запрашивал. Условие закрытия («первый же онгоинг в выдаче календаря») выполнено на smoke 2026-07-29: календарь на аккаунте владельца показал расписание живыми строками (docs/06, чекбокс owner-verification фазы 7).
   - **Contingency:** если `status` под `mylist` игнорируется (в ответе 1 есть released) → фильтровать по `status` клиентски в маппере календаря. Если `mylist` не принимает два статуса через запятую (ошибка или выдача только по первому) → два запроса (`watching` и `rewatching`) и слияние по `id`; оба идут через общий limiter, суммарно 2 запроса на открытие вкладки.
 - [x] `increment` для манги: главы или что-то другое
   - Ожидает: живой Bearer + фаза 4 («+1» для манги/ранобэ).

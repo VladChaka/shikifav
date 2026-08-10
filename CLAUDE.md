@@ -22,7 +22,7 @@ pnpm compile    # проверка типов (vue-tsc --noEmit)
 pnpm test       # vitest
 pnpm lint       # eslint
 ```
-Две ловушки окружения (подробности — README, раздел 8): `pnpm test` без `.env` падает на `APP_NAME is not configured`, а любая `pnpm`-команда может не стартовать из-за `spawn-sync` в `allowBuilds`.
+Ловушка окружения одна (подробности — README, раздел 8): `pnpm test` без `.env` падает на `APP_NAME is not configured`. Вторая, `spawn-sync` в `allowBuilds`, закрыта — `spawn-sync: false` лежит в отслеживаемом `pnpm-workspace.yaml` (сверено 2026-08-10).
 
 ## Структура
 ```
@@ -37,17 +37,20 @@ src/
   lib/storage.ts    # типизированная обёртка chrome.storage
   lib/config.ts     # origin, имя приложения, client_id/secret из env
   components/       # Vue-компоненты
+  composables/      # состояние экранов: use-auth, use-search, use-lists, use-calendar, …
+  styles/           # общие SCSS вне компонентов (foundation, badge, list)
+  assets/           # ассеты, импортируемые из кода (poster-fallback.png)
 docs/               # проектная документация — ЧИТАТЬ ПЕРЕД РАБОТОЙ
 ```
 
 ## Жёсткие правила (не нарушать)
-1. **Все сетевые запросы — только из background** через `src/lib/api/http.ts`. Popup/options/search не вызывают fetch к Shikimori напрямую — только сообщения в background. Причина: единый rate limiter и единая точка refresh токена (docs/02-architecture.md, ADR-1).
+1. **Все сетевые запросы — только из background** через `src/lib/api/http.ts`. Popup/options/search не вызывают fetch к Shikimori напрямую — только сообщения в background. Причина: единый rate limiter и единая точка refresh токена (docs/02-architecture.md, ADR-1). **Исключение ровно одно — отправка событий в GA4** (`src/lib/api/analytics.ts`, фаза 10): она идёт из background голым `fetch` мимо `http.ts` намеренно, иначе в Google уехали бы Bearer-токен и User-Agent приложения, а замеры тратили бы лимит Shikimori. «Только из background» на неё распространяется, «через `http.ts`» — нет; новые исключения не заводить.
 2. **Лимиты API: 5 rps / 90 rpm.** Клиент держит запас: очередь не более 4 rps и 80 rpm. На 429 — backoff. Запросы в цикле без очереди запрещены.
 3. **User-Agent** каждого запроса к API = имя OAuth-приложения из config (требование Shikimori, иначе бан IP). Проверить, что заголовок реально уходит; если Chrome не даёт — fallback через declarativeNetRequest (docs/03-shikimori-api.md).
 4. **Origin только из `src/lib/config.ts`** (по умолчанию shikimori.io, переключается в настройках на shikimori.one). Домены сайта исторически менялись — никаких захардкоженных URL по коду.
 5. **Чтение — GraphQL, запись — REST v2** (`/api/v2/user_rates`). HTML сайта не парсить.
 6. **Секреты:** client_id/client_secret — только из `.env` (в .gitignore), токены — только в `chrome.storage.local`. Токены и secret никогда не попадают в логи и сообщения об ошибках.
-7. **Permissions по минимуму:** `identity`, `storage`, host_permissions на оба домена; `contextMenus` добавить только в фазе 5; `declarativeNetRequest` — только если понадобился fallback для User-Agent.
+7. **Permissions по минимуму:** `identity`, `storage`, host_permissions на оба домена Shikimori **плюс `https://www.google-analytics.com/*`** (фаза 10, отправка анонимных событий; единственный не-Shikimori хост, обоснование для магазина — docs/07). Итого в собранном манифесте три host_permissions — сверено с `.output/chrome-mv3/manifest.json` 2026-08-10. `contextMenus` добавить только в фазе 5; `declarativeNetRequest` — только если понадобился fallback для User-Agent.
 
 ## Рабочий процесс
 1. Работа идёт по фазам из `docs/06-roadmap.md` строго по порядку. Фаза закрыта = все её чекбоксы + Definition of Done + ручной smoke-чеклист.

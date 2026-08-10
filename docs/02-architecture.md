@@ -65,10 +65,11 @@
 
 ### Съём статистики (фаза 10)
 
-Точек съёма две, и обе — единственные в своём роде:
+Точек съёма три, и каждая — единственная в своём роде:
 
-- **Background.** Таблица хендлеров обёрнута в `measured()` (`entrypoints/background.ts`): после успешного хендлера чистый маппинг `eventForMessage()` (`src/lib/analytics-from-message.ts`) решает, рождает ли это сообщение событие, а при ошибке хендлера её пропускает через `eventForError()` из того же файла и пробрасывает дальше. `eventForError()` сообщает `api_failed` только для ошибок самого обращения — `network`, `unauthorized`, `rate_limited`, `api` (с `status`); `internal` события не рождает: это свалка неклассифицированных отказов (закрытое окно OAuth, ненастроенный `APP_NAME`, нераспарсенный ответ), и `message` в ней несёт свободный текст, а PRIVACY.md обещает «ошибки обращения к Shikimori», а не все ошибки. Цена известна и принята: два случая, которые на самом деле отказ сервера — нераспарсенное тело (`http.ts`) и ответ GraphQL без `data` — в статистику не попадают. Чинится это классификацией их как `api` в источнике, а не здесь: там меняется и текст, который видит пользователь. Запрет держится типом — `params.kind` объявлен как `Exclude<ApiError['kind'], 'internal'>`. Хендлеры о существовании статистики не знают; чтобы ответить «что расширение сообщает», достаточно прочитать один маппинг.
+- **Background.** Таблица хендлеров обёрнута в `measured()` (`entrypoints/background.ts`): после успешного хендлера чистый маппинг `eventForMessage()` (`src/lib/analytics-from-message.ts`) решает, рождает ли это сообщение событие, а при ошибке хендлера её пропускает через `eventForError()` из того же файла и пробрасывает дальше. `eventForError()` сообщает `api_failed` только для ошибок самого обращения — `network`, `unauthorized`, `rate_limited`, `api` (с `status`); `internal` события не рождает: это свалка неклассифицированных отказов (закрытое окно OAuth, ненастроенный `APP_NAME`, нераспарсенный ответ), и `message` в ней несёт свободный текст, а PRIVACY.md обещает «ошибки обращения к Shikimori», а не все ошибки. Цена известна и принята: два случая, которые на самом деле отказ сервера — нераспарсенное тело (`http.ts`) и ответ GraphQL без `data` — в статистику не попадают. Чинится это классификацией их как `api` в источнике, а не здесь: там меняется и текст, который видит пользователь. Запрет держится типом — `params.kind` объявлен как `Exclude<ApiError['kind'], 'internal'>`. Хендлеры о существовании статистики не знают; чтобы ответить «что расширение сообщает по сообщениям», достаточно прочитать один маппинг.
 - **UI.** То, что до background не доходит: вкладка, на которой открылся popup, и изменённая настройка. Через `reportEvent()`, то есть тем же сообщением.
+- **Слушатель контекстного меню.** `context_menu_used` уходит прямым `trackEvent()` из `contextMenus.onClicked` (`entrypoints/background.ts`) — **мимо `measured()` и мимо `analytics-from-message.ts`**: клик по пункту меню приходит не сообщением, а событием chrome, и таблицы хендлеров не касается. Это единственное событие вне маппинга, поэтому полный ответ на «что расширение сообщает» — это `analytics-from-message.ts` **плюс** эта одна строка. Выделять её в маппинг не стали: у него на входе `MessageType`, а тут его нет.
 
 Отправку делает `src/lib/api/analytics.ts` — **намеренно не через `http.ts`**. Тот клиент существует для Shikimori: цепляет Bearer, ставит User-Agent с именем OAuth-приложения и ставит запрос в очередь лимитера 4 rps / 80 rpm (правила 1–3 CLAUDE.md). К Google не должно уходить ничего из этого, а бюджет запросов к Shikimori не должен тратиться на измерения. Общее у двух клиентов ровно одно — оба живут в background.
 
@@ -111,7 +112,11 @@ interface LocalState {
 // последний календарь онгоингов (`lastCalendar`: { items, fetchedAt }).
 // Используется для мгновенного первого рендера popup.
 // Плюс одноразовый `pendingSearch` (фаза 5): запрос, который background передаёт
-// popup при открытии из контекстного меню. Popup удаляет ключ сразу после чтения.
+// popup при открытии из контекстного меню. Popup читает ключ при монтировании, а
+// удаляет его НЕ сразу: только когда состояние авторизации стало `authorized` и
+// запрос действительно ушёл под токеном (`App.vue`, watcher по `status`). Вход
+// открывает окно OAuth, и Chrome закрывает popup вместе с ним — ключ, съеденный
+// при чтении, потерял бы запрос насовсем (docs/05, «Поиск из контекстного меню»).
 // И одноразовый `pendingOptionsSection` (фаза 8): раздел, на котором должна
 // открыться страница настроек. Пишется кнопкой ♥ в шапке (запись обязательно
 // `await`, страница читает ключ уже при монтировании) перед `openOptionsPage()`.
@@ -136,7 +141,7 @@ interface LocalState {
 ## Rate limiter (`src/lib/api/rate-limiter.ts`; backoff и врезка в запросы — в `src/lib/api/http.ts`)
 - Очередь промисов: не более **4 запросов/сек** и **80/мин** (запас к лимитам 5/90).
 - Реализация: sliding window по массиву timestamps в памяти SW. При «засыпании» SW окно теряется — это безопасно: после пробуждения пустое окно всё равно ограничено 4 rps.
-- `429` → пауза (заголовок Retry-After, иначе 2s → 4s → 8s, максимум 3 повтора) **только для GET**. POST/PATCH/DELETE автоматически не ретраить — вернуть ошибку в UI (иначе риск дублей). Уточнение: правило «только GET» реализовано флагом `retryOn429` в опциях запроса (по умолчанию `true` для GET, `false` для остальных методов), потому что GraphQL-чтение — это HTTP POST и включает флаг явно в graphql.ts. Намерение неизменно: запись (user_rates) и oauth-запросы никогда не ретраятся автоматически; повторы проходят через ту же очередь лимитера.
+- `429` → пауза (заголовок Retry-After, иначе 2s → 4s → 8s, максимум 3 повтора) **только для GET**. Пауза ограничена сверху потолком `MAX_RETRY_AFTER_MS = 60_000` (`http.ts`): аномальный `Retry-After` от сервера не должен подвесить запрос — и вместе с ним service worker — на часы. POST/PATCH/DELETE автоматически не ретраить — вернуть ошибку в UI (иначе риск дублей). Уточнение: правило «только GET» реализовано флагом `retryOn429` в опциях запроса (по умолчанию `true` для GET, `false` для остальных методов), потому что GraphQL-чтение — это HTTP POST и включает флаг явно в graphql.ts. Намерение неизменно: запись (user_rates) и oauth-запросы никогда не ретраятся автоматически; повторы проходят через ту же очередь лимитера.
 - Debounce поиска (300 мс) на стороне popup — первая линия; limiter — вторая.
 
 ## Модель ошибок
@@ -148,7 +153,9 @@ type ApiError =
   | { kind: 'api'; status: number; message: string }   // 4xx/5xx, включая 422
   | { kind: 'internal'; message: string };
 ```
-UI маппит `kind` в русские тексты и действия («Повторить», «Войти заново»). Стектрейсы и тела ответов — только в console.debug, без токенов.
+UI маппит `kind` в русские тексты одной функцией `apiErrorMessage()` (`src/lib/i18n.ts`, тексты — `i18n.errors`). Действие у состояния ошибки одно — «Повторить»; на экране входа та же кнопка называется «Войти через Shikimori» до первой неудачи и «Повторить» после (`LoginScreen.vue`). Кнопки «Войти заново» в UI нет: «Сессия истекла. Войдите заново.» — это **текст** ошибки `unauthorized`, а не действие.
+
+**Тела ответов и токены в логи не попадают вовсе.** `http.ts` пишет в `console.debug` только `kind` (и `status` у `kind: 'api'`), `messaging.ts` — тип сообщения и `kind`. Правило строже «без токенов»: сообщение об ошибке из тела ответа доходит до UI (`ApiError.message`), но не до консоли.
 
 ## Жизненный цикл service worker
 - Ничего критичного в переменных модуля: токены и настройки перечитываются из storage в `ensureToken()`.
@@ -161,18 +168,25 @@ UI маппит `kind` в русские тексты и действия («П�
 src/lib/api/http.ts      # fetch wrapper: origin из настроек, заголовки, limiter, маппинг ошибок
 src/lib/api/rate-limiter.ts # очередь sliding window 4 rps / 80 rpm (чистая логика, без chrome.*)
 src/lib/api/graphql.ts   # строки запросов SearchAnimes/SearchMangas/... + типы ответов
-src/lib/api/rates.ts     # REST v2 user_rates: create/update/delete/increment/list
+src/lib/api/rates.ts     # REST v2 user_rates: create/update/delete/increment — ровно четыре экспорта, все через authorizedRequest. Чтение списка (`listRates`) живёт в graphql.ts: запись REST, чтение GraphQL (правило 5 CLAUDE.md)
 src/lib/api/posters.ts   # REST v1 ?ids=: постеры (image.x96) для тайтлов, у которых GraphQL отдал null (Ф6-27)
 src/lib/api/auth.ts      # oauth: authorize url, exchange, refresh, whoami, logout
 src/lib/api/user-agent-rule.ts # динамическое правило declarativeNetRequest: User-Agent = APP_NAME (Chrome не даёт поставить его на fetch)
+src/lib/api/analytics.ts # GA4 Measurement Protocol: trackEvent(), намеренно мимо http.ts (фаза 10; пустой env = no-op)
 src/lib/api/types.ts     # TitleCard, RateRow, User, статусы и пр.
 src/lib/messaging.ts     # MessageMap + sendMessage/onMessage
 src/lib/storage.ts       # типизированный chrome.storage + getSettings/setSettings
-src/lib/config.ts        # ORIGINS, APP_NAME, CLIENT_ID/SECRET из env
+src/lib/config.ts        # ORIGINS, APP_NAME, CLIENT_ID/SECRET и ключи GA4 из env
 src/lib/theme.ts         # применение настройки theme к <html> (Ф6-19)
-src/lib/i18n.ts          # все русские строки UI + statusLabel(status, media)
+src/lib/i18n.ts          # русские строки UI + statusLabel(status, media). Единственное исключение — подписи и пояснения площадок поддержки, они лежат в donations.ts рядом со своими адресами (осознанно, docs/05)
 src/lib/title-name.ts    # displayTitle(name/russian, titleLang) — чистая логика
-src/lib/title-url.ts     # titleHref(url) — ссылка на страницу тайтла, в href только https (Ф6-26)
+src/lib/external-url.ts  # httpsHref/mailtoHref — единственный гард внешних адресов (ссылки тайтлов, аватар, раздел поддержки; Ф8)
+src/lib/title-url.ts     # titleHref(url) — ссылка на страницу тайтла; своей проверки не имеет, делегирует в external-url.ts (Ф6-26)
+src/lib/donations.ts     # DONATION_METHODS/SUPPORT_ACTIONS + payHref/supportHref — содержимое раздела «Поддержать» как данные (фаза 8)
+src/lib/manifest-key.ts  # правило выбора поля `key` манифеста из WXT_MANIFEST_KEY (фаза 9)
+src/lib/analytics-events.ts      # закрытый union AnalyticsEvent — свободного текста в событии нет по построению (фаза 10)
+src/lib/analytics-from-message.ts # чистый маппинг: eventForMessage(type, payload) и eventForError(ApiError)
+src/lib/analytics-report.ts      # reportEvent() — «отправил и забыл» из UI, void sendMessage('analytics.track')
 src/lib/poster-backfill.ts # UI-половина цепочки постеров: запрос недостающих (одно сообщение на корзину типов) + чистое применение к текущему списку (Ф6-27, Ф12-6)
 src/lib/title-card.ts    # чистые хелперы над TitleCard: cardKey (идентичность = тип+id), RANOBE_KINDS (единственный список видов ранобэ), раскладка по корзинам постеров
 src/lib/related.ts       # связанные тайтлы: порядок видов связи, группировка, дедуп по (тип, id) со старшинством связи (чистая логика, фаза 12). Чистая — но не только UI: `normalizeRelationKind` зовёт read-слой в background, сужая серверный enum на входе

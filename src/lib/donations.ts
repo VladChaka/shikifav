@@ -70,9 +70,11 @@ export const SUPPORT_ACTIONS: readonly SupportAction[] = [
     },
     // Happens away from the screen — it reads as an ask with no address at all.
     { id: 'share' },
-    // Mail, not an issue tracker: the repository is not public, so a letter is
-    // the only address a report can reach. The single caller that needs the
-    // mailto relaxation of supportHref().
+    // Mail, not an issue tracker — and not for want of one: the repository is
+    // public as of 2026-08-10. The ask is made inside the extension, to someone
+    // who installed it from the store and has no reason to own a GitHub
+    // account, so a letter stays the address that costs the reporter nothing.
+    // The single caller that needs the mailto relaxation of supportHref().
     { id: 'bug', url: 'mailto:support@chakalabs.com' },
     // The channel exists since 2026-08-10. Public @name rather than an invite
     // link: an invite can be revoked, and a revoked one would keep sitting in

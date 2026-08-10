@@ -18,35 +18,50 @@ WXT_SHIKI_CLIENT_SECRET="..."
 ### Стабильный EXTENSION_ID
 У unpacked-расширения ID детерминирован от абсолютного пути папки — на одной машине стабилен, пока проект не переносили. Порядок в фазе 1: собрать → загрузить → в консоли background выполнить `chrome.identity.getRedirectURL()` → вписать результат в настройки приложения на сайте. Опционально (фаза 6): добавить `key` в manifest, чтобы ID был стабилен всегда и везде.
 
-**Результат (2026-07-23):** `key` добавлен в манифест production-сборок (`pnpm build`/`pnpm zip`; приватный ключ — `.keys/shikifav-key.pem`, в git не попадает). С 2026-07-30 значение берётся из `WXT_MANIFEST_KEY` в `.env`, а не из литерала в `wxt.config.ts` — замена ключа на выданный магазином стоит одной строки (правило выбора и три его случая — `src/lib/manifest-key.ts`). Prod extension ID = `ilcnkoocagmcjikbelobkiflaplolbak`, redirect URI = `https://ilcnkoocagmcjikbelobkiflaplolbak.chromiumapp.org/`. Dev-сборка (`pnpm dev`) ключ не получает — её ID `gakfmcmfpajejjdpdckpgeihgpneajpj` без изменений, обе версии могут стоять в Chrome одновременно. Прежний path-derived prod-ID `bmndfomfgheoloklpjlldgmicdlmgmda` больше не актуален.
+**Результат (2026-07-23):** `key` добавлен в манифест production-сборок (`pnpm build`/`pnpm zip`; приватный ключ — `.keys/shikifav-key.pem`, в git не попадает). С 2026-07-30 значение берётся из `WXT_MANIFEST_KEY` в `.env`, а не из литерала в `wxt.config.ts` — замена ключа на выданный магазином стоит одной строки (правило выбора и три его случая — `src/lib/manifest-key.ts`). Dev-сборка (`pnpm dev`) ключ не получает — её ID `gakfmcmfpajejjdpdckpgeihgpneajpj` без изменений, обе версии могут стоять в Chrome одновременно. Ранний path-derived prod-ID `bmndfomfgheoloklpjlldgmicdlmgmda` не актуален.
 
-**Этот ID переживёт публикацию только по случайности — рассчитывать на это нельзя (2026-07-30).** У расширения в Chrome Web Store ключ, а значит и ID, выдаёт магазин при первой загрузке; документированный порядок обратный нашему — сначала загрузить пакет черновиком, забрать публичный ключ во вкладке Package и уже его вписать в манифест. Пока это не сделано, `redirect_uri` опубликованной версии не совпадёт с зарегистрированным, и `launchWebAuthFlow` вернёт ошибку у **каждого** пользователя. Полный порядок действий — docs/06, фаза 9, раздел «ID расширения: наш порядок обратный».
+**Актуальный prod-ID (с 2026-08-05):** в `WXT_MANIFEST_KEY` лежит ключ, **выданный магазином**, поэтому ID production-сборки = Item ID магазина `bpjembchapdbgncmacpkbepfjghjdkan`, redirect URI = `https://bpjembchapdbgncmacpkbepfjghjdkan.chromiumapp.org/`. ID от нашей собственной RSA-пары — `ilcnkoocagmcjikbelobkiflaplolbak` — остаётся зарегистрированным в OAuth-приложении, пока живут локальные установки на старом ключе, но новых сборок с ним нет. Сборка стороннего разработчика ключа издателя не получает вовсе (`WXT_MANIFEST_KEY=none` в `.env.example`) — её ID выводится из пути к папке, см. README §2.
+
+**Порядок с ключом у нас обратный документированному, и он пройден (закрыто 2026-08-06).** У расширения в Chrome Web Store ключ, а значит и ID, выдаёт магазин при первой загрузке: сначала пакет заливается черновиком, затем публичный ключ забирается во вкладке Package и вписывается в манифест. Так и сделано: 2026-08-05 создан элемент и ключ магазина лёг в `.env`, redirect URI магазинного ID зарегистрирован в приложении №2175; 2026-08-06 владелец проверил вход на установке **из магазина** — `launchWebAuthFlow` проходит. Порядок шагов и отдельная ловушка (консоль не принимает пакет с нашим `key`, черновик собирается `WXT_MANIFEST_KEY=none pnpm zip`) — docs/06, фаза 9, раздел «ID расширения: наш порядок обратный».
 
 ## 2. Поток входа (выполняется в background)
 ```ts
-// src/lib/api/auth.ts — референсная реализация
-export async function login(): Promise<User> {
-  const redirectUri = chrome.identity.getRedirectURL();
-  const authUrl =
-    `${origin}/oauth/authorize?` +
-    new URLSearchParams({
-      client_id: CLIENT_ID,
-      redirect_uri: redirectUri,
-      response_type: 'code',
-      scope: 'user_rates',
-    });
+// src/lib/api/auth.ts — сокращённая схема doLogin(); имена и порядок шагов как
+// в коде, опущены обработка ошибок и single-flight-обёртка login().
+async function doLogin(): Promise<User> {
+  const settings = await getSettings();
+  const redirectUri = browser.identity.getRedirectURL();
+  // PKCE_ENABLED = true: challenge/verifier поверх confidential-клиента (§5).
+  const pkce = PKCE_ENABLED ? await createPkcePair() : undefined;
 
-  const resultUrl = await chrome.identity.launchWebAuthFlow({
-    url: authUrl,
+  const authorizeParams = new URLSearchParams({
+    client_id: CLIENT_ID,
+    redirect_uri: redirectUri,
+    response_type: 'code',
+    scope: OAUTH_SCOPE, // 'user_rates'
+  });
+  if (pkce) {
+    authorizeParams.set('code_challenge', pkce.challenge);
+    authorizeParams.set('code_challenge_method', 'S256');
+  }
+
+  const resultUrl = await browser.identity.launchWebAuthFlow({
+    url: `${settings.origin}/oauth/authorize?${authorizeParams.toString()}`,
     interactive: true,
   });
-  const code = new URL(resultUrl!).searchParams.get('code');
-  if (!code) throw new Error('No authorization code in redirect');
+  const code = new URL(resultUrl).searchParams.get('code');
+  if (!code) throw internalError('No authorization code in redirect');
 
-  const tokens = await exchangeCode(code, redirectUri);
-  await saveTokens(tokens);
-  const user = await whoami();      // GET /api/users/whoami (Bearer)
-  await saveUser(user);
+  const tokens = await exchangeCode(code, redirectUri, pkce?.verifier);
+  const user = await loginWhoami(tokens.access_token); // GET /api/users/whoami (Bearer)
+  // Один объект `auth` и только ПОСЛЕ whoami: неудачный вход оставляет storage
+  // полностью анонимным, а не наполовину авторизованным.
+  await setLocal('auth', {
+    accessToken: tokens.access_token,
+    refreshToken: tokens.refresh_token,
+    expiresAt: computeExpiresAt(tokens.expires_in, tokens.created_at, Date.now()),
+    user,
+  });
   return user;
 }
 ```
@@ -114,7 +129,7 @@ grant_type=refresh_token&client_id=...&client_secret=...&refresh_token=...
 ### Что меняет публикация (2026-07-29)
 Прокси-сервер, который держал бы секрет вместо расширения, отвергнут: он противоречит ADR-1 и видел бы токены пользователей. Это ухудшение приватности, а не защита: анонимная статистика фазы 10 не передаёт ни аккаунта, ни токенов, а прокси видел бы и то и другое.
 
-Секрет по-настоящему убирает только один путь — попросить Shikimori разрешить публичные клиенты (PKCE без секрета); ответ не в нашей власти, поэтому подачу к нему **не привязываем**. Практический путь — публиковать на приложении №2175, добавив в него redirect URI магазинного ID (два, dev и prod, там уже зарегистрированы).
+Секрет по-настоящему убирает только один путь — попросить Shikimori разрешить публичные клиенты (PKCE без секрета); ответ не в нашей власти, поэтому подачу к нему **не привязывали**. Практический путь — публиковать на приложении №2175, добавив в него redirect URI магазинного ID — **пройден 2026-08-06**: адрес `https://bpjembchapdbgncmacpkbepfjghjdkan.chromiumapp.org/` зарегистрирован там же, где прежние dev- и prod-адреса, вход на магазинной сборке проверен владельцем.
 
 Отдельное приложение под магазинную сборку **не рекомендуется по умолчанию** (понижено 2026-07-30 после разбора): оно покупает только изоляцию личной установки, а стоит второго имени приложения — а имя уходит в `User-Agent` каждого запроса, то есть двух `.env` и развилки в сборке. Полный разбор и порядок действий — docs/06, фаза 9.
 
