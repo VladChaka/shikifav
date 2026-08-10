@@ -60,11 +60,12 @@ async function mountPage(
         // Content of the «Поддержать» section (Ф8-2). No longer empty in the
         // shipped build — it carries the Boosty method and the mail line — and
         // mocked for exactly that reason: what these tests pin is how a row is
-        // rendered (link or text, new tab or not, a method dropped when its
-        // address is unusable), not which addresses the owner happens to ship.
-        // Stating the list per test keeps a hand-edited config out of the
-        // assertions, and lets a test ask for a state the real one does not
-        // have — an empty list, a dead address, both kinds of link at once.
+        // rendered (link or text, the same new-tab attributes on every live
+        // link, a method dropped when its address is unusable), not which
+        // addresses the owner happens to ship. Stating the list per test keeps a
+        // hand-edited config out of the assertions, and lets a test ask for a
+        // state the real one does not have — an empty list, a dead address,
+        // both kinds of address at once.
         donations?: { methods?: readonly DonationMethod[]; actions?: readonly SupportAction[] };
         // Replaces a handler with a failing (or otherwise special) one; the
         // defaults below are the happy path.
@@ -870,14 +871,23 @@ describe('OptionsPage (Ф6-3)', () => {
         });
 
         // The report line is a mailto: address (the repository is not public,
-        // so a letter is the only way through). It is the same link as the
-        // others minus the new-tab attributes and the glyph: target="_blank" on
-        // a mailto: leaves an empty tab hanging in Chrome when no mail handler
-        // is registered, and the glyph would promise a tab that never opens.
-        // Both halves in one test on purpose — the branch is decided from the
-        // href, so an https row next to it is what proves it is a branch and
-        // not the attributes having been dropped for everybody.
-        it('renders a mail address as a link that promises no new tab', async () => {
+        // so a letter is the only way through), and it is rendered exactly like
+        // every other line of the section — new tab, rel, glyph.
+        //
+        // It used to be the exception, on the reasoning that target="_blank" on
+        // a mailto: leaves an empty tab hanging when no mail handler is
+        // registered. The owner's smoke of 2026-08-10 showed the other half of
+        // that trade: with a web handler registered for mailto: (Gmail), a link
+        // WITHOUT target navigates the settings tab itself onto a compose form,
+        // and the settings are gone. An empty tab for whoever has no handler is
+        // the smaller loss, so the exception was dropped — do not «fix» this
+        // test back to promising no new tab.
+        //
+        // Both rows in one mount on purpose: after the branch was removed, an
+        // https row rendered beside the mail one is what shows the two really
+        // agree, instead of the attributes having quietly gone missing from
+        // both.
+        it('renders a mail address as a link into a new tab, like every other line', async () => {
             const { container } = await mountPage({
                 donations: {
                     methods: [],
@@ -894,9 +904,9 @@ describe('OptionsPage (Ф6-3)', () => {
             const mailLink = find(mail, 'sup__name');
             expect(mailLink.tag).toBe('a');
             expect(mailLink.props.href).toBe('mailto:x@y.test');
-            expect(mailLink.props.target).toBeUndefined();
-            expect(mailLink.props.rel).toBeUndefined();
-            expect(findAll(mail, 'sup__ext')).toHaveLength(0);
+            expect(mailLink.props.target).toBe('_blank');
+            expect(mailLink.props.rel).toBe('noopener noreferrer');
+            expect(findAll(mail, 'sup__ext')).toHaveLength(1);
 
             const webLink = find(web, 'sup__name');
             expect(webLink.props.href).toBe('https://store.test/x');

@@ -246,29 +246,35 @@
                                 :key="item.id"
                                 class="sup__item"
                             >
-                                <!-- The mail line is the same link, minus the
-                                     new-tab attributes: on a mailto: address
-                                     target="_blank" leaves an empty tab hanging
-                                     in Chrome when no mail handler is
-                                     registered. -->
+                                <!-- One rule for every line of the section, mail
+                                     included: a new tab, and this page stays
+                                     where it is. The mail line used to be the
+                                     exception, until the smoke of 2026-08-10
+                                     showed what that costs — with a web handler
+                                     registered for mailto: (Gmail), a link
+                                     without target navigates the settings tab
+                                     itself onto a compose form, and the settings
+                                     are simply gone. The price of the rule is an
+                                     empty tab for whoever has no handler at all;
+                                     that is the smaller loss. -->
                                 <a
                                     v-if="item.href"
                                     class="sup__name"
                                     :href="item.href"
-                                    :target="item.external ? '_blank' : undefined"
-                                    :rel="item.external ? 'noopener noreferrer' : undefined"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
                                 >
                                     <!-- The underline lives on the text, not on
                                          the link: on the link it would run
                                          under the icon too. -->
                                     <span class="sup__text">{{ item.label }}</span>
-                                    <!-- External only: the glyph promises a new
-                                         tab, and mail does not open one.
-                                         aria-hidden: «opens in a new tab» said
-                                         five times in a row is noise, the glyph
-                                         and the convention are enough. -->
+                                    <!-- The glyph promises «opens separately,
+                                         this page stays» — which is now true of
+                                         mail too. aria-hidden: «opens in a new
+                                         tab» said five times in a row is noise,
+                                         the glyph and the convention are
+                                         enough. -->
                                     <svg
-                                        v-if="item.external"
                                         class="sup__ext"
                                         viewBox="0 0 24 24"
                                         fill="none"
@@ -335,7 +341,6 @@ import { DEFAULT_ORIGIN, ORIGINS } from '@/src/lib/config';
 import type { Origin } from '@/src/lib/config';
 import { DONATION_METHODS, payHref, SUPPORT_ACTIONS, supportHref } from '@/src/lib/donations';
 import type { SupportActionId } from '@/src/lib/donations';
-import { isHttpsUrl } from '@/src/lib/external-url';
 import { apiErrorMessage, i18n, statusLabel } from '@/src/lib/i18n';
 import { sendMessage } from '@/src/lib/messaging';
 import {
@@ -578,12 +583,6 @@ interface SupportItem {
     label: string;
     note: string;
     href: string | null;
-    // Whether the href leaves the browser for a page — the template hangs the
-    // new-tab attributes and the glyph on this, and a mailto: row gets neither.
-    // Decided from the href itself (isHttpsUrl), not from a second pass over the
-    // config: what the row shows must follow the address it actually renders,
-    // and what counts as https is the guard's business, not the page's.
-    external: boolean;
 }
 
 interface SupportBlock {
@@ -610,7 +609,6 @@ const METHOD_ITEMS: readonly SupportItem[] = DONATION_METHODS.flatMap((method) =
                   label: method.label,
                   note: method.hint,
                   href,
-                  external: isHttpsUrl(href),
               },
           ];
 });
@@ -635,7 +633,6 @@ const ACTION_ITEMS: readonly SupportItem[] = SUPPORT_ACTIONS.filter(
         id: action.id,
         ...SUPPORT_ACTION_TEXT[action.id],
         href,
-        external: isHttpsUrl(href),
     };
 });
 
@@ -1084,6 +1081,11 @@ a.sup__name {
     .options__panel {
         grid-area: 2 / 1 / 3 / 2;
         min-height: 0;
+        /* 14, not 16: `.opt:first-child` adds its own 2px on top, so the first
+           heading sits 16px below the rule — the gap the blocks keep between
+           each other. Wide mode has the rule beside the panel, not above it,
+           and needs none of this. */
+        padding-top: 14px;
         padding-left: 0;
         border-left: 0;
     }

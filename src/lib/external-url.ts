@@ -12,15 +12,6 @@ export function httpsHref(url: string | null | undefined): string | null {
     return url?.startsWith('https://') ? url : null;
 }
 
-// The same rule asked as a question. A caller that already holds a guarded
-// address and only needs to know whether it opens a page in the browser — new
-// tab, `rel`, the «external» glyph — asks here instead of testing the prefix a
-// second time: which schemes exist is this file's business, and `https://`
-// stays one literal in one place.
-export function isHttpsUrl(url: string | null | undefined): boolean {
-    return httpsHref(url) !== null;
-}
-
 // The mail counterpart, on purpose a second function instead of a second scheme
 // allowed inside httpsHref. That guard also feeds the <img src> of posters and
 // avatars, where a mailto: address means nothing: widening it would hand the
