@@ -2,7 +2,7 @@
     "name": "shikifav",
     "description": "Chrome extension (MV3) for quick Shikimori list management: search, statuses, scores, +1 episode",
     "private": true,
-    "version": "1.0.0",
+    "version": "1.0.1",
     "type": "module",
     "scripts": {
         "dev": "wxt",
