@@ -24,6 +24,10 @@ stats-*.json
 .wxt
 web-ext.config.ts
 
+# Рабочие материалы владельца: исходники логотипов, обложки для внешних
+# площадок и прочее, что не собирается и не используется сборкой.
+всякое/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

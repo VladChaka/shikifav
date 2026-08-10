@@ -246,21 +246,29 @@
                                 :key="item.id"
                                 class="sup__item"
                             >
+                                <!-- The mail line is the same link, minus the
+                                     new-tab attributes: on a mailto: address
+                                     target="_blank" leaves an empty tab hanging
+                                     in Chrome when no mail handler is
+                                     registered. -->
                                 <a
                                     v-if="item.href"
                                     class="sup__name"
                                     :href="item.href"
-                                    target="_blank"
-                                    rel="noopener noreferrer"
+                                    :target="item.external ? '_blank' : undefined"
+                                    :rel="item.external ? 'noopener noreferrer' : undefined"
                                 >
                                     <!-- The underline lives on the text, not on
                                          the link: on the link it would run
                                          under the icon too. -->
                                     <span class="sup__text">{{ item.label }}</span>
-                                    <!-- aria-hidden: «opens in a new tab» said
+                                    <!-- External only: the glyph promises a new
+                                         tab, and mail does not open one.
+                                         aria-hidden: «opens in a new tab» said
                                          five times in a row is noise, the glyph
                                          and the convention are enough. -->
                                     <svg
+                                        v-if="item.external"
                                         class="sup__ext"
                                         viewBox="0 0 24 24"
                                         fill="none"
@@ -325,8 +333,9 @@ import { useSettings } from '@/src/composables/use-settings';
 import type { SearchType, UserRateStatus } from '@/src/lib/api/types';
 import { DEFAULT_ORIGIN, ORIGINS } from '@/src/lib/config';
 import type { Origin } from '@/src/lib/config';
-import { DONATION_METHODS, SUPPORT_ACTIONS, supportHref } from '@/src/lib/donations';
+import { DONATION_METHODS, payHref, SUPPORT_ACTIONS, supportHref } from '@/src/lib/donations';
 import type { SupportActionId } from '@/src/lib/donations';
+import { isHttpsUrl } from '@/src/lib/external-url';
 import { apiErrorMessage, i18n, statusLabel } from '@/src/lib/i18n';
 import { sendMessage } from '@/src/lib/messaging';
 import {
@@ -569,6 +578,12 @@ interface SupportItem {
     label: string;
     note: string;
     href: string | null;
+    // Whether the href leaves the browser for a page — the template hangs the
+    // new-tab attributes and the glyph on this, and a mailto: row gets neither.
+    // Decided from the href itself (isHttpsUrl), not from a second pass over the
+    // config: what the row shows must follow the address it actually renders,
+    // and what counts as https is the guard's business, not the page's.
+    external: boolean;
 }
 
 interface SupportBlock {
@@ -580,12 +595,24 @@ interface SupportBlock {
 }
 
 // A way to pay IS its address: a name nobody can send money through is not an
-// offer, so an entry whose url does not survive the https guard is left out
-// entirely — unlike a free ask («Рассказать знакомым»), which reads fine as
-// plain text. Same shape as the ACTION_ITEMS filter below: data, not a v-if.
+// offer, so an entry whose url does not survive payHref() (https and nothing
+// else, where the free asks below get the mail-tolerant supportHref()) is left
+// out entirely — a free ask («Рассказать знакомым») reads fine as plain text, a
+// cash desk does not. Same shape as the ACTION_ITEMS filter below: data, not a
+// v-if.
 const METHOD_ITEMS: readonly SupportItem[] = DONATION_METHODS.flatMap((method) => {
-    const href = supportHref(method);
-    return href === null ? [] : [{ id: method.id, label: method.label, note: method.hint, href }];
+    const href = payHref(method);
+    return href === null
+        ? []
+        : [
+              {
+                  id: method.id,
+                  label: method.label,
+                  note: method.hint,
+                  href,
+                  external: isHttpsUrl(href),
+              },
+          ];
 });
 
 // The wording of a free action is keyed by its id: unlike a payment method, it
@@ -595,17 +622,22 @@ const SUPPORT_ACTION_TEXT: Record<SupportActionId, { label: string; note: string
     review: { label: i18n.options.helpReview, note: i18n.options.helpReviewNote },
     share: { label: i18n.options.helpShare, note: i18n.options.helpShareNote },
     bug: { label: i18n.options.helpBug, note: i18n.options.helpBugNote },
+    telegram: { label: i18n.options.helpTelegram, note: i18n.options.helpTelegramNote },
 };
 
 const ACTION_ITEMS: readonly SupportItem[] = SUPPORT_ACTIONS.filter(
     // Data, not a v-if by id: an ask that is nothing but a link waits for its
     // address, everything else is shown as text.
     (action) => !action.needsUrl || supportHref(action) !== null,
-).map((action) => ({
-    id: action.id,
-    ...SUPPORT_ACTION_TEXT[action.id],
-    href: supportHref(action),
-}));
+).map((action) => {
+    const href = supportHref(action);
+    return {
+        id: action.id,
+        ...SUPPORT_ACTION_TEXT[action.id],
+        href,
+        external: isHttpsUrl(href),
+    };
+});
 
 // An empty list of methods is a state of its own, not a plate saying «пусто»:
 // the block is absent from the section entirely, and the free one takes over

@@ -1,4 +1,4 @@
-import { httpsHref } from './external-url';
+import { httpsHref, mailtoHref } from './external-url';
 
 // Content of the «Поддержать» section of the options page (Ф8-1, Ф8-2).
 //
@@ -10,12 +10,11 @@ import { httpsHref } from './external-url';
 // wording of the free ways to help, which never changes together with an
 // address (hence a free action carries an id and a url, and nothing more).
 //
-// Both lists may be empty: no payment method is set up yet, and the repository
-// is not published. The two lists differ in what a missing address means. A
-// free way to help is an ask, so it renders as plain text without one; a
-// payment method is nothing BUT its address, so an entry whose url does not
-// pass supportHref() is dropped from the section instead of printing the name
-// of a place nobody can pay through (Ф8-6).
+// Either list may still go empty, and the two differ in what a missing address
+// means. A free way to help is an ask, so it renders as plain text without one;
+// a payment method is nothing BUT its address, so an entry whose url does not
+// pass payHref() is dropped from the section instead of printing the name of a
+// place nobody can pay through (Ф8-6).
 
 export interface DonationMethod {
     id: string;
@@ -26,49 +25,77 @@ export interface DonationMethod {
     url: string;
 }
 
-// Empty on purpose: the owner has no place to accept anything yet. Filling this
-// array is the whole job of adding donations — the section renders itself from
-// it and hides the block while it is empty.
+// Https and nothing else — the rule is payHref() at the bottom of this file,
+// not a promise the page is trusted to keep.
+//
+// The hint promises only what the page actually offers — the Boosty page of the
+// project has no subscription tiers, only a one-off donation, so it says so
+// instead of the usual «донат или подписка».
 export const DONATION_METHODS: readonly DonationMethod[] = [
-    // {
-    //     id: 'boosty',
-    //     label: 'Boosty',
-    //     hint: 'Разовый донат или подписка, карты РФ',
-    //     url: 'https://boosty.to/<name>',
-    // },
+    {
+        id: 'boosty',
+        label: 'Boosty',
+        hint: 'разовый донат на домен и почту проекта',
+        url: 'https://boosty.to/chakalabs',
+    },
 ];
 
 // Free ways to help — they cost nothing to offer and work with an empty
 // DONATION_METHODS. The id picks the wording out of i18n (options.help*), so a
 // new action cannot be added without its two strings.
-export type SupportActionId = 'review' | 'share' | 'bug';
+export type SupportActionId = 'review' | 'share' | 'bug' | 'telegram';
 
 export interface SupportAction {
     id: SupportActionId;
-    // Optional: the extension is not in the store yet and the repository is not
-    // published, so there is nowhere to point yet.
+    // Optional: an ask can exist before the place it points at does — see the
+    // Telegram channel below.
     url?: string;
     // An ask that is nothing but a link: without an address it sends nobody
     // anywhere, so the section leaves it out entirely instead of printing dead
-    // text. Publishing then costs one url here and no change to the template.
+    // text. Filling the url in is then the whole job — no change to the
+    // template, no v-if by id.
     needsUrl?: boolean;
 }
 
+// Order as in the design card screens/options.
 export const SUPPORT_ACTIONS: readonly SupportAction[] = [
-    // Hidden until the listing exists: a review is left on the store page and
-    // nowhere else.
-    { id: 'review', needsUrl: true },
+    // The extension is published, so the review has a page at last; the link
+    // goes straight to the reviews tab of the listing. `needsUrl` stays for
+    // what it guards: a review is left there and nowhere else, so an entry
+    // without an address would send nobody anywhere.
+    {
+        id: 'review',
+        url: 'https://chromewebstore.google.com/detail/shikifav/bpjembchapdbgncmacpkbepfjghjdkan/reviews',
+        needsUrl: true,
+    },
     // Happens away from the screen — it reads as an ask with no address at all.
     { id: 'share' },
-    // Has no address either while the repository is unpublished, but the line
-    // still says what a useful report contains; add `needsUrl` here too if it
-    // should wait for an issue tracker.
-    { id: 'bug' },
+    // Mail, not an issue tracker: the repository is not public, so a letter is
+    // the only address a report can reach. The single caller that needs the
+    // mailto relaxation of supportHref().
+    { id: 'bug', url: 'mailto:support@chakalabs.com' },
+    // The channel does not exist yet, so the row is hidden. Turning it on is
+    // one line here — `url: 'https://t.me/<name>'` — and nothing else anywhere.
+    { id: 'telegram', needsUrl: true },
 ];
 
-// The one way an entry becomes a live link. The url is hand-edited text, so it
-// goes through the same https guard as a title link (src/lib/external-url.ts):
-// everything else renders as plain text instead of an href.
+// The two ways an entry becomes a live link — one per list, because the lists
+// do not admit the same addresses. The url is hand-edited text either way, so
+// it goes through the guards of src/lib/external-url.ts, and whatever they
+// refuse renders as plain text instead of an href.
+
+// The free asks: an https page, or one bare mailto: address for the report
+// line. Mail is admitted here rather than inside httpsHref for the reason
+// stated there — that guard also feeds <img src>.
 export function supportHref(entry: DonationMethod | SupportAction): string | null {
-    return httpsHref(entry.url);
+    return httpsHref(entry.url) ?? mailtoHref(entry.url);
+}
+
+// The cash desks: https and nothing else, because there is no cash desk over
+// mail. A named function here rather than httpsHref() at the call site, so the
+// rule sits next to the records it constrains instead of in the page that
+// happens to render them — the section then reads as two lists with two guards,
+// and «касса только по https» stops being an invariant held up by a test.
+export function payHref(method: DonationMethod): string | null {
+    return httpsHref(method.url);
 }

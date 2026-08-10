@@ -270,7 +270,9 @@ export const i18n = {
         helpShare: 'Рассказать знакомым',
         helpShareNote: 'тем, кто ведёт списки на Shikimori',
         helpBug: 'Сообщить об ошибке',
-        helpBugNote: 'опишите, что сломалось и на каком экране',
+        helpBugNote: 'письмом на support@chakalabs.com',
+        helpTelegram: 'Подписаться на канал в Telegram',
+        helpTelegramNote: 'коротко о новых версиях',
     },
     errors: {
         network: 'Нет соединения с Shikimori. Проверьте интернет и повторите.',

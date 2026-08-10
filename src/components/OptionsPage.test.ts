@@ -57,9 +57,14 @@ async function mountPage(
         // Section handed over by the popup header (Ф8-3). A raw string, so a
         // value from another build is expressible.
         pendingSection?: string;
-        // Content of the «Поддержать» section (Ф8-2). The shipped config is
-        // empty on purpose, so every test states the list it renders instead of
-        // leaning on today's reality.
+        // Content of the «Поддержать» section (Ф8-2). No longer empty in the
+        // shipped build — it carries the Boosty method and the mail line — and
+        // mocked for exactly that reason: what these tests pin is how a row is
+        // rendered (link or text, new tab or not, a method dropped when its
+        // address is unusable), not which addresses the owner happens to ship.
+        // Stating the list per test keeps a hand-edited config out of the
+        // assertions, and lets a test ask for a state the real one does not
+        // have — an empty list, a dead address, both kinds of link at once.
         donations?: { methods?: readonly DonationMethod[]; actions?: readonly SupportAction[] };
         // Replaces a handler with a failing (or otherwise special) one; the
         // defaults below are the happy path.
@@ -821,6 +826,32 @@ describe('OptionsPage (Ф6-3)', () => {
             expect(findAll(container, 'sup__name').map((el) => el.tag)).toEqual(['a', 'span']);
         });
 
+        // The two lists are rendered through two different guards, and a bare
+        // mailto: is exactly where they part: the report line among the free
+        // asks is a live link, the same address as a way to PAY is not — there
+        // is no cash desk over mail. Both in one mount, because what is under
+        // test is the difference: were the section to render methods through
+        // the mail-tolerant guard of the free asks, the row below would appear.
+        it('leaves a mail address out of the cash desk though a free ask keeps it', async () => {
+            const { container } = await mountPage({
+                donations: {
+                    methods: [{ ...boosty, id: 'mail', label: 'Почта', url: 'mailto:pay@y.test' }],
+                    actions: [{ id: 'bug', url: 'mailto:x@y.test' }],
+                },
+            });
+            await openSection(container, 3);
+
+            // No method survived, so the block is gone and the free one takes
+            // over the heading — the same state as a config with no methods.
+            expect(panelLabels(container)).toEqual([i18n.options.supportEmptyLabel]);
+            expect(supportRows(container)).toEqual([
+                `${i18n.options.helpBug} — ${i18n.options.helpBugNote}`,
+            ]);
+            // The one row left is the free ask, and it IS a link: the address
+            // was refused for being a cash desk, not for being unusable.
+            expect(find(container, 'sup__name').props.href).toBe('mailto:x@y.test');
+        });
+
         it('drops the block when the only method has no live address', async () => {
             const { container } = await mountPage({
                 donations: {
@@ -836,6 +867,42 @@ describe('OptionsPage (Ф6-3)', () => {
             expect(supportRows(container)).toEqual([
                 `${i18n.options.helpShare} — ${i18n.options.helpShareNote}`,
             ]);
+        });
+
+        // The report line is a mailto: address (the repository is not public,
+        // so a letter is the only way through). It is the same link as the
+        // others minus the new-tab attributes and the glyph: target="_blank" on
+        // a mailto: leaves an empty tab hanging in Chrome when no mail handler
+        // is registered, and the glyph would promise a tab that never opens.
+        // Both halves in one test on purpose — the branch is decided from the
+        // href, so an https row next to it is what proves it is a branch and
+        // not the attributes having been dropped for everybody.
+        it('renders a mail address as a link that promises no new tab', async () => {
+            const { container } = await mountPage({
+                donations: {
+                    methods: [],
+                    actions: [
+                        { id: 'bug', url: 'mailto:x@y.test' },
+                        { id: 'review', needsUrl: true, url: 'https://store.test/x' },
+                    ],
+                },
+            });
+            await openSection(container, 3);
+
+            const [mail, web] = findAll(container, 'sup__item');
+
+            const mailLink = find(mail, 'sup__name');
+            expect(mailLink.tag).toBe('a');
+            expect(mailLink.props.href).toBe('mailto:x@y.test');
+            expect(mailLink.props.target).toBeUndefined();
+            expect(mailLink.props.rel).toBeUndefined();
+            expect(findAll(mail, 'sup__ext')).toHaveLength(0);
+
+            const webLink = find(web, 'sup__name');
+            expect(webLink.props.href).toBe('https://store.test/x');
+            expect(webLink.props.target).toBe('_blank');
+            expect(webLink.props.rel).toBe('noopener noreferrer');
+            expect(findAll(web, 'sup__ext')).toHaveLength(1);
         });
 
         // Data, not a v-if by id: filling the url in donations.ts is the whole
