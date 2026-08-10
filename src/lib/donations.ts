@@ -74,9 +74,12 @@ export const SUPPORT_ACTIONS: readonly SupportAction[] = [
     // the only address a report can reach. The single caller that needs the
     // mailto relaxation of supportHref().
     { id: 'bug', url: 'mailto:support@chakalabs.com' },
-    // The channel does not exist yet, so the row is hidden. Turning it on is
-    // one line here — `url: 'https://t.me/<name>'` — and nothing else anywhere.
-    { id: 'telegram', needsUrl: true },
+    // The channel exists since 2026-08-10. Public @name rather than an invite
+    // link: an invite can be revoked, and a revoked one would keep sitting in
+    // every installed copy until the next release. `needsUrl` still guards the
+    // row — drop the address and it leaves the list instead of pointing at a
+    // channel that is gone.
+    { id: 'telegram', url: 'https://t.me/ChakaLabs', needsUrl: true },
 ];
 
 // The two ways an entry becomes a live link — one per list, because the lists
