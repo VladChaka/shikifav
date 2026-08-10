@@ -1,4 +1,10 @@
-import type { ApiError, RateTargetType, UserRateStatus } from './api/types';
+import type {
+    ApiError,
+    RateTargetType,
+    RelatedItem,
+    RelationKind,
+    UserRateStatus,
+} from './api/types';
 
 // Book-variant (manga/ranobe) overrides; statuses missing here reuse the shared
 // anime labels (docs/03 status table). Declared apart from the i18n literal so
@@ -10,6 +16,37 @@ const statusesBook = {
     rewatching: 'Перечитываю',
     completed: 'Прочитано',
 } satisfies Partial<Record<UserRateStatus, string>>;
+
+// Heading of one relation group. Almost every kind reads the same whichever
+// medium its rows are; `adaptation` is the exception and carries both wordings —
+// which of them is shown is decided by relationGroupLabel().
+type RelationGroupLabel = string | { source: string; screen: string };
+
+// Ф12: group headings of the related screen, in the order the screen renders the
+// groups (RELATION_KIND_RANK, src/lib/related.ts) — a map that reads top-down in
+// the reading order of the screen is what makes it checkable against the design
+// card at a glance. Declared apart from the i18n literal for the same reason as
+// statusesBook: `satisfies Record<RelationKind, …>` turns a relation kind added
+// to the union into a compile error here, instead of a group rendered with an
+// empty heading. The wording is ours and deliberately differs from the server's
+// relationText, which stays in the row meta (docs/03: anime and manga word the
+// same kind differently).
+const relationKinds = {
+    sequel: 'Продолжение',
+    prequel: 'Предыстория',
+    full_story: 'Полная история',
+    parent_story: 'Основная история',
+    // The one kind that carries no direction: for an anime the adaptation link
+    // points at the book it was made from, for a book at the anime made of it.
+    adaptation: { source: 'Первоисточник', screen: 'Экранизации' },
+    side_story: 'Побочные истории',
+    spin_off: 'Ответвления',
+    alternative_version: 'Другие версии',
+    alternative_setting: 'Другая вселенная',
+    summary: 'Пересказы',
+    character: 'Общие персонажи',
+    other: 'Прочее',
+} satisfies Record<RelationKind, RelationGroupLabel>;
 
 // Every UI string lives in this single object (docs/05-ui.md, principle 4).
 // No i18n libraries: the extension is single-user and Russian-only.
@@ -82,6 +119,36 @@ export const i18n = {
         empty:
             'Ни одно аниме из ваших списков сейчас не выходит. Календарь только про аниме: ' +
             'даты следующих глав манги и ранобэ Shikimori не сообщает.',
+    },
+    // Related titles (US-11, phase 12): an overlay inside the popup, not a tab —
+    // hence its own return bar with `title` on it and `back` on the arrow.
+    //
+    // Two approved entry points (owner, 2026-08-10) mean three labels for one
+    // navigation, and they are not interchangeable: `open` is the accessible
+    // name of BOTH controls and at the same time the visible text of the
+    // StatusMenu item — one value in three places has nothing to drift from —
+    // while `openLabel` and `openLabelShort` are what the eye reads in a search
+    // card and in a list row, where the control is subtracted from the width of
+    // the title itself and a shorter word buys back a whole line of the name
+    // (design cards components/title-card, components/rate-row).
+    related: {
+        title: 'Связанные',
+        back: 'Назад',
+        open: 'Связанные тайтлы',
+        openLabel: 'Связанные',
+        openLabelShort: 'Связи',
+        // An empty answer is a legal one, not a failure: standalone films really
+        // have no links at all (the smoke list names «Унесённые призраками» and
+        // «Могила светлячков»). The text names what is missing, because a bare
+        // «Ничего не найдено» would read as a half-loaded screen.
+        empty:
+            'У этого тайтла нет связанных релизов: ни продолжений, ни первоисточника, ни ответвлений. ' +
+            'Для самостоятельных фильмов и сериалов это обычное дело.',
+        loadMore: 'Показать ещё',
+        // The counter above «Показать ещё». Placeholders are filled by
+        // shownOfMessage(), never by hand.
+        shownOf: 'Показано {n} из {total}',
+        kinds: relationKinds,
     },
     // Score picker (US-5): 0 removes the score, 1–10 set it.
     score: {
@@ -318,6 +385,42 @@ export function statusLabel(status: UserRateStatus, media: MediaKind = 'anime'):
 // the label follows the media — a manga reads «Прочитано», not «Просмотрено».
 export function autoStatusMessage(status: UserRateStatus, media: MediaKind): string {
     return i18n.rates.autoStatusToast.replace('{status}', statusLabel(status, media));
+}
+
+// Ф12: heading of one relation group. Every kind but `adaptation` answers from
+// the map alone; `adaptation` does not say a direction, so the direction is read
+// off the MEDIUM of the rows in the group — a book row is the source the story
+// came from («Первоисточник»), an anime row is a screen adaptation of it
+// («Экранизации»). Taken from the row and not from the title we came from: that
+// same rule then holds for ranobe and for the rare anime↔anime adaptations,
+// where the type of the host says nothing.
+//
+// The server does not promise a group is uniform, so the mixed case gets a rule
+// instead of a coin flip: ONE book anywhere in the group is enough to head it
+// «Первоисточник». Calling a manga a screen adaptation is plainly false, while
+// an anime under «Первоисточник» is merely imprecise — an anime can be the
+// source of another one. The rule reads the whole group and so does not depend
+// on the order the server sent it in.
+//
+// `items` is the WHOLE group as groupRelated() built it, never the portion
+// currently on screen (30 rows, then «Показать ещё»): a book left in the
+// unrendered tail would otherwise flip the heading on the next click.
+export function relationGroupLabel(kind: RelationKind, items: readonly RelatedItem[]): string {
+    const label = i18n.related.kinds[kind];
+    if (typeof label === 'string') {
+        return label;
+    }
+    // targetType is 'Anime' | 'Manga' and a ranobe card carries 'Manga'
+    // (api/types), so "not anime" is exactly "book" — no kind check needed.
+    const hasBook = items.some((item) => item.card.targetType !== 'Anime');
+    return hasBook ? label.source : label.screen;
+}
+
+// Ф12: «Показано 30 из 92» over the «Показать ещё» button. Built here, next to
+// the template, for the same reason as autoStatusMessage — the placeholder
+// tokens must not leak into the component that renders the counter.
+export function shownOfMessage(shown: number, total: number): string {
+    return i18n.related.shownOf.replace('{n}', String(shown)).replace('{total}', String(total));
 }
 
 // Kind/status of a title come from GraphQL as plain strings (not unions),
