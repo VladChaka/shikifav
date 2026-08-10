@@ -8,6 +8,8 @@ import type {
     RatePatch,
     RateRow,
     RateState,
+    RateTargetType,
+    RelatedItem,
     SearchType,
     TitleCard,
     User,
@@ -39,9 +41,27 @@ export interface MessageMap {
     // no «Ещё» button, so background walks the pages itself and answers with the
     // whole list at once (docs/02).
     'calendar.list': { payload: undefined; data: { items: CalendarItem[] } };
-    // Poster backfill for the titles GraphQL returns without one (Ф6-27): one
-    // batch per page of results, answered with id -> absolute poster url for the
-    // ids that have a picture (the rest are absent from the map).
+    // Related titles of one title (US-11, phase 12). The whole screen in one
+    // answer, like calendar.list: `related` has no paging on the server side
+    // either, so the only thing worth putting on the wire is where we came from.
+    // The list travels FLAT and in server order — grouping by relation kind,
+    // dedup and ordering are pure decisions living in src/lib/related.ts, so how
+    // the screen reads is testable without a service worker and background stays
+    // a pass-through.
+    // `targetType` is the write target, not a catalogue section: a ranobe card
+    // carries 'Manga' (TitleCard), and mangas(ids:) answers for it as is.
+    'titles.related': {
+        payload: { targetId: string; targetType: RateTargetType };
+        data: { items: RelatedItem[] };
+    };
+    // Poster backfill for the titles GraphQL returns without one (Ф6-27):
+    // answered with id -> absolute poster url for the ids that have a picture
+    // (the rest are absent from the map). One SearchType per message stays
+    // deliberate after phase 12, where the list of ids is mixed: the three REST
+    // indexes are three different endpoints (api/posters.ts), so a bucketed
+    // payload would not save a single request to Shikimori — it would only
+    // rewrite every existing caller. A mixed list therefore costs up to three
+    // messages (poster-backfill.ts), still never one per title (rule 2).
     'posters.fetch': {
         payload: { type: SearchType; ids: string[] };
         data: { posters: Record<string, string> };

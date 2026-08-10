@@ -111,6 +111,7 @@ async function mountPage(
         'search.titles': async () => ({ items: [] }),
         'rates.list': async () => ({ items: [], hasMore: false }),
         'calendar.list': async () => ({ items: [] }),
+        'titles.related': async () => ({ items: [] }),
         'posters.fetch': async () => ({ posters: {} }),
         'rates.create': async () => ({ rate: { id: '100', status: 'planned' } }),
         'rates.update': async () => ({

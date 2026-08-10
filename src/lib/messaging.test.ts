@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { fakeBrowser } from 'wxt/testing';
 import { onMessage, sendMessage } from './messaging';
 import type { MessageHandlers, MessageResponse, MessageType } from './messaging';
-import type { ApiError, User } from './api/types';
+import type { ApiError, RateTargetType, RelatedItem, User } from './api/types';
 import type { Origin } from './config';
 
 // fake-browser invokes onMessage listeners without sendResponse, so these tests
@@ -10,6 +10,26 @@ import type { Origin } from './config';
 // branch is Chrome-only and stays on the manual smoke checklist.
 
 const testUser: User = { id: 1, nickname: 'tester', avatarUrl: 'https://example.com/a.png' };
+
+// One row of the related screen, spelled out once: the point of the round-trip
+// below is that the envelope carries the wrapper whole, relation and card alike.
+const relatedItem: RelatedItem = {
+    relationKind: 'sequel',
+    relationText: 'Продолжение',
+    card: {
+        id: '2',
+        targetType: 'Anime',
+        name: 'Sequel',
+        russian: null,
+        kind: 'tv',
+        score: null,
+        status: null,
+        year: 2011,
+        posterUrl: null,
+        posterUrl2x: null,
+        userRate: null,
+    },
+};
 
 // MessageHandlers is exhaustive over MessageMap, so every registration needs the
 // full set; tests override only the handler under test.
@@ -22,6 +42,7 @@ function makeHandlers(overrides: Partial<MessageHandlers> = {}): MessageHandlers
         'search.titles': async () => ({ items: [] }),
         'rates.list': async () => ({ items: [], hasMore: false }),
         'calendar.list': async () => ({ items: [] }),
+        'titles.related': async () => ({ items: [] }),
         'posters.fetch': async () => ({ posters: {} }),
         'rates.create': async () => ({ rate: { id: '1', status: 'planned' } }),
         'rates.update': async () => ({
@@ -118,6 +139,53 @@ describe('messaging', () => {
 
             expect(response).toEqual({ ok: true, data: {} });
             expect(received).toEqual(['https://shikimori.one']);
+        });
+    });
+
+    describe('related round-trip', () => {
+        it('titles.related delivers the target and answers with the list as given', async () => {
+            const asked: { targetId: string; targetType: RateTargetType }[] = [];
+            registerBackground({
+                'titles.related': async (payload) => {
+                    asked.push(payload);
+                    return { items: [relatedItem] };
+                },
+            });
+
+            const response = await sendMessage('titles.related', {
+                targetId: '5114',
+                targetType: 'Anime',
+            });
+
+            // The wire must not reshape the list: grouping and ordering are the
+            // UI's job (src/lib/related.ts), so what background answered is
+            // exactly what arrives.
+            expect(response).toEqual({ ok: true, data: { items: [relatedItem] } });
+            expect(asked).toEqual([{ targetId: '5114', targetType: 'Anime' }]);
+        });
+
+        it('carries a Manga target, so a ranobe card reaches the manga read path', async () => {
+            const asked: RateTargetType[] = [];
+            registerBackground({
+                'titles.related': async ({ targetType }) => {
+                    asked.push(targetType);
+                    return { items: [] };
+                },
+            });
+
+            await sendMessage('titles.related', { targetId: '81669', targetType: 'Manga' });
+            expect(asked).toEqual(['Manga']);
+        });
+
+        it('answers with an empty list for a title without relations', async () => {
+            // A normal state with its own text on the screen, not a failure
+            // (docs/03): it must not come back as { ok: false }.
+            registerBackground();
+            const response = await sendMessage('titles.related', {
+                targetId: '199',
+                targetType: 'Anime',
+            });
+            expect(response).toEqual({ ok: true, data: { items: [] } });
         });
     });
 

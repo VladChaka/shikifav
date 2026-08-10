@@ -147,6 +147,52 @@ export interface TitleCard {
     url?: string | null;
 }
 
+// Kinds of a link between two titles — RelationKindEnum, all 12 values as of the
+// introspection of 2026-08-10 (docs/03). This union is OUR copy of a server enum
+// and not a contract: Shikimori may add a value without warning, so everything
+// that consumes it goes through normalizeRelationKind (src/lib/related.ts)
+// instead of assuming the string is one of these.
+export type RelationKind =
+    | 'adaptation'
+    | 'alternative_setting'
+    | 'alternative_version'
+    | 'character'
+    | 'full_story'
+    | 'other'
+    | 'parent_story'
+    | 'prequel'
+    | 'sequel'
+    | 'side_story'
+    | 'spin_off'
+    | 'summary';
+
+// A row of the related-titles screen (US-11, phase 12): a title card plus the
+// kind of its link to the title we came from. A wrapper rather than extra fields
+// on TitleCard (the CalendarItem precedent is the other way round on purpose):
+// the very same title is a plain search card elsewhere, and the relation belongs
+// to the link, not to the title — the same card appears with a different
+// relationKind when opened from its neighbour.
+//
+// Anime.related and Manga.related fill exactly one of anime/manga per element
+// (docs/03), so a mixed list of both media is normal here: `card.targetType`
+// tells them apart, and Related.id — the id of the LINK, volatile — is dropped
+// by the mapper as unusable for keys or caching.
+//
+// ASSUMPTION (Ф12-1, not yet verified by the owner): `card.userRate` inside
+// related comes back non-null under Bearer for a title that is in my lists. The
+// public request answers null for every element, which does not distinguish
+// "not in my lists" from "the field does not work nested". If it turns out to be
+// the latter, the status badge on the screen needs a separate request.
+export interface RelatedItem {
+    relationKind: RelationKind;
+    // The server's own Russian wording of this relation («Адаптация», «Другая
+    // история»). Kept as row meta and NOT used as a group heading: anime and
+    // manga word the SAME relationKind differently (docs/03), so headings come
+    // from our own map (i18n) while this stays exactly as the server said it.
+    relationText: string;
+    card: TitleCard;
+}
+
 // Raw wire shapes of the GraphQL responses (Raw*) live next to their queries in
 // api/graphql.ts: this file is the surface shared with background, messaging and
 // UI, while the wire shapes stay internal to the read layer (docs/02, module tree).

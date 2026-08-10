@@ -1,6 +1,6 @@
 import { trackEvent } from '@/src/lib/api/analytics';
 import { ensureToken, getAuthState, login, logout } from '@/src/lib/api/auth';
-import { listCalendar, listRates, searchTitles } from '@/src/lib/api/graphql';
+import { listCalendar, listRates, listRelated, searchTitles } from '@/src/lib/api/graphql';
 import { setTokenProvider } from '@/src/lib/api/http';
 import { fetchPosters } from '@/src/lib/api/posters';
 import { createRate, deleteRate, incrementRate, updateRate } from '@/src/lib/api/rates';
@@ -106,6 +106,12 @@ export default defineBackground(() => {
                 // Paging lives entirely in the read layer: the calendar is one
                 // screen without an «Ещё» button, so the popup never sees pages.
                 items: await listCalendar(),
+            }),
+            'titles.related': async ({ targetId, targetType }) => ({
+                // One GraphQL for the whole screen (DoD of phase 12). Nothing is
+                // reshaped here: the flat server list goes straight to the UI,
+                // where the pure module decides how it reads.
+                items: await listRelated(targetId, targetType),
             }),
             'posters.fetch': async ({ type, ids }) => ({
                 // Ф6-27: GraphQL gives no poster for part of the catalogue, so the
