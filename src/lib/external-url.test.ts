@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { httpsHref, mailtoHref } from './external-url';
+import { httpsHref, mailtoHref, shikimoriHref } from './external-url';
 
 // The single gate between a value this code did not construct and a live href:
 // a title url from the API (Ф6-26) and a hand-edited donation link (Ф8-2) go
@@ -109,5 +109,82 @@ describe('mailtoHref', () => {
         ['https://chakalabs.com'],
     ])('refuses %s', (url) => {
         expect(mailtoHref(url)).toBeNull();
+    });
+});
+
+// Ф11-16. The second, narrower gate: an address the extension opens ITSELF, in a
+// tab, from a notification the user saw without an address in it. httpsHref is
+// not enough there — it judges the scheme and says nothing about the host — and
+// it is deliberately left alone: its three other callers render links and images
+// the user reads and decides to follow.
+describe('shikimoriHref', () => {
+    it.each([
+        ['https://shikimori.io/animes/1-x'],
+        ['https://shikimori.one/animes/1-x'],
+        ['https://shikimori.io/animes/1-x?a=1#b'],
+    ])('passes %s, an address on one of our origins', (url) => {
+        expect(shikimoriHref(url)).toBe(url);
+    });
+
+    it.each([
+        // A foreign host, plain and disguised. Every one of these passes a
+        // startsWith('https://') check, which is the whole reason this function
+        // parses instead of matching a prefix.
+        ['https://evil.example/animes/1'],
+        ['https://shikimori.io.evil.example/animes/1'],
+        ['https://shikimori.io.evil.example/'],
+        ['https://evil.example/https://shikimori.io/animes/1'],
+        ['https://evil.example/#https://shikimori.io/animes/1'],
+        // Credentials: the host here is evil.example, not shikimori.io.
+        ['https://shikimori.io@evil.example/animes/1'],
+        // …and even on our own host a url carrying a login is not one we produce.
+        ['https://user:pass@shikimori.io/animes/1'],
+        // A domain we used to be on is still not a domain we are on (ORIGINS).
+        ['https://shikimori.org/animes/1'],
+        ['https://shikimori.me/animes/1'],
+        // Subdomains are not the origin either.
+        ['https://nyan.shikimori.io/animes/1'],
+        // Schemes: the downgrade, the two that run code, and our own pages.
+        ['http://shikimori.io/animes/1'],
+        ['javascript:alert(1)'],
+        ['data:text/html,<h1>hi</h1>'],
+        ['chrome-extension://abcdefghijklmnop/popup.html'],
+        // Not a url at all.
+        ['shikimori.io/animes/1'],
+        ['//shikimori.io/animes/1'],
+        ['/animes/1'],
+        [''],
+        [null],
+        [undefined],
+    ])('refuses %s', (url) => {
+        expect(shikimoriHref(url)).toBeNull();
+    });
+
+    // Non-strings reach it through storage and through the API answer, exactly
+    // like everywhere else in this project.
+    it.each([[42], [{ href: 'https://shikimori.io/' }], [['https://shikimori.io/']]])(
+        'refuses a value that is not a string (%s)',
+        (url) => {
+            expect(shikimoriHref(url as unknown as string)).toBeNull();
+        },
+    );
+
+    // What comes back is the parsed href and not the raw string: the url parser
+    // strips tabs and newlines, so the value handed to tabs.create must be the
+    // one that was actually judged.
+    it('answers with the normalised address, not with the raw string', () => {
+        // The tab inside the host is dropped by the parser, so this IS our host
+        // — and what comes back is the address without it, i.e. the one that was
+        // judged. Handing the raw string over would leave the tab for Chrome to
+        // strip a second time, on a value nobody looked at.
+        expect(shikimoriHref('https://shiki\tmori.io/animes/1')).toBe(
+            'https://shikimori.io/animes/1',
+        );
+        expect(shikimoriHref('https://shikimori.io/animes/1\n')).toBe(
+            'https://shikimori.io/animes/1',
+        );
+        expect(shikimoriHref('  https://shikimori.io/animes/1  ')).toBe(
+            'https://shikimori.io/animes/1',
+        );
     });
 });

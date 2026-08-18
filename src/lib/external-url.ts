@@ -1,3 +1,5 @@
+import { ORIGINS } from './config';
+
 // The single https guard for anything that becomes an address in the UI.
 //
 // Three kinds of caller, same risk and one rule: a title's `url` comes from the
@@ -10,6 +12,42 @@
 // as plain text, a poster-less card shows the local fallback image.
 export function httpsHref(url: string | null | undefined): string | null {
     return url?.startsWith('https://') ? url : null;
+}
+
+// Ф11-16: the same value, judged by a stricter rule, and on purpose NOT a
+// tightening of httpsHref. That guard has three callers — title links, posters,
+// donation links — and every one of them either renders an <img src> or an <a>
+// the user reads and decides to follow; narrowing the rule for all of them is a
+// separate decision, not a side effect of this one.
+//
+// What is different here: a click on a notification is opened BY US, in a new
+// tab, from a message the user saw without an address in it. The address itself
+// comes from the API answer (AiredPollItem.url), so the only thing that keeps a
+// substituted answer from choosing where that tab lands is this check against
+// the two origins the extension knows (src/lib/config.ts).
+//
+// Parsed rather than matched by prefix: `https://shikimori.io.evil.example/x`
+// passes any startsWith, and only a parser tells the host from the path. The
+// normalised href is what comes back, not the raw string — the parser is
+// tolerant of tabs and newlines inside a url and strips them, and the value
+// handed to tabs.create must be the one that was judged. Credentials are refused
+// outright: `https://shikimori.io@evil.example` parses with a foreign host, and
+// even on our own host a url carrying a login is not an address we produce.
+export function shikimoriHref(url: string | null | undefined): string | null {
+    if (typeof url !== 'string') {
+        return null;
+    }
+    let parsed: URL;
+    try {
+        parsed = new URL(url);
+    } catch {
+        return null;
+    }
+    if (parsed.username !== '' || parsed.password !== '') {
+        return null;
+    }
+    // Origin covers the scheme too: every entry of ORIGINS is https.
+    return (ORIGINS as readonly string[]).includes(parsed.origin) ? parsed.href : null;
 }
 
 // The mail counterpart, on purpose a second function instead of a second scheme
