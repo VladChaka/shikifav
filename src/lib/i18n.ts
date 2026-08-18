@@ -244,6 +244,37 @@ export const i18n = {
     contextMenu: {
         searchSelection: 'Найти «%s» на Shikimori',
     },
+    // Ф11-9: the icon itself. `title` is the tooltip of the extension button and
+    // replaces the plain «ShikiFAV» Chrome shows by default — hence the name is
+    // part of both strings, otherwise the tooltip would lose it. The number is
+    // the real one even when the badge shows «99+»: the tooltip is the place
+    // where the capped counter can be read exactly. Placeholders are filled by
+    // badgeTitleMessage(), never by hand.
+    badge: {
+        idleTitle: 'ShikiFAV',
+        behindTitle: 'ShikiFAV: {n} {titles} с неотмеченными сериями',
+        // Russian plural of «тайтл»; the form is picked by Intl.PluralRules.
+        titleWords: { one: 'тайтл', few: 'тайтла', many: 'тайтлов' },
+    },
+    // Ф11-10: the system notification about an episode that came out. The title
+    // of a notification is what the system TRUNCATES and what is recognised by
+    // its first characters, so the name of the anime goes there and the episode
+    // number into the message — the number must survive to the screen whole.
+    // Both strings are filled by airedEpisodesMessage(), never by hand.
+    notifications: {
+        airedOne: 'Вышла {n} серия',
+        // A short dash, and «серии» BEFORE the range: «Вышли 2–3 серии» reads as
+        // «вышло две-три серии», i.e. as an estimate instead of a fact.
+        airedRange: 'Вышли серии {first}–{last}',
+        // There is no summary string for what a tick shows past its cap: the
+        // rest of the increases move the snapshot silently and are counted by
+        // the badge instead (owner's decision 2026-08-17, docs/06).
+        //
+        // The name arrives from the API and is stripped of control characters
+        // before it is shown (src/lib/episode-notifications.ts); a name that was
+        // nothing but those is left with no text at all.
+        untitled: 'Тайтл без названия',
+    },
     // Options page (design card screens/options): four sections behind
     // vertical tabs — «Вид», «Поведение», «Аккаунт и данные», «Поддержать».
     options: {
@@ -286,6 +317,37 @@ export const i18n = {
         defaultsHint: 'С какими фильтрами открываются вкладки, пока вы не переключили их сами.',
         defaultTypeLabel: 'Тип в поиске',
         defaultListStatusLabel: 'Статус в «Моих списках»',
+
+        // --- «Новые серии» (Ф11-11, US-12) ---
+        // Последний блок «Поведения»: два подчинённых ряда чипов. Подсказка
+        // называет и период опроса, и три статуса, и границу anime-only —
+        // функция работает без пользователя, поэтому она обязана сказать о
+        // себе всё до первого фонового запроса.
+        episodesLabel: 'Новые серии',
+        episodesHint:
+            'Расширение раз в полчаса проверяет, не вышли ли новые серии у тайтлов из «Смотрю», «Пересматриваю» и «Запланировано». Число на иконке — сколько тайтлов ждут отметки. Только аниме: у манги и ранобэ дат выхода в API нет.',
+        // Подписи чипов согласованы со своим рядом («счётчик включён»,
+        // «уведомления включены») — тот же приём, что у «Анонимной статистики».
+        badgeRowLabel: 'Счётчик на иконке',
+        badgeOn: 'Включён',
+        badgeOff: 'Выключен',
+        notifyRowLabel: 'Уведомления',
+        notifyOn: 'Включены',
+        notifyOff: 'Выключены',
+        // Строка состояния под вторым рядом существует только там, где от неё
+        // что-то зависит: у выключенных уведомлений её нет вовсе.
+        notifyGranted: 'Уведомления разрешены — Chrome покажет сообщение, когда выйдет серия.',
+        notifyMissing:
+            'Уведомления включены, но Chrome ещё не выдал разрешение — пока они не приходят. Счётчик на иконке работает и без него.',
+        notifyAllow: 'Разрешить уведомления',
+        notifyNeedsBadge:
+            'Уведомления недоступны: пока счётчик выключен, расширение не проверяет выход серий.',
+        episodesNoAuth:
+            'Нужен вход: серии считаются по вашим спискам. Войдите через иконку расширения — после входа настройки станут доступны.',
+        // Отказ в системном диалоге виден только так: разрешения нет, ряд
+        // остаётся включённым, и без тоста клик по кнопке выглядел бы
+        // проигнорированным.
+        notifyDenied: 'Chrome не выдал разрешение на уведомления',
 
         // --- «Аккаунт и данные» ---
         originLabel: 'Домен API',
@@ -414,6 +476,58 @@ export function relationGroupLabel(kind: RelationKind, items: readonly RelatedIt
     // (api/types), so "not anime" is exactly "book" — no kind check needed.
     const hasBook = items.some((item) => item.card.targetType !== 'Anime');
     return hasBook ? label.source : label.screen;
+}
+
+// Ф11-9: the first plural in the project, so the rules come from the platform
+// rather than from a hand-written `n % 10` chain — Intl knows that 11 is «many»
+// and 21 is «one». Built on first use and then kept: this module is imported by
+// popup, options and search, while the only plural in the extension is the badge
+// tooltip built in the background — an eager constructor would sit on the popup
+// start path for nothing (docs/05, бюджеты).
+let pluralRules: Intl.PluralRules | undefined;
+
+interface PluralForms {
+    one: string;
+    few: string;
+    many: string;
+}
+
+function plural(count: number, forms: PluralForms): string {
+    pluralRules ??= new Intl.PluralRules('ru-RU');
+    switch (pluralRules.select(count)) {
+        case 'one':
+            return forms.one;
+        case 'few':
+            return forms.few;
+        // 'other' happens only for fractions, which a title count never is; it
+        // shares the wording of 'many' («5 тайтлов»).
+        default:
+            return forms.many;
+    }
+}
+
+// Ф11-9: tooltip of the extension icon. Zero is not «0 тайтлов» but the bare
+// name: with an empty badge there is nothing to explain.
+export function badgeTitleMessage(count: number): string {
+    if (count <= 0) {
+        return i18n.badge.idleTitle;
+    }
+    return i18n.badge.behindTitle
+        .replace('{n}', String(count))
+        .replace('{titles}', plural(count, i18n.badge.titleWords));
+}
+
+// Ф11-10: body of the notification. One episode and a range are two different
+// sentences, not one template with a plural — «Вышла 3 серия» against «Вышли
+// серии 2–3». Both bounds arrive already validated by the caller, so nothing
+// here re-checks them: this function only formats.
+export function airedEpisodesMessage(first: number, last: number): string {
+    if (first >= last) {
+        return i18n.notifications.airedOne.replace('{n}', String(first));
+    }
+    return i18n.notifications.airedRange
+        .replace('{first}', String(first))
+        .replace('{last}', String(last));
 }
 
 // Ф12: «Показано 30 из 92» over the «Показать ещё» button. Built here, next to
