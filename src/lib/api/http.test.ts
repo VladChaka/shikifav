@@ -163,6 +163,71 @@ describe('http', () => {
             }
         });
 
+        // Ф11 audit, пункт 12. The body is untrusted text, and the JSON branch of
+        // it is the ONLY error text that reaches a person: apiErrorMessage()
+        // answers with the generic Russian line for every `kind: 'api'` except
+        // the 422 of a write, and a 422 answers with exactly these shapes
+        // (src/composables/use-rates.ts, docs/03).
+        describe('the untrusted error body', () => {
+            async function messageOf(body: BodyInit, status = 422): Promise<string> {
+                fetchMock.mockResolvedValueOnce(new Response(body, { status }));
+                const error = expectFail(
+                    await apiRequest('/api/v2/user_rates/1', { method: 'PATCH', body: {} }),
+                );
+                if (error.kind !== 'api') {
+                    throw new Error(`Expected an api error, got ${error.kind}`);
+                }
+                return error.message ?? '';
+            }
+
+            it('caps a REST validation array at the same length as raw text', async () => {
+                const message = await messageOf(JSON.stringify(['я'.repeat(500)]));
+
+                expect([...message]).toHaveLength(200);
+            });
+
+            // A hundred short strings are as long as one long one, and it is the
+            // JOINED result the screen shows.
+            it('caps the joined array and not its elements', async () => {
+                const message = await messageOf(
+                    JSON.stringify(Array.from({ length: 100 }, () => 'Episodes is invalid')),
+                );
+
+                expect([...message]).toHaveLength(200);
+            });
+
+            it.each(['error_description', 'message', 'error'])(
+                'caps the `%s` field of an object body',
+                async (key) => {
+                    const message = await messageOf(JSON.stringify({ [key]: 'э'.repeat(500) }));
+
+                    expect([...message]).toHaveLength(200);
+                },
+            );
+
+            // By CODE POINTS, on every branch: a cut by UTF-16 units splits a
+            // surrogate pair and ends the message the UI shows with half a
+            // character. An emoji body is 400 units long and 200 code points.
+            it.each([
+                ['a JSON array', JSON.stringify(['😀'.repeat(400)])],
+                ['a JSON object', JSON.stringify({ message: '😀'.repeat(400) })],
+                ['raw text', '😀'.repeat(400)],
+            ])('cuts %s by code points, never through a character', async (_label, body) => {
+                const message = await messageOf(body);
+
+                expect([...message]).toHaveLength(200);
+                expect(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/.test(message)).toBe(false);
+                expect(/(?:^|[^\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(message)).toBe(false);
+            });
+
+            // The cap must not touch what fits: the real 422 text is short.
+            it('leaves a real validation message alone', async () => {
+                expect(await messageOf(JSON.stringify(['Episodes is invalid']))).toBe(
+                    'Episodes is invalid',
+                );
+            });
+        });
+
         it('maps invalid JSON in a 200 response to internal', async () => {
             fetchMock.mockResolvedValueOnce(new Response('not json', { status: 200 }));
             const result = await apiRequest('/api/users/whoami');

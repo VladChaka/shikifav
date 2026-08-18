@@ -35,6 +35,18 @@ describe('sanitizeQuery', () => {
         expect(result).toBe('б'.repeat(MAX_QUERY_LENGTH));
     });
 
+    // Ф11 audit, пункт 12: the selection is untrusted text from any page, and a
+    // cut by UTF-16 units breaks a surrogate pair — the half that survives is a
+    // lone surrogate, which the URL serializer then turns into U+FFFD inside
+    // `?q=`, i.e. into a query the user never selected.
+    it('cuts by code points and never leaves half a character', () => {
+        const result = sanitizeQuery('😀'.repeat(MAX_QUERY_LENGTH + 20));
+
+        expect([...result]).toHaveLength(MAX_QUERY_LENGTH);
+        expect(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/.test(result)).toBe(false);
+        expect(buildSearchPageUrl(result)).not.toContain('%EF%BF%BD');
+    });
+
     it('leaves no trailing space when the cut lands on one', () => {
         // The character at the cut boundary is a space: a naive slice would keep
         // it and send "…word " to the API.

@@ -188,6 +188,19 @@ function parseRetryAfter(header: string | null): number | undefined {
 
 const ERROR_MESSAGE_MAX_LENGTH = 200;
 
+// The one cut, applied to every branch below (Ф11 audit, пункт 12). Two things
+// about it are load-bearing:
+//
+// 1. By CODE POINTS, not by UTF-16 units: the body is untrusted text, and a cut
+//    by units ends the message with half a character.
+// 2. On the JSON branch as well, which used to return whatever the body said at
+//    whatever length. That branch is the only one that reaches the user at all —
+//    apiErrorMessage() shows the generic Russian text for every `kind: 'api'`
+//    except the 422 of a write, and a 422 body is exactly the JSON shape here.
+function capErrorMessage(text: string): string {
+    return [...text].slice(0, ERROR_MESSAGE_MAX_LENGTH).join('').trim();
+}
+
 // Extracts a human-readable message for the UI (e.g. 422 validation, docs/03).
 // Known body shapes: ["Validation error", ...] (REST v2),
 // { "error": "...", "error_description": "..." } (oauth), { "message": "..." }.
@@ -201,7 +214,11 @@ async function readErrorMessage(response: Response): Promise<string> {
     try {
         const parsed: unknown = JSON.parse(text);
         if (Array.isArray(parsed)) {
-            const message = parsed.filter((item) => typeof item === 'string').join('; ');
+            // Capped after the join: a hundred short strings are as long as one
+            // long one, and it is the joined result that the screen shows.
+            const message = capErrorMessage(
+                parsed.filter((item) => typeof item === 'string').join('; '),
+            );
             if (message) {
                 return message;
             }
@@ -210,14 +227,17 @@ async function readErrorMessage(response: Response): Promise<string> {
             for (const key of ['error_description', 'message', 'error']) {
                 const value = record[key];
                 if (typeof value === 'string' && value) {
-                    return value;
+                    const message = capErrorMessage(value);
+                    if (message) {
+                        return message;
+                    }
                 }
             }
         }
     } catch {
         // Not JSON — fall through to raw text.
     }
-    return text.slice(0, ERROR_MESSAGE_MAX_LENGTH).trim() || response.statusText;
+    return capErrorMessage(text) || response.statusText;
 }
 
 // Only kind/status reach the logs — never bodies, headers or tokens

@@ -8,12 +8,17 @@ export const MAX_QUERY_LENGTH = 100;
 
 export function sanitizeQuery(raw: string): string {
     const collapsed = raw.replace(/\s+/g, ' ').trim();
-    if (collapsed.length <= MAX_QUERY_LENGTH) {
+    // Code points, not UTF-16 units (Ф11 audit, пункт 12): a selection of emoji
+    // is twice as long by `.length`, and a cut by units breaks a surrogate pair
+    // — the half that survives is a lone surrogate, which the URL serializer
+    // then turns into U+FFFD inside `?q=`.
+    const characters = [...collapsed];
+    if (characters.length <= MAX_QUERY_LENGTH) {
         return collapsed;
     }
     // trimEnd: the cut can land on a space, which would otherwise ride along
     // into the query string.
-    return collapsed.slice(0, MAX_QUERY_LENGTH).trimEnd();
+    return characters.slice(0, MAX_QUERY_LENGTH).join('').trimEnd();
 }
 
 export function buildSearchPageUrl(raw: string): string {
