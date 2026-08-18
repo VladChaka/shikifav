@@ -1,12 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing';
 import background from '@/entrypoints/background';
+import { showAiredBacklog } from '../badge';
+import { runEpisodeWatchTick } from '../episode-watch';
 import { sendMessage } from '../messaging';
+import { isSessionEpochCurrent, sessionEpoch } from '../session-epoch';
 import {
     DEFAULT_SETTINGS,
+    getAiredSnapshot,
     getLocal,
     getSession,
     getSettings,
+    setAiredSnapshot,
     setLocal,
     setSession,
     setSettings,
@@ -103,6 +108,20 @@ function spyConsole(): { output: () => string; restore: () => void } {
                 .join('\n'),
         restore: () => spies.forEach((spy) => spy.mockRestore()),
     };
+}
+
+// Makes the airing-snapshot delete — and only it — reject, the way a storage
+// failure standing PAST the point of success would (Ф11-6): auth is already
+// written on login and already gone on logout by the time it runs. Returns the
+// spy so the test restores it, as everywhere else in this repo.
+function failSnapshotRemoval() {
+    const remove = fakeBrowser.storage.local.remove.bind(fakeBrowser.storage.local);
+    return vi.spyOn(fakeBrowser.storage.local, 'remove').mockImplementation(async (keys) => {
+        if (keys === 'airedSnapshot') {
+            throw new Error('Storage delete refused');
+        }
+        await remove(keys);
+    });
 }
 
 describe('auth', () => {
@@ -257,6 +276,60 @@ describe('auth', () => {
             expect(error).toEqual({ kind: 'unauthorized' });
             await expect(getLocal('auth')).resolves.toBeUndefined();
             await expect(getSession('lastTab')).resolves.toBeUndefined();
+        });
+
+        // Ф11-6, the risk phase 11 has to close in code: a failed refresh inside
+        // a background tick goes through the same clearAuth(), so the snapshot
+        // must leave with auth there too — otherwise the next tick would count a
+        // backlog of a session that no longer exists.
+        it('clears the airing snapshot when a background refresh loses the session', async () => {
+            await setLocal('auth', storedAuth({ expiresAt: Date.now() - 1000 }));
+            await setAiredSnapshot({ '21': 1147 });
+            fetchMock.mockResolvedValueOnce(jsonResponse(400, { error: 'invalid_grant' }));
+
+            await expectApiErrorThrow(ensureToken());
+
+            await expect(getLocal('airedSnapshot')).resolves.toBeUndefined();
+        });
+
+        // Ревью Ф11-9: this is the OTHER way a session dies without a frame on
+        // screen — a refresh that fails inside a request made from the popup.
+        // The catch in the background tick never sees it, so the badge has to be
+        // wiped by clearAuth() itself; otherwise the icon keeps the number and
+        // restoreBadge() redraws it on every worker start until the next tick.
+        it('wipes the badge when a refresh outside the tick loses the session', async () => {
+            await setLocal('auth', storedAuth({ expiresAt: Date.now() - 1000 }));
+            await showAiredBacklog([{ rateId: '1', episodesAired: 8, progress: 3 }]);
+            fetchMock.mockResolvedValueOnce(jsonResponse(400, { error: 'invalid_grant' }));
+
+            await expectApiErrorThrow(ensureToken());
+
+            expect(await fakeBrowser.action.getBadgeText({})).toBe('');
+            await expect(getLocal('badgeBacklog')).resolves.toBeUndefined();
+        });
+
+        it('keeps the badge on a transient refresh failure', async () => {
+            await setLocal('auth', storedAuth({ expiresAt: Date.now() - 1000 }));
+            await showAiredBacklog([{ rateId: '1', episodesAired: 8, progress: 3 }]);
+            fetchMock.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+
+            await expectApiErrorThrow(ensureToken());
+
+            // Auth survives a network blip, and so does the number: nothing about
+            // the lists changed (docs/04 §3.5).
+            expect(await fakeBrowser.action.getBadgeText({})).toBe('1');
+        });
+
+        it('keeps the airing snapshot on a transient refresh failure', async () => {
+            await setLocal('auth', storedAuth({ expiresAt: Date.now() - 1000 }));
+            await setAiredSnapshot({ '21': 1147 });
+            fetchMock.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+
+            await expectApiErrorThrow(ensureToken());
+
+            // Auth survives a network blip (docs/04 §3.5), and so must the
+            // snapshot: re-seeding would cost the next episode of every title.
+            await expect(getAiredSnapshot()).resolves.toEqual({ '21': 1147 });
         });
 
         it('keeps auth intact on a transient network failure (no auto-retry)', async () => {
@@ -460,6 +533,58 @@ describe('auth', () => {
             expect(whoami.headers['Authorization']).toBe('Bearer fresh-access');
         });
 
+        // Ф11-6, account switch: the snapshot left over from the previous
+        // session describes somebody else's lists. Dropped on every login —
+        // re-seeding is silent, while a stale snapshot puts a stranger's backlog
+        // on the badge.
+        it('drops the airing snapshot of the previous session', async () => {
+            await setAiredSnapshot({ '21': 1147 });
+            stubIdentity(`${REDIRECT_URI}?code=auth-code`);
+            mockLoginNetwork();
+
+            await login();
+
+            await expect(getLocal('airedSnapshot')).resolves.toBeUndefined();
+            // The login itself succeeded — the snapshot is the only casualty.
+            await expect(getLocal('auth')).resolves.toMatchObject({ user: testUser });
+        });
+
+        // The snapshot delete stands past the point of success: auth is already
+        // in storage when it runs. A refused delete must not turn a live session
+        // into a reported login failure — the user would be shown an error and
+        // be logged in at the same time.
+        it('reports the login even when the snapshot cleanup fails', async () => {
+            await setAiredSnapshot({ '21': 1147 });
+            stubIdentity(`${REDIRECT_URI}?code=auth-code`);
+            mockLoginNetwork();
+            const remove = failSnapshotRemoval();
+            const consoleSpy = spyConsole();
+
+            await expect(login()).resolves.toEqual(testUser);
+
+            await expect(getLocal('auth')).resolves.toMatchObject({ user: testUser });
+            // The stale snapshot is the price, and it is bounded: the next login
+            // or logout drops it, and the badge is wrong until then — cheaper
+            // than a login that says it failed while the session is live.
+            await expect(getAiredSnapshot()).resolves.toEqual({ '21': 1147 });
+            // Whatever the failure logged, it is not a token (CLAUDE.md rule 6).
+            expect(consoleSpy.output()).not.toContain('fresh-access');
+            expect(consoleSpy.output()).not.toContain('fresh-refresh');
+            consoleSpy.restore();
+            remove.mockRestore();
+        });
+
+        // A failed login must not touch it either: nothing changed hands, and
+        // the user stays on the account they were already on.
+        it('keeps the snapshot when the login fails', async () => {
+            await setAiredSnapshot({ '21': 1147 });
+            stubIdentity(`${REDIRECT_URI}?error=access_denied`);
+
+            await expectApiErrorThrow(login());
+
+            await expect(getAiredSnapshot()).resolves.toEqual({ '21': 1147 });
+        });
+
         // The avatar reaches an <img src>, so it passes the same https guard as
         // an outbound link. A refused url is stored as '' — the state the header
         // already draws as "no avatar", never an <img> with a broken src.
@@ -644,6 +769,100 @@ describe('auth', () => {
             // Settings survive logout.
             await expect(getAuthState()).resolves.toEqual({ status: 'anonymous' });
         });
+
+        // Ф11-6: the snapshot describes MY lists, so it goes with auth. Left
+        // behind, it would make the badge count a backlog of an account that is
+        // no longer logged in — and, after a login as somebody else, a stranger's.
+        it('clears the airing snapshot together with auth', async () => {
+            await setLocal('auth', storedAuth());
+            await setAiredSnapshot({ '21': 1147 });
+
+            await logout();
+
+            await expect(getLocal('airedSnapshot')).resolves.toBeUndefined();
+            await expect(getAiredSnapshot()).resolves.toEqual({});
+        });
+
+        // Ф11-9, ревью: the badge is wiped by clearAuth() and not by the message
+        // handler, because clearAuth() is where every exit from a session meets —
+        // «Выйти», the domain switch, and a refresh that lost the session in a
+        // popup request. A number left on the icon has no frame on screen to
+        // explain it, and restoreBadge() would redraw it on every worker start.
+        it('wipes the badge together with auth', async () => {
+            await setLocal('auth', storedAuth());
+            await showAiredBacklog([{ rateId: '1', episodesAired: 8, progress: 3 }]);
+
+            await logout();
+
+            expect(await fakeBrowser.action.getBadgeText({})).toBe('');
+            await expect(getLocal('badgeBacklog')).resolves.toBeUndefined();
+        });
+
+        // Ф11 audit: a notification carries the name of a title from the lists of
+        // whoever was logged in, and the system centre keeps it until it is
+        // dismissed by hand — it would sit there next to our icon and our name
+        // for as long as the user lets it, long after the session ended.
+        it('takes its notifications out of the tray together with auth', async () => {
+            vi.spyOn(fakeBrowser.permissions, 'contains').mockResolvedValue(true as never);
+            await setLocal('auth', storedAuth());
+            await fakeBrowser.notifications.create('shikifav-aired:1', {
+                type: 'basic',
+                iconUrl: '/icon/128.png',
+                title: 'Тайтл из списков',
+                message: 'Вышла 9 серия',
+            });
+            await fakeBrowser.notifications.create('someone-else', {
+                type: 'basic',
+                iconUrl: '/icon/128.png',
+                title: 'Not ours',
+                message: 'x',
+            });
+
+            await logout();
+
+            expect(Object.keys(await fakeBrowser.notifications.getAll())).toEqual(['someone-else']);
+        });
+
+        // Same rule as the snapshot delete: the badge stands past the point of
+        // success, so a platform that refuses to redraw it must not cost the
+        // session wipe.
+        it('finishes the logout when the badge cannot be redrawn', async () => {
+            await setLocal('auth', storedAuth());
+            await setSession('lastTab', 'lists');
+            const setBadgeText = vi
+                .spyOn(fakeBrowser.action, 'setBadgeText')
+                .mockRejectedValue(new Error('no action api'));
+            const consoleSpy = spyConsole();
+
+            await expect(logout()).resolves.toBeUndefined();
+
+            await expect(getLocal('auth')).resolves.toBeUndefined();
+            await expect(getSession('lastTab')).resolves.toBeUndefined();
+            expect(consoleSpy.output()).not.toContain('stored-access');
+            consoleSpy.restore();
+            setBadgeText.mockRestore();
+        });
+
+        // The snapshot delete sits between the auth delete and the session
+        // wipe. A refused delete there must not skip the wipe: the popup would
+        // keep rendering the lists and the calendar of a session that is gone.
+        it('finishes the logout when the snapshot cleanup fails', async () => {
+            await setLocal('auth', storedAuth());
+            await setSession('lastTab', 'lists');
+            await setAiredSnapshot({ '21': 1147 });
+            const remove = failSnapshotRemoval();
+            const consoleSpy = spyConsole();
+
+            await expect(logout()).resolves.toBeUndefined();
+
+            await expect(getLocal('auth')).resolves.toBeUndefined();
+            await expect(getSession('lastTab')).resolves.toBeUndefined();
+            await expect(getAuthState()).resolves.toEqual({ status: 'anonymous' });
+            expect(consoleSpy.output()).not.toContain('stored-access');
+            expect(consoleSpy.output()).not.toContain('stored-refresh');
+            consoleSpy.restore();
+            remove.mockRestore();
+        });
     });
 
     describe('background settings.setOrigin handler', () => {
@@ -683,8 +902,10 @@ describe('auth', () => {
                 origin: 'https://shikimori.one',
             });
             // The ordering is the whole point: writing the origin first would
-            // leave a window with the new domain and the old token.
-            expect(changedKeys).toEqual(['auth', 'settings']);
+            // leave a window with the new domain and the old token. The airing
+            // snapshot and the badge rows go out with auth (Ф11-6, Ф11-9) — they
+            // were collected on the other domain, under a token that is gone.
+            expect(changedKeys).toEqual(['auth', 'airedSnapshot', 'badgeBacklog', 'settings']);
             // Ending the session is storage-only — no request to either domain.
             expect(fetchMock).not.toHaveBeenCalled();
         });
@@ -702,6 +923,20 @@ describe('auth', () => {
             });
         });
 
+        // The path the review found the badge surviving on: setOrigin logs out,
+        // and the number of the ended session used to stay on the icon until a
+        // tick half an hour later.
+        it('wipes the badge of the session it ends', async () => {
+            background.main();
+            await setLocal('auth', storedAuth());
+            await showAiredBacklog([{ rateId: '1', episodesAired: 8, progress: 3 }]);
+
+            await sendMessage('settings.setOrigin', { origin: 'https://shikimori.one' });
+
+            expect(await fakeBrowser.action.getBadgeText({})).toBe('');
+            await expect(getLocal('badgeBacklog')).resolves.toBeUndefined();
+        });
+
         it('writes the origin for an anonymous user too', async () => {
             background.main();
 
@@ -714,6 +949,233 @@ describe('auth', () => {
                 ...DEFAULT_SETTINGS,
                 origin: 'https://shikimori.one',
             });
+        });
+    });
+
+    // Ревью Ф11-9: the badge hooks of the auth handlers were called from exactly
+    // one place each and covered by nothing — deleting them left the suite green.
+    // These tests go through the protocol, the way the popup does.
+    describe('background auth handlers', () => {
+        beforeEach(() => {
+            vi.spyOn(fakeBrowser.contextMenus.onClicked, 'addListener').mockImplementation(
+                () => {},
+            );
+        });
+
+        // One title behind, so a tick that actually ran is readable on the icon.
+        function pollAnswer(): Response {
+            return jsonResponse(200, {
+                data: {
+                    animes: [
+                        {
+                            id: '1',
+                            name: 'Ongoing',
+                            russian: null,
+                            episodesAired: 8,
+                            nextEpisodeAt: null,
+                            userRate: { id: '1001', episodes: 3 },
+                        },
+                    ],
+                },
+            });
+        }
+
+        // Routes the two login requests; the airing poll is left to the caller,
+        // because whether it answers at all is what each test is about.
+        function mockLogin(poll: (url: string) => Promise<Response>): void {
+            stubIdentity(`${REDIRECT_URI}?code=auth-code`);
+            fetchMock.mockImplementation(async (input) => {
+                const url = String(input);
+                if (url.endsWith('/oauth/token')) {
+                    return jsonResponse(200, {
+                        access_token: 'fresh-access',
+                        refresh_token: 'fresh-refresh',
+                        expires_in: 86400,
+                    });
+                }
+                if (url.endsWith('/api/users/whoami')) {
+                    return jsonResponse(200, { id: 7, nickname: 'tester', avatar: null });
+                }
+                return poll(url);
+            });
+        }
+
+        function badgeText(): Promise<string> {
+            return fakeBrowser.action.getBadgeText({});
+        }
+
+        // The rows behind the number describe the lists of whoever was logged in
+        // before, so they cannot outlive the login — even when the poll that
+        // would have replaced them fails.
+        it('clears the badge of the previous account on login', async () => {
+            background.main();
+            await showAiredBacklog([
+                { rateId: '1', episodesAired: 8, progress: 3 },
+                { rateId: '2', episodesAired: 4, progress: 1 },
+            ]);
+            mockLogin(async () => {
+                throw new TypeError('offline');
+            });
+
+            await expect(sendMessage('auth.login')).resolves.toMatchObject({ ok: true });
+
+            expect(await badgeText()).toBe('');
+            await expect(getLocal('badgeBacklog')).resolves.toBeUndefined();
+        });
+
+        // The counter must not wait for the next alarm — up to half an hour — to
+        // appear for the account that just logged in.
+        it('polls for the account that just logged in', async () => {
+            background.main();
+            mockLogin(async () => pollAnswer());
+
+            await sendMessage('auth.login');
+
+            await vi.waitFor(async () => expect(await badgeText()).toBe('1'));
+        });
+
+        // A tick started under the previous session must not stand in for the
+        // new one: single-flight would hand its promise back and the new account
+        // would go unpolled until the next alarm.
+        it('polls again even with a tick of the previous session in flight', async () => {
+            background.main();
+            await setLocal('auth', storedAuth());
+            let releaseStalePoll: (response: Response) => void = () => {};
+            let polls = 0;
+            mockLogin(async () => {
+                polls += 1;
+                if (polls === 1) {
+                    return new Promise<Response>((resolve) => {
+                        releaseStalePoll = resolve;
+                    });
+                }
+                return pollAnswer();
+            });
+            const stale = runEpisodeWatchTick();
+            await vi.waitFor(() => expect(polls).toBe(1));
+
+            await sendMessage('auth.login');
+
+            await vi.waitFor(() => expect(polls).toBe(2));
+            releaseStalePoll(pollAnswer());
+            await stale;
+        });
+
+        // Ф11-10, the session epoch. A poll cannot be cancelled, and it can live
+        // for minutes (a 429 is retried inside http.ts). What lands after the
+        // session it belongs to has ended must write NOTHING — otherwise the
+        // stale answer re-seeds the snapshot of the account that just left, the
+        // icon keeps its number, and restoreBadge() redraws it on every worker
+        // start.
+        it('writes nothing for a tick that lands after a login', async () => {
+            background.main();
+            // The permission is granted, so a stale increase WOULD reach the
+            // screen if the fence were missing — this is the account-switch case
+            // the fence exists for.
+            vi.spyOn(fakeBrowser.permissions, 'contains').mockResolvedValue(true as never);
+            await setLocal('auth', storedAuth());
+            let releaseStalePoll: (response: Response) => void = () => {};
+            let polls = 0;
+            mockLogin(async () => {
+                polls += 1;
+                if (polls === 1) {
+                    return new Promise<Response>((resolve) => {
+                        releaseStalePoll = resolve;
+                    });
+                }
+                return pollAnswer();
+            });
+            const stale = runEpisodeWatchTick();
+            await vi.waitFor(() => expect(polls).toBe(1));
+
+            await sendMessage('auth.login');
+            await vi.waitFor(async () => expect(await badgeText()).toBe('1'));
+
+            // The stale answer says the same title is four episodes further
+            // along: against the snapshot of the NEW session that is an increase,
+            // i.e. a notification about somebody else's lists.
+            releaseStalePoll(
+                jsonResponse(200, {
+                    data: {
+                        animes: [
+                            {
+                                id: '1',
+                                name: 'Ongoing',
+                                russian: null,
+                                episodesAired: 12,
+                                nextEpisodeAt: null,
+                                userRate: { id: '1001', episodes: 3 },
+                            },
+                        ],
+                    },
+                }),
+            );
+            await stale;
+
+            // Everything on screen and in storage belongs to the new session.
+            await expect(getAiredSnapshot()).resolves.toEqual({ '1': 8 });
+            expect(await badgeText()).toBe('1');
+            await expect(fakeBrowser.notifications.getAll()).resolves.toEqual({});
+        });
+
+        it('writes nothing for a tick that lands after a logout', async () => {
+            background.main();
+            await setLocal('auth', storedAuth());
+            let releaseStalePoll: (response: Response) => void = () => {};
+            stubIdentity(`${REDIRECT_URI}?code=auth-code`);
+            fetchMock.mockImplementation(
+                async () =>
+                    new Promise<Response>((resolve) => {
+                        releaseStalePoll = resolve;
+                    }),
+            );
+            const stale = runEpisodeWatchTick();
+            await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
+
+            await sendMessage('auth.logout');
+            releaseStalePoll(pollAnswer());
+            await stale;
+
+            // A number on the icon and list data in storage, both belonging to a
+            // session that no longer exists — exactly what the phase forbids.
+            expect(await badgeText()).toBe('');
+            await expect(getLocal('badgeBacklog')).resolves.toBeUndefined();
+            await expect(getLocal('airedSnapshot')).resolves.toBeUndefined();
+        });
+
+        // Нит ревью: the comment claimed «FIRST, before anything else here»
+        // while the bump stood second, after the auth removal. The order is not
+        // cosmetic — a storage backend may take as long as it likes, and
+        // everything landing DURING the removal must already be fenced. This is
+        // that statement, and it is what makes the comment checkable.
+        it('moves the session epoch before the auth removal, not after it', async () => {
+            await setLocal('auth', storedAuth());
+            const epoch = sessionEpoch();
+            const realRemove = fakeBrowser.storage.local.remove.bind(fakeBrowser.storage.local);
+            let currentInsideRemove: boolean | undefined;
+            vi.spyOn(fakeBrowser.storage.local, 'remove').mockImplementation((async (
+                keys: string | string[],
+            ) => {
+                if (currentInsideRemove === undefined && [keys].flat().includes('auth')) {
+                    currentInsideRemove = isSessionEpochCurrent(epoch);
+                }
+                return realRemove(keys);
+            }) as never);
+
+            await logout();
+
+            expect(currentInsideRemove).toBe(false);
+        });
+
+        it('wipes the badge on auth.logout', async () => {
+            background.main();
+            await setLocal('auth', storedAuth());
+            await showAiredBacklog([{ rateId: '1', episodesAired: 8, progress: 3 }]);
+
+            await expect(sendMessage('auth.logout')).resolves.toEqual({ ok: true, data: {} });
+
+            expect(await badgeText()).toBe('');
+            await expect(getLocal('badgeBacklog')).resolves.toBeUndefined();
         });
     });
 

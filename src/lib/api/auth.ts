@@ -1,7 +1,17 @@
 import { browser } from 'wxt/browser';
+import { clearBadge } from '../badge';
 import { CLIENT_ID, CLIENT_SECRET } from '../config';
+import { clearAiredNotifications } from '../episode-notifications';
 import { httpsHref } from '../external-url';
-import { clearSession, getLocal, getSettings, removeLocal, setLocal } from '../storage';
+import { bumpSessionEpoch } from '../session-epoch';
+import {
+    clearAiredSnapshot,
+    clearSession,
+    getLocal,
+    getSettings,
+    removeLocal,
+    setLocal,
+} from '../storage';
 import { apiRequest, oauthRequest, setTokenProvider } from './http';
 import type { ApiRequestOptions, HttpResult } from './http';
 import { isApiError } from './types';
@@ -149,6 +159,18 @@ async function doLogin(): Promise<User> {
         expiresAt: computeExpiresAt(tokens.expires_in, tokens.created_at, Date.now()),
         user,
     });
+    // Ф11-6, account switch: the airing snapshot describes the lists of whoever
+    // was logged in before, and a login is the only moment that can change that
+    // person. Dropped unconditionally rather than only on a different user id —
+    // re-seeding is silent and costs nothing, while a stale snapshot would make
+    // the badge count someone else's backlog. AFTER the auth write on purpose: a
+    // poll firing in between would otherwise re-seed under the previous token.
+    await dropAiredSnapshot();
+    // Ф11-10: a poll started for the previous account can still be in the air,
+    // and it cannot be cancelled. Moving the epoch makes it write nothing when
+    // it lands — otherwise it would re-seed the snapshot it read before this
+    // line and notify about increases of lists that are no longer ours.
+    bumpSessionEpoch();
     return user;
 }
 
@@ -323,9 +345,60 @@ export async function logout(): Promise<void> {
     await clearAuth();
 }
 
+// Called on logout AND from a refresh that lost the session — including one
+// inside a background poll (docs/06, phase 11 «Риск, который фаза обязана
+// закрыть кодом»). The airing snapshot goes with auth: it is personal data of
+// an account that is no longer logged in, and keeping it would let the badge
+// keep counting a backlog nobody can see anymore.
+//
+// The badge goes out here and not only in the handlers above it, because this is
+// the single point where every way out of a session meets: «Выйти», the domain
+// switch (settings.setOrigin logs out first), and a refresh that lost the
+// session in a popup request — the last one reaches no catch of the background
+// tick, so a badge cleared anywhere else would survive it and be redrawn by
+// restoreBadge() on every worker start until the next tick or login.
 async function clearAuth(): Promise<void> {
+    // FIRST, before anything else here — and the comment used to say so while
+    // the call stood second (нит ревью). It is now where it claims to be, and
+    // the position is not cosmetic: it is synchronous and cannot fail, so from
+    // this line on a background tick started under the session being cleared
+    // writes nothing at all (Ф11-10), including during the awaits below. Without
+    // it that tick would put the snapshot and the badge of a finished session
+    // back after the wipe — the icon would keep a number, storage would keep
+    // list data of an account nobody is logged into, and restoreBadge() would
+    // redraw both on every worker start.
+    bumpSessionEpoch();
     await removeLocal('auth');
+    await dropAiredSnapshot();
+    // Total by construction (src/lib/badge.ts): it swallows its own failures, so
+    // it can stand between the snapshot delete and clearSession() without ever
+    // skipping the latter — the same rule dropAiredSnapshot() follows.
+    await clearBadge();
+    // Ф11 audit. Notifications already shown carry the names of titles from the
+    // lists of the account that is leaving, and the system centre keeps them for
+    // as long as the user lets it — they would sit there next to our icon and our
+    // name long after the logout. Total for the same reason as clearBadge().
+    await clearAiredNotifications();
     await clearSession();
+}
+
+// The snapshot delete is the one step of a login/logout that stands PAST the
+// point of success: by the time it runs, the session has already been written
+// (doLogin) or already been removed (clearAuth). A rejected storage write there
+// would report a failed login on a live session, or skip clearSession() and
+// leave the popup caches of a session that is gone — both worse than what a
+// surviving snapshot costs, which is one wrong badge count until the next
+// login or logout clears it. Hence: swallowed, kind only in the log, never the
+// error itself — it may carry storage contents.
+async function dropAiredSnapshot(): Promise<void> {
+    try {
+        await clearAiredSnapshot();
+    } catch (e) {
+        console.debug(
+            '[auth] failed to clear the airing snapshot:',
+            e instanceof Error ? e.name : typeof e,
+        );
+    }
 }
 
 function unauthorizedError(): ApiError {
