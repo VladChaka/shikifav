@@ -5,19 +5,21 @@ import { sendMessage } from '../messaging';
 import { setLocal } from '../storage';
 import type { LocalState } from '../storage';
 import {
-    CALENDAR_LIMIT,
-    CALENDAR_MAX_PAGES,
     LIST_LIMIT,
+    ONGOING_LIMIT,
+    ONGOING_MAX_PAGES,
     SEARCH_TYPE_TO_KIND,
     listCalendar,
     listRates,
     listRelated,
+    mapAnimeToAiredPollItem,
     mapAnimeToCalendarItem,
     mapAnimeToRateRow,
     mapAnimeToTitleCard,
     mapMangaToRateRow,
     mapMangaToTitleCard,
     mapRelatedToItem,
+    pollAiredAnimes,
     searchTitles,
 } from './graphql';
 import type {
@@ -26,15 +28,28 @@ import type {
     RawManga,
     RawMylistAnime,
     RawMylistManga,
+    RawPollAnime,
     RawRelated,
     RawRelatedAnime,
 } from './graphql';
 import { RANOBE_KINDS } from '../title-card';
-import { buildSchedule } from '../calendar-schedule';
-import type { ScheduleItem } from '../calendar-schedule';
+import { buildSchedule, countTitlesBehind } from '../calendar-schedule';
+import type { BacklogItem, ScheduleItem } from '../calendar-schedule';
+import { diffAired } from '../aired-snapshot';
+import type { AiredObservation } from '../aired-snapshot';
+import { displayTitle } from '../title-name';
+import type { TitleNames } from '../title-name';
 import { ensureToken } from './auth';
 import { rateLimiter, setTokenProvider } from './http';
-import type { ApiError, CalendarItem, RateRow, TitleCard, User, UserRateStatus } from './types';
+import type {
+    AiredPollItem,
+    ApiError,
+    CalendarItem,
+    RateRow,
+    TitleCard,
+    User,
+    UserRateStatus,
+} from './types';
 
 const fetchMock = vi.fn<typeof fetch>();
 
@@ -248,6 +263,41 @@ function calendarAnime(id: number, overrides: Partial<RawCalendarAnime> = {}): R
         id: String(id),
         name: `Ongoing ${id}`,
         userRate: { id: String(2000 + id), status: 'watching', episodes: 3 },
+        ...overrides,
+    };
+}
+
+// The same title as read by POLL_AIRED_ANIMES_QUERY (Ф11-8): the counter, the
+// progress, the rate id a write from the popup comes back with (Ф11-9) and the
+// name pair the notification says out loud — no presentation data.
+const fullRawPollAnime: RawPollAnime = {
+    id: '21',
+    name: 'One Piece',
+    russian: 'Ван-Пис',
+    episodesAired: 1147,
+    nextEpisodeAt: '2026-08-02T17:15:00+03:00',
+    url: 'https://shikimori.io/animes/21-one-piece',
+    userRate: { id: '2021', episodes: 1140 },
+};
+
+const fullPollItem: AiredPollItem = {
+    targetId: '21',
+    rateId: '2021',
+    name: 'One Piece',
+    russian: 'Ван-Пис',
+    episodesAired: 1147,
+    nextEpisodeAt: '2026-08-02T17:15:00+03:00',
+    progress: 1140,
+    url: 'https://shikimori.io/animes/21-one-piece',
+};
+
+// Compact poll item generator for page-size fixtures.
+function pollAnime(id: number, overrides: Partial<RawPollAnime> = {}): RawPollAnime {
+    return {
+        ...fullRawPollAnime,
+        id: String(id),
+        name: `Ongoing ${id}`,
+        userRate: { id: String(2000 + id), episodes: 3 },
         ...overrides,
     };
 }
@@ -774,10 +824,10 @@ describe('graphql', () => {
             expect(request.method).toBe('POST');
 
             const body = request.body as { query: string; variables: Record<string, unknown> };
-            expect(body.variables).toEqual({ limit: CALENDAR_LIMIT, page: 1 });
+            expect(body.variables).toEqual({ limit: ONGOING_LIMIT, page: 1 });
             // 50 is the hard ceiling of animes(): above it the server clamps
             // silently, so a bigger page size would look like a short page.
-            expect(CALENDAR_LIMIT).toBe(50);
+            expect(ONGOING_LIMIT).toBe(50);
             expect(body.query).toContain('query CalendarAnimes');
             // mylist/status are inline literals of the query, not variables.
             expect(body.query).toContain(
@@ -797,18 +847,16 @@ describe('graphql', () => {
 
         it('stops after one request when the first page is short', async () => {
             await setLocal('auth', storedAuth());
-            const page = Array.from({ length: CALENDAR_LIMIT - 1 }, (_, i) =>
-                calendarAnime(i + 1),
-            );
+            const page = Array.from({ length: ONGOING_LIMIT - 1 }, (_, i) => calendarAnime(i + 1));
             fetchMock.mockResolvedValueOnce(jsonResponse(200, { data: { animes: page } }));
 
-            await expect(listCalendar()).resolves.toHaveLength(CALENDAR_LIMIT - 1);
+            await expect(listCalendar()).resolves.toHaveLength(ONGOING_LIMIT - 1);
             expect(fetchMock).toHaveBeenCalledTimes(1);
         });
 
         it('asks for the next page while the previous one came back full', async () => {
             await setLocal('auth', storedAuth());
-            const fullPage = Array.from({ length: CALENDAR_LIMIT }, (_, i) => calendarAnime(i + 1));
+            const fullPage = Array.from({ length: ONGOING_LIMIT }, (_, i) => calendarAnime(i + 1));
             fetchMock
                 .mockResolvedValueOnce(jsonResponse(200, { data: { animes: fullPage } }))
                 .mockResolvedValueOnce(
@@ -816,8 +864,8 @@ describe('graphql', () => {
                 );
 
             const items = await listCalendar();
-            expect(items).toHaveLength(CALENDAR_LIMIT + 1);
-            expect(items[CALENDAR_LIMIT].targetId).toBe('999');
+            expect(items).toHaveLength(ONGOING_LIMIT + 1);
+            expect(items[ONGOING_LIMIT].targetId).toBe('999');
             expect(fetchMock).toHaveBeenCalledTimes(2);
             expect(
                 capturedRequests().map(
@@ -828,30 +876,30 @@ describe('graphql', () => {
 
         it('never goes past the hard page ceiling, even on full pages', async () => {
             await setLocal('auth', storedAuth());
-            const fullPage = Array.from({ length: CALENDAR_LIMIT }, (_, i) => calendarAnime(i + 1));
+            const fullPage = Array.from({ length: ONGOING_LIMIT }, (_, i) => calendarAnime(i + 1));
             // A fresh Response per call: a body can only be consumed once.
             fetchMock.mockImplementation(async () =>
                 jsonResponse(200, { data: { animes: fullPage } }),
             );
 
             const items = await listCalendar();
-            expect(CALENDAR_MAX_PAGES).toBe(3);
-            expect(fetchMock).toHaveBeenCalledTimes(CALENDAR_MAX_PAGES);
-            expect(items).toHaveLength(CALENDAR_LIMIT * CALENDAR_MAX_PAGES);
+            expect(ONGOING_MAX_PAGES).toBe(3);
+            expect(fetchMock).toHaveBeenCalledTimes(ONGOING_MAX_PAGES);
+            expect(items).toHaveLength(ONGOING_LIMIT * ONGOING_MAX_PAGES);
         });
 
         it('keeps paging by the RAW page length, before the filter drops rows', async () => {
             await setLocal('auth', storedAuth());
             // A full page where half the rows are filtered out: paging must
             // continue, or the titles on page 2 would be lost.
-            const fullPage = Array.from({ length: CALENDAR_LIMIT }, (_, i) =>
+            const fullPage = Array.from({ length: ONGOING_LIMIT }, (_, i) =>
                 i % 2 === 0 ? calendarAnime(i + 1, { status: 'released' }) : calendarAnime(i + 1),
             );
             fetchMock
                 .mockResolvedValueOnce(jsonResponse(200, { data: { animes: fullPage } }))
                 .mockResolvedValueOnce(jsonResponse(200, { data: { animes: [] } }));
 
-            await expect(listCalendar()).resolves.toHaveLength(CALENDAR_LIMIT / 2);
+            await expect(listCalendar()).resolves.toHaveLength(ONGOING_LIMIT / 2);
             expect(fetchMock).toHaveBeenCalledTimes(2);
         });
 
@@ -888,6 +936,268 @@ describe('graphql', () => {
 
             await expect(listCalendar()).resolves.toEqual([]);
             expect(fetchMock).toHaveBeenCalledTimes(1);
+        });
+    });
+
+    describe('mapAnimeToAiredPollItem', () => {
+        it('maps a full poll row 1:1', () => {
+            expect(mapAnimeToAiredPollItem(fullRawPollAnime)).toEqual(fullPollItem);
+        });
+
+        // mylist never returns rows without a rate by contract; a row that has
+        // none carries no progress, and counting it as "watched nothing" would
+        // put a title that is not in my lists on the badge.
+        it('drops a row without a userRate', () => {
+            expect(mapAnimeToAiredPollItem({ ...fullRawPollAnime, userRate: null })).toBeNull();
+        });
+
+        // A third of the ongoings have no date at all (docs/03) — the null half
+        // of the row is the normal case here, not an edge one.
+        it('carries a null nextEpisodeAt through', () => {
+            expect(mapAnimeToAiredPollItem({ ...fullRawPollAnime, nextEpisodeAt: null })).toEqual({
+                ...fullPollItem,
+                nextEpisodeAt: null,
+            });
+        });
+
+        it('keeps the raw ISO date exactly as the server sent it', () => {
+            expect(mapAnimeToAiredPollItem(fullRawPollAnime)?.nextEpisodeAt).toBe(
+                '2026-08-02T17:15:00+03:00',
+            );
+        });
+
+        // Ф11-16. The address a click on the notification opens is the one the
+        // answer carried — never one built here from origin + id (Ф6-26), so a
+        // profile switched to .one gets .one addresses without any code knowing.
+        it('carries the title page url through untouched', () => {
+            expect(mapAnimeToAiredPollItem(fullRawPollAnime)?.url).toBe(
+                'https://shikimori.io/animes/21-one-piece',
+            );
+            expect(
+                mapAnimeToAiredPollItem({
+                    ...fullRawPollAnime,
+                    url: 'https://shikimori.one/animes/21-one-piece',
+                })?.url,
+            ).toBe('https://shikimori.one/animes/21-one-piece');
+        });
+
+        // Typed nullable defensively (RawAnime.url): a row without an address is
+        // still a row the badge counts, it just has nowhere to click to.
+        it('keeps a missing url as null instead of dropping the row', () => {
+            expect(mapAnimeToAiredPollItem({ ...fullRawPollAnime, url: null })).toEqual({
+                ...fullPollItem,
+                url: null,
+            });
+        });
+
+        // A long-runner just added to «Запланировано»: zero progress is a real
+        // value, not a missing one, and it must survive as 0 — the whole aired
+        // count is the backlog then.
+        it('keeps a zero progress as zero', () => {
+            const item = mapAnimeToAiredPollItem({
+                ...fullRawPollAnime,
+                userRate: { id: '2021', episodes: 0 },
+            });
+            expect(item?.progress).toBe(0);
+            expect(countTitlesBehind([item as BacklogItem])).toBe(1);
+        });
+
+        // Nothing aired yet is not a backlog either — both numbers are 0.
+        it('maps a title with nothing aired yet without a backlog', () => {
+            const item = mapAnimeToAiredPollItem({
+                ...fullRawPollAnime,
+                episodesAired: 0,
+                userRate: { id: '2021', episodes: 0 },
+            });
+            expect(countTitlesBehind([item as BacklogItem])).toBe(0);
+        });
+
+        // The name pair is why the poll asks for two fields the reference query
+        // did not (Ф11-10): the notification names the title by `titleLang`, and
+        // without it the message would have to say the id out loud.
+        it('carries the name pair for the notification text', () => {
+            const item = mapAnimeToAiredPollItem(fullRawPollAnime);
+            expect(displayTitle(item as AiredPollItem, 'ru').primary).toBe('Ван-Пис');
+            expect(displayTitle(item as AiredPollItem, 'romaji').primary).toBe('One Piece');
+        });
+
+        // `russian` is nullable in the schema, and displayTitle already falls
+        // back to the romaji name — so a title without one is a notification
+        // with a name, not a notification with a hole.
+        it('carries a null russian through', () => {
+            const item = mapAnimeToAiredPollItem({ ...fullRawPollAnime, russian: null });
+            expect(item).toEqual({ ...fullPollItem, russian: null });
+            expect(displayTitle(item as AiredPollItem, 'ru').primary).toBe('One Piece');
+        });
+
+        // The row is handed to three pure modules untouched: the badge counter
+        // (BacklogItem), the snapshot diff (AiredObservation) and the title
+        // naming (TitleNames). All three are structural, so a renamed field
+        // would surface only in the background.
+        it('satisfies BacklogItem, AiredObservation and TitleNames', () => {
+            const backlog: BacklogItem = fullPollItem;
+            const observation: AiredObservation = fullPollItem;
+            const names: TitleNames = fullPollItem;
+            expect(countTitlesBehind([backlog])).toBe(1); // 1147 aired, 1140 watched
+            expect(diffAired({ '21': 1146 }, [observation]).increases).toEqual([
+                { targetId: '21', from: 1146, to: 1147 },
+            ]);
+            expect(displayTitle(names, 'ru')).toEqual({
+                primary: 'Ван-Пис',
+                secondary: 'One Piece',
+            });
+        });
+    });
+
+    describe('pollAiredAnimes', () => {
+        it('POSTs PollAiredAnimes with the reference-query fields and maps the rows', async () => {
+            await setLocal('auth', storedAuth());
+            fetchMock.mockResolvedValueOnce(
+                jsonResponse(200, { data: { animes: [fullRawPollAnime] } }),
+            );
+
+            await expect(pollAiredAnimes()).resolves.toEqual([fullPollItem]);
+
+            const request = capturedRequests()[0];
+            expect(request.url).toBe('https://shikimori.io/api/graphql');
+            expect(request.method).toBe('POST');
+
+            const body = request.body as { query: string; variables: Record<string, unknown> };
+            expect(body.variables).toEqual({ limit: ONGOING_LIMIT, page: 1 });
+            expect(body.query).toContain('query PollAiredAnimes');
+            expect(body.query).toContain(
+                'animes(mylist: "watching,rewatching,planned", status: "ongoing", limit: $limit, page: $page)',
+            );
+            // PositiveInt, not Int: the server rejects Int variables (docs/03).
+            expect(body.query).toContain('$limit: PositiveInt');
+            expect(body.query).toContain('$page: PositiveInt');
+            // The rate id came back in Ф11-9 and is read by the badge: a write
+            // from the popup answers with it and with nothing else, and that is
+            // what lets «+1 эпизод» move the counter without a second request.
+            expect(body.query).toContain('userRate { id episodes }');
+            expect(body.query).toMatch(/^\s+id$/m);
+            expect(body.query).toMatch(/^\s+name$/m);
+            expect(body.query).toMatch(/^\s+russian$/m);
+            expect(body.query).toMatch(/^\s+episodesAired$/m);
+            expect(body.query).toMatch(/^\s+nextEpisodeAt$/m);
+            // Ф11-16: where a click on the notification goes. Asked for and NOT
+            // assembled from the origin setting plus the id — Ф6-26, the domain
+            // has moved four times and the answer carries the current one.
+            expect(body.query).toMatch(/^\s+url$/m);
+        });
+
+        // The whole point of a second query: 12,7 КБ per 50 rows against 25,2 КБ
+        // of the calendar form (замер 2026-08-17, docs/03). A field nobody reads
+        // costs weight on every background tick — the Ф12-5 precedent. Both
+        // additions to the first redaction of the reference query are read: the
+        // name pair by the notification text, `url` by the click on it.
+        it('asks for nothing the badge and the notification do not read', async () => {
+            await setLocal('auth', storedAuth());
+            fetchMock.mockResolvedValueOnce(jsonResponse(200, { data: { animes: [] } }));
+
+            await pollAiredAnimes();
+
+            const query = (capturedRequests()[0].body as { query: string }).query;
+            for (const field of ['poster', 'malId', 'score']) {
+                expect(query).not.toContain(field);
+            }
+            // The episode TOTAL: `episodesAired` and `userRate { episodes }` are
+            // asked for, a field line of its own is not.
+            expect(query).not.toMatch(/^\s+episodes$/m);
+            // Nor the title's own status — unlike the calendar, this read draws
+            // no row, so it needs no defensive filter (the filter literal in the
+            // arguments is a different thing).
+            expect(query).not.toMatch(/^\s+status$/m);
+            // The user_rate id IS asked for since Ф11-9 — and it is read, which
+            // is the whole rule: it identifies the row a write from the popup
+            // belongs to (src/lib/badge.ts). Nothing beyond the pair is taken:
+            // the rate's status and score would be dead weight on every tick.
+            expect(query).not.toMatch(/userRate \{[^}]*(status|score)/);
+        });
+
+        // Both reads describe the SAME server list, and drifting apart would
+        // mean the calendar and the notifications talk about different titles
+        // (docs/03). Built from one constant, so this is a pin, not a hope.
+        it('filters the list exactly like the calendar query does', async () => {
+            await setLocal('auth', storedAuth());
+            // A fresh Response per call: a body can only be consumed once.
+            fetchMock.mockImplementation(async () => jsonResponse(200, { data: { animes: [] } }));
+
+            await listCalendar();
+            await pollAiredAnimes();
+
+            const [calendar, poll] = capturedRequests().map(
+                (request) => (request.body as { query: string }).query,
+            );
+            const filter = /animes\((mylist: [^)]*?status: "[a-z]+")/;
+            expect(poll.match(filter)?.[1]).toBe(calendar.match(filter)?.[1]);
+        });
+
+        it('stops after one request when the first page is short', async () => {
+            await setLocal('auth', storedAuth());
+            const page = Array.from({ length: ONGOING_LIMIT - 1 }, (_, i) => pollAnime(i + 1));
+            fetchMock.mockResolvedValueOnce(jsonResponse(200, { data: { animes: page } }));
+
+            await expect(pollAiredAnimes()).resolves.toHaveLength(ONGOING_LIMIT - 1);
+            expect(fetchMock).toHaveBeenCalledTimes(1);
+        });
+
+        it('asks for the next page while the previous one came back full', async () => {
+            await setLocal('auth', storedAuth());
+            const fullPage = Array.from({ length: ONGOING_LIMIT }, (_, i) => pollAnime(i + 1));
+            fetchMock
+                .mockResolvedValueOnce(jsonResponse(200, { data: { animes: fullPage } }))
+                .mockResolvedValueOnce(jsonResponse(200, { data: { animes: [pollAnime(999)] } }));
+
+            const items = await pollAiredAnimes();
+            expect(items).toHaveLength(ONGOING_LIMIT + 1);
+            expect(items[ONGOING_LIMIT].targetId).toBe('999');
+            expect(
+                capturedRequests().map(
+                    (request) => (request.body as { variables: { page: number } }).variables.page,
+                ),
+            ).toEqual([1, 2]);
+        });
+
+        it('never goes past the hard page ceiling, even on full pages', async () => {
+            await setLocal('auth', storedAuth());
+            const fullPage = Array.from({ length: ONGOING_LIMIT }, (_, i) => pollAnime(i + 1));
+            fetchMock.mockImplementation(async () =>
+                jsonResponse(200, { data: { animes: fullPage } }),
+            );
+
+            const items = await pollAiredAnimes();
+            expect(fetchMock).toHaveBeenCalledTimes(ONGOING_MAX_PAGES);
+            expect(items).toHaveLength(ONGOING_LIMIT * ONGOING_MAX_PAGES);
+        });
+
+        it('keeps paging by the RAW page length, before the filter drops rows', async () => {
+            await setLocal('auth', storedAuth());
+            const fullPage = Array.from({ length: ONGOING_LIMIT }, (_, i) =>
+                i % 2 === 0 ? pollAnime(i + 1, { userRate: null }) : pollAnime(i + 1),
+            );
+            fetchMock
+                .mockResolvedValueOnce(jsonResponse(200, { data: { animes: fullPage } }))
+                .mockResolvedValueOnce(jsonResponse(200, { data: { animes: [] } }));
+
+            await expect(pollAiredAnimes()).resolves.toHaveLength(ONGOING_LIMIT / 2);
+            expect(fetchMock).toHaveBeenCalledTimes(2);
+        });
+
+        it('returns an empty list for an empty first page without a second request', async () => {
+            await setLocal('auth', storedAuth());
+            fetchMock.mockResolvedValueOnce(jsonResponse(200, { data: { animes: [] } }));
+
+            await expect(pollAiredAnimes()).resolves.toEqual([]);
+            expect(fetchMock).toHaveBeenCalledTimes(1);
+        });
+
+        // An unauthorized poll must fail as an ApiError, not as a thrown
+        // TypeError: the background tick decides what to do with it (Ф11-7).
+        it('fails with unauthorized when there is no auth', async () => {
+            const error = await expectApiErrorThrow(pollAiredAnimes());
+            expect(error).toEqual({ kind: 'unauthorized' });
+            expect(fetchMock).not.toHaveBeenCalled();
         });
     });
 
@@ -1407,7 +1717,7 @@ describe('graphql', () => {
         it('responds with the whole list, paging done inside background', async () => {
             background.main();
             await setLocal('auth', storedAuth());
-            const fullPage = Array.from({ length: CALENDAR_LIMIT }, (_, i) => calendarAnime(i + 1));
+            const fullPage = Array.from({ length: ONGOING_LIMIT }, (_, i) => calendarAnime(i + 1));
             fetchMock
                 .mockResolvedValueOnce(jsonResponse(200, { data: { animes: fullPage } }))
                 .mockResolvedValueOnce(
@@ -1418,8 +1728,8 @@ describe('graphql', () => {
             expect(response.ok).toBe(true);
             if (response.ok) {
                 // Two pages behind one message: the popup knows nothing about them.
-                expect(response.data.items).toHaveLength(CALENDAR_LIMIT + 1);
-                expect(response.data.items[CALENDAR_LIMIT]).toEqual(fullCalendarItem);
+                expect(response.data.items).toHaveLength(ONGOING_LIMIT + 1);
+                expect(response.data.items[ONGOING_LIMIT]).toEqual(fullCalendarItem);
             }
             expect(fetchMock).toHaveBeenCalledTimes(2);
         });

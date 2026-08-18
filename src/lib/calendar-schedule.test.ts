@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { buildSchedule, UNDATED_DAY_KEY, type ScheduleItem } from './calendar-schedule';
+import {
+    buildSchedule,
+    countTitlesBehind,
+    episodesBehind,
+    UNDATED_DAY_KEY,
+    type BacklogItem,
+    type ScheduleItem,
+} from './calendar-schedule';
 
 // Every date in this file is built from LOCAL parts and only then serialized to
 // ISO, so the expectations hold in any timezone the suite runs in — exactly the
@@ -330,5 +337,75 @@ describe('buildSchedule', () => {
             );
             expect(day.entries.map((entry) => entry.item.id)).toEqual(['first', 'second', 'third']);
         });
+    });
+});
+
+// The badge half of phase 11. Rows here are BacklogItem-shaped — two numbers,
+// no date and no total: the background poll knows nothing else (docs/03,
+// «Опрос — эталонный запрос»), and the counter must work on exactly that.
+function backlogRow(episodesAired: number, progress: number): BacklogItem {
+    return { episodesAired, progress };
+}
+
+describe('episodesBehind', () => {
+    it('counts the aired episodes I have not marked', () => {
+        expect(episodesBehind(backlogRow(8, 5))).toBe(3);
+    });
+
+    it('is null when I am level with the airing', () => {
+        expect(episodesBehind(backlogRow(8, 8))).toBeNull();
+    });
+
+    // A rewatch or an off-by-one made on the site: watching ahead is not a
+    // backlog, and a negative number must never reach the badge.
+    it('is null when I am ahead of the airing', () => {
+        expect(episodesBehind(backlogRow(8, 12))).toBeNull();
+    });
+
+    it('counts a title I have not started at all', () => {
+        expect(episodesBehind(backlogRow(3, 0))).toBe(3);
+    });
+
+    // A long-runner in «Запланировано» with nothing aired yet: 0 - 0 is not a
+    // backlog either.
+    it('is null when nothing has aired yet', () => {
+        expect(episodesBehind(backlogRow(0, 0))).toBeNull();
+    });
+});
+
+describe('countTitlesBehind', () => {
+    it('is zero for an empty list', () => {
+        expect(countTitlesBehind([])).toBe(0);
+    });
+
+    // Owner's decision 3 of phase 11: TITLES, not episodes. The sum here would
+    // be 11 and would read as a breakage on any account with a backlog.
+    it('counts titles, not the episodes they owe', () => {
+        expect(
+            countTitlesBehind([backlogRow(1147, 1140), backlogRow(8, 5), backlogRow(12, 11)]),
+        ).toBe(3);
+    });
+
+    it('ignores titles that are level or ahead', () => {
+        expect(
+            countTitlesBehind([
+                backlogRow(8, 5), // behind
+                backlogRow(8, 8), // level
+                backlogRow(8, 12), // ahead
+                backlogRow(0, 0), // nothing aired
+            ]),
+        ).toBe(1);
+    });
+
+    // The badge must never contradict the calendar line «вы на 5-й из 8
+    // вышедших»: both numbers come out of the same episodesBehind().
+    it('agrees with the backlog of the schedule rows', () => {
+        const items: ScheduleItem[] = [
+            { nextEpisodeAt: null, episodes: 12, episodesAired: 8, progress: 5 },
+            { nextEpisodeAt: null, episodes: 12, episodesAired: 8, progress: 8 },
+        ];
+        const [day] = buildSchedule(items, new Date(2026, 6, 28, 12, 0));
+        expect(day.entries.map((entry) => entry.behind)).toEqual([3, null]);
+        expect(countTitlesBehind(items)).toBe(1);
     });
 });

@@ -1,4 +1,8 @@
 import { browser } from 'wxt/browser';
+import { sanitizeAiredSnapshot } from './aired-snapshot';
+import type { AiredSnapshot } from './aired-snapshot';
+import { sanitizeBadgeRows } from './badge-backlog';
+import type { BadgeRow } from './badge-backlog';
 import type {
     CalendarItem,
     RateRow,
@@ -80,6 +84,18 @@ export interface LocalState {
         // enabled by default, switched off in «Настройки → Поведение». Off
         // means no request is made at all — see src/lib/api/analytics.ts.
         analytics: boolean;
+        // Ф11-7 (US-12). The airing watch as a whole: the background poll every
+        // 30 minutes and the badge it feeds. On by default (owner's decision 5,
+        // docs/06) — otherwise the counter would appear for nobody after an
+        // update. Off means no alarm and no background request at all
+        // (src/lib/episode-watch.ts).
+        episodeWatch: boolean;
+        // Ф11-7 (US-12). Notifications only, a separate row of chips from the
+        // counter (owner's decision 6): being tired of notifications must not
+        // cost the badge. Subordinate to episodeWatch — without the poll there
+        // is nothing to notify about. Read by Ф11-10; declared now so the
+        // notifications task does not have to reshape stored settings.
+        episodeNotifications: boolean;
     };
     // Random per-install identifier for GA4, generated on the first reported
     // event and deleted the moment analytics is switched off. Deliberately NOT
@@ -87,6 +103,19 @@ export interface LocalState {
     // measurement to a person, and it must survive a logout without meaning
     // anything on its own.
     analyticsClientId?: string;
+    // Ф11-6. What the last airing poll saw: anime id -> episodesAired. Local and
+    // not session: it must survive the death of the service worker and a browser
+    // restart, or every wake-up would re-seed and the extension would never
+    // notice an episode. Personal data (it describes MY lists), so it is wiped
+    // together with auth — see clearAuth() in src/lib/api/auth.ts.
+    airedSnapshot?: AiredSnapshot;
+    // Ф11-9. What the badge counts, as the last poll saw it: one row per title
+    // of the poll result. Local and not session for the same reason as the
+    // snapshot — the number on the icon has to be restorable after the service
+    // worker dies, and restoring it from storage is free while re-polling would
+    // turn every wake-up into a request. It is also what makes a write from the
+    // popup move the counter at once instead of half an hour later.
+    badgeBacklog?: BadgeRow[];
 }
 
 // chrome.storage.session — live cache, safe to lose (docs/02-architecture.md).
@@ -122,6 +151,17 @@ export interface SessionState {
     // header. `fetchedAt` is diagnostics/«обновлено …», not a TTL: the tab
     // refreshes on every show (docs/06).
     lastCalendar?: { items: CalendarItem[]; fetchedAt: number };
+    // Ф11-16: notification id -> the title page a click on it opens. The click
+    // arrives with an id and nothing else, and the address may not be rebuilt
+    // from that id (Ф6-26), so the one the poll answered with is put aside here
+    // when the message is shown.
+    //
+    // Session and not local, deliberately: it is a companion of messages that are
+    // in the tray right now, it is worthless the moment they are gone, and the
+    // logout wipe of the session cache takes it along with the lists it was
+    // built from. The map is pruned against the tray on every write, so it can
+    // hold no more entries than there are messages (src/lib/episode-notifications.ts).
+    airedNotificationUrls?: Record<string, string>;
 }
 
 export const DEFAULT_SETTINGS: LocalState['settings'] = {
@@ -133,6 +173,8 @@ export const DEFAULT_SETTINGS: LocalState['settings'] = {
     defaultSearchType: 'anime',
     defaultListStatus: 'watching',
     analytics: true,
+    episodeWatch: true,
+    episodeNotifications: true,
 };
 
 export async function getLocal<K extends keyof LocalState>(
@@ -185,6 +227,10 @@ export async function getSettings(): Promise<LocalState['settings']> {
         // profile written before this setting existed genuinely has no answer,
         // and the documented default for it is the opt-out one.
         analytics: stored?.analytics ?? DEFAULT_SETTINGS.analytics,
+        // Same opt-out rule as analytics: a profile written before phase 11 has
+        // no answer, and the documented default is "on" (docs/06, decision 5).
+        episodeWatch: stored?.episodeWatch ?? DEFAULT_SETTINGS.episodeWatch,
+        episodeNotifications: stored?.episodeNotifications ?? DEFAULT_SETTINGS.episodeNotifications,
     };
 }
 
@@ -204,6 +250,10 @@ export async function setSettings(patch: Partial<LocalState['settings']>): Promi
         // `??` and not `||`: switching analytics off patches `false`, and `||`
         // would read that as "not provided" and silently turn it back on.
         analytics: patch.analytics ?? current.analytics,
+        // Both flags are switched off with `false`, so `??` here is load-bearing
+        // for exactly the same reason as it is for analytics.
+        episodeWatch: patch.episodeWatch ?? current.episodeWatch,
+        episodeNotifications: patch.episodeNotifications ?? current.episodeNotifications,
     });
 }
 
@@ -213,6 +263,41 @@ export async function setSettings(patch: Partial<LocalState['settings']>): Promi
 // bundle that makes no network requests at all (CLAUDE.md rule 1).
 export async function forgetAnalyticsClientId(): Promise<void> {
     await removeLocal('analyticsClientId');
+}
+
+// Airing snapshot accessors (Ф11-6). Reading goes through the sanitizer rather
+// than trusting the stored shape: a broken entry would otherwise reach the diff
+// as NaN and could turn into a wrong notification (src/lib/aired-snapshot.ts).
+// A missing key and an empty snapshot mean the same thing to the diff — every
+// title is then seeded silently — so the reader never returns undefined.
+export async function getAiredSnapshot(): Promise<AiredSnapshot> {
+    return sanitizeAiredSnapshot(await getLocal('airedSnapshot'));
+}
+
+export async function setAiredSnapshot(snapshot: AiredSnapshot): Promise<void> {
+    await setLocal('airedSnapshot', snapshot);
+}
+
+// Called on logout AND on every login (a different account has different
+// lists), so the badge can never be counted from someone else's data.
+export async function clearAiredSnapshot(): Promise<void> {
+    await removeLocal('airedSnapshot');
+}
+
+// Badge backlog accessors (Ф11-9). Read through the sanitizer for the same
+// reason as the snapshot: a broken row would otherwise put an invented number on
+// the icon. A missing key reads as "nothing waits", which is exactly what a
+// fresh profile means.
+export async function getBadgeBacklog(): Promise<BadgeRow[]> {
+    return sanitizeBadgeRows(await getLocal('badgeBacklog'));
+}
+
+export async function setBadgeBacklog(rows: readonly BadgeRow[]): Promise<void> {
+    await setLocal('badgeBacklog', [...rows]);
+}
+
+export async function clearBadgeBacklog(): Promise<void> {
+    await removeLocal('badgeBacklog');
 }
 
 export async function getSession<K extends keyof SessionState>(

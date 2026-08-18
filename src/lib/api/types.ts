@@ -119,6 +119,42 @@ export interface CalendarItem {
     url?: string | null; // title page, see TitleCard.url
 }
 
+// A row of the background airing poll (US-12, phase 11): the same "my ongoings"
+// list as the calendar, read through the narrow poll query — six fields instead
+// of ten, because it runs every 30 minutes and draws nothing (docs/03,
+// «Опрос — эталонный запрос»). Anime-only for the same reason as the calendar:
+// Manga has neither episodesAired nor nextEpisodeAt.
+//
+// Structurally satisfies three consumers, all keyed on field names, so none of
+// them can be renamed here alone: BacklogItem (src/lib/calendar-schedule.ts), so
+// the badge counts exactly the `behind` the calendar row prints; AiredObservation
+// (src/lib/aired-snapshot.ts), so the poll result goes into the diff untouched;
+// and TitleNames (src/lib/title-name.ts), so the notification names the title
+// through the same displayTitle the screens use.
+//
+// `rateId` is carried even though the background stays read-only (docs/06, phase
+// 11 boundaries): the badge is written here but edited from the popup, and a
+// write answers with the rate id alone (RateState). It is the only identity that
+// lets «+1 эпизод» move the counter at once instead of at the next tick (Ф11-9);
+// the poll itself and the notification still address a title by `targetId`.
+export interface AiredPollItem {
+    targetId: string; // title id; the snapshot key and the id the popup opens by
+    rateId: string; // user_rate id — how a write from the popup finds this row
+    name: string; // romaji, non-null; the notification title per `titleLang`
+    russian: string | null;
+    episodesAired: number;
+    // Raw ISO8601 with offset, as returned. Data for the message, never a
+    // schedule: a third of the ongoings carry no date at all (docs/03).
+    nextEpisodeAt: string | null;
+    progress: number; // my watched episodes (userRate.episodes)
+    // Ф11-16: where a click on the notification goes. Taken from the answer and
+    // never assembled here (Ф6-26, CLAUDE.md rule 4) — the domain has changed
+    // four times, and the answer already carries the one it came from. Typed
+    // nullable for the same defensive reason as RawAnime.url: a missing address
+    // costs the click, not the message.
+    url: string | null;
+}
+
 // Search result card (US-2). Nullability mirrors the GraphQL schema per the
 // docs/03 introspection results (2026-07-23).
 export interface TitleCard {

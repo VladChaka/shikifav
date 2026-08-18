@@ -3,6 +3,7 @@ import { normalizeRelationKind } from '../related';
 import { RANOBE_KINDS } from '../title-card';
 import { apiRequest } from './http';
 import type {
+    AiredPollItem,
     ApiError,
     CalendarItem,
     RateRow,
@@ -121,16 +122,37 @@ query MylistMangas($mylist: MylistString, $limit: PositiveInt, $page: PositiveIn
 // Page size of "My lists"; background derives hasMore from a full page (docs/06).
 export const LIST_LIMIT = 30;
 
+// The my-list statuses of every "my ongoings" read. An owner-verification
+// result (docs/03, docs/06): the server `status: "ongoing"` drops announcements
+// by itself, so «Запланировано» adds airing titles and no dateless rows.
+// Exported since Ф11-9: the badge keeps rows of exactly this set between ticks,
+// so a write that moves a title out of it («Просмотрено», «Брошено») has to drop
+// the row — and the only correct definition of "out of it" is this constant.
+export const ONGOING_MYLIST_STATUSES: readonly UserRateStatus[] = [
+    'watching',
+    'rewatching',
+    'planned',
+];
+
+// Title status of every "my ongoings" read.
+const ONGOING_TITLE_STATUS = 'ongoing';
+
+// The animes() filter shared by the calendar read and the background airing
+// poll, built from the constants above instead of being spelled out twice.
+// Two queries ask about the same list for two different screens, and drifting
+// apart would mean the calendar and the notifications talk about different
+// titles (docs/03, «Опрос — эталонный запрос»). Interpolation into query text is
+// safe here and nowhere else: both values are our own constants, never input.
+const ONGOING_ANIMES_FILTER = `mylist: "${ONGOING_MYLIST_STATUSES.join(',')}", status: "${ONGOING_TITLE_STATUS}"`;
+
 // Ongoings calendar (US-9), the docs/03 reference query plus one field:
 // `status` of the title, which the reference query omits — the defensive filter
-// in mapAnimeToCalendarItem needs it. mylist/status stay inline literals, as in
-// docs/03: they are the definition of this query, not something a caller varies.
-// The three mylist statuses are an owner-verification result (docs/03,
-// docs/06): the server `status: "ongoing"` drops announcements by itself, so
-// «Запланировано» adds airing titles and no dateless rows.
+// in mapAnimeToCalendarItem needs it. mylist/status stay inline (through the
+// shared filter above) and are NOT variables, as in docs/03: they are the
+// definition of this query, not something a caller varies.
 const CALENDAR_ANIMES_QUERY = `
 query CalendarAnimes($limit: PositiveInt, $page: PositiveInt) {
-  animes(mylist: "watching,rewatching,planned", status: "ongoing", limit: $limit, page: $page) {
+  animes(${ONGOING_ANIMES_FILTER}, limit: $limit, page: $page) {
     id
     name
     russian
@@ -144,26 +166,66 @@ query CalendarAnimes($limit: PositiveInt, $page: PositiveInt) {
   }
 }`;
 
-// Page size of the calendar. 50 is the hard ceiling of animes(): larger values
-// are silently clamped, without an error (docs/03, live check 2026-07-28), so
-// asking for more would only look like a short page.
-export const CALENDAR_LIMIT = 50;
+// Airing poll (US-12, phase 11): the docs/03 reference query plus the name pair
+// and `url`. The narrow field set is the point of a separate query — 12,7 КБ per
+// 50 rows against 25,2 КБ of the calendar form (measurement 2026-08-17), and
+// this one runs in the background every 30 minutes. Nothing may be added to it
+// that the badge or the notification does not read (the Ф12-5 precedent).
+//
+// `name`/`russian` are the single addition to the reference query, and they ARE
+// read: the notification must name the title in the language of the `titleLang`
+// setting (US-12, Ф11-10), and that pair is exactly what displayTitle takes.
+// The alternative was a second request for the titles that actually moved: it
+// saves ~5 КБ on every quiet tick, but buys that with a request in the one
+// moment a notification has to be shown quickly, and with a "notification
+// without a title name" path when that request fails. Carrying the pair every
+// tick is the cheaper failure mode.
+//
+// `nextEpisodeAt` is asked for despite planning NOT being based on it (a third
+// of the ongoings have no date at all, docs/03): it is data for the message, not
+// a schedule. `userRate { episodes }` is the progress the badge counts against.
+// The title's own `status` is not asked for — unlike the calendar this read has
+// no row to draw, so a leaked released title would only fail to move its counter.
+//
+// `userRate { id }` came back in Ф11-9 and is read, unlike in the redaction Ф11-8
+// dropped it from: the badge has to react to a write made from the popup (US-12,
+// «счётчик гаснет по мере отметок прогресса»), and a write answers with the rate
+// id and nothing else (RateState). Without it the counter would only catch up on
+// the next tick, i.e. up to half an hour later, or would cost an extra request
+// per «+1». ~10 B per row under Bearer (docs/03).
+//
+// `url` is the click target of the notification (Ф11-16). It is asked for rather
+// than assembled from the origin setting and the id, because assembling it is
+// exactly what Ф6-26 forbids: the domain has moved four times (org → one → me →
+// io) and the answer already carries the one it came from. Measured cost on 50
+// public rows, same ids in both runs (2026-08-17): 9 547 B → 13 028 B.
+const POLL_AIRED_ANIMES_QUERY = `
+query PollAiredAnimes($limit: PositiveInt, $page: PositiveInt) {
+  animes(${ONGOING_ANIMES_FILTER}, limit: $limit, page: $page) {
+    id
+    name
+    russian
+    episodesAired
+    nextEpisodeAt
+    url
+    userRate { id episodes }
+  }
+}`;
+
+// Page size of both "my ongoings" reads. 50 is the hard ceiling of animes():
+// larger values are silently clamped, without an error (docs/03, live check
+// 2026-07-28), so asking for more would only look like a short page.
+//
+// Named after the list and not after the calendar screen (Ф11-8): the background
+// poll pages by the very same constants, so a "let the calendar load fewer
+// rows" edit under the old name would have silently changed what the tick reads.
+export const ONGOING_LIMIT = 50;
 
 // Hard ceiling on the sequential paging below. 150 airing titles in one
 // person's «Смотрю» is already unrealistic, and an unbounded loop over a server
-// paging quirk would hammer the limiter (CLAUDE.md rule 2).
-export const CALENDAR_MAX_PAGES = 3;
-
-// The my-list statuses the calendar shows; mirrors the `mylist` literal of
-// CALENDAR_ANIMES_QUERY — the two must be edited together.
-const CALENDAR_MYLIST_STATUSES: readonly UserRateStatus[] = [
-    'watching',
-    'rewatching',
-    'planned',
-];
-
-// Title status the calendar shows; mirrors the `status` literal of the query.
-const CALENDAR_TITLE_STATUS = 'ongoing';
+// paging quirk would hammer the limiter (CLAUDE.md rule 2). Shared with the
+// poll: it reads the very same list, only with fewer fields.
+export const ONGOING_MAX_PAGES = 3;
 
 // Related titles (US-11): the docs/03 reference query as measured live on
 // 2026-08-10 (One Piece, 92 relations), minus three fields nobody reads (see
@@ -284,6 +346,21 @@ export interface RawCalendarAnime {
     poster: { miniUrl: string; mini2xUrl: string } | null;
     userRate: { id: string; status: UserRateStatus; episodes: number } | null;
     url: string | null; // see RawAnime.url
+}
+
+// Raw wire shape of a POLL_AIRED_ANIMES_QUERY item (Ф11-8). No presentation
+// data beyond the name pair the notification says out loud: the poll answers
+// "did the counter move" and "what to call the title", never "what to draw".
+// Nullability follows the same introspection as the calendar row — `russian`,
+// `nextEpisodeAt`, `url` and `userRate` are the nullable ones here.
+export interface RawPollAnime {
+    id: string;
+    name: string;
+    russian: string | null;
+    episodesAired: number;
+    nextEpisodeAt: string | null;
+    url: string | null; // see RawAnime.url — Ф11-16, where the click goes
+    userRate: { id: string; episodes: number } | null;
 }
 
 // The anime half of a Related element: the search card minus `malId`, which the
@@ -503,8 +580,8 @@ export function mapAnimeToCalendarItem(raw: RawCalendarAnime): CalendarItem | nu
     if (raw.userRate === null) {
         return null;
     }
-    const foreignTitleStatus = raw.status !== null && raw.status !== CALENDAR_TITLE_STATUS;
-    if (foreignTitleStatus || !CALENDAR_MYLIST_STATUSES.includes(raw.userRate.status)) {
+    const foreignTitleStatus = raw.status !== null && raw.status !== ONGOING_TITLE_STATUS;
+    if (foreignTitleStatus || !ONGOING_MYLIST_STATUSES.includes(raw.userRate.status)) {
         return null;
     }
     return {
@@ -529,9 +606,9 @@ export function mapAnimeToCalendarItem(raw: RawCalendarAnime): CalendarItem | nu
 // limiter (CLAUDE.md rule 2); in practice page 2 is never even requested.
 export async function listCalendar(): Promise<CalendarItem[]> {
     const items: CalendarItem[] = [];
-    for (let page = 1; page <= CALENDAR_MAX_PAGES; page += 1) {
+    for (let page = 1; page <= ONGOING_MAX_PAGES; page += 1) {
         const data = await graphqlRequest<{ animes: RawCalendarAnime[] }>(CALENDAR_ANIMES_QUERY, {
-            limit: CALENDAR_LIMIT,
+            limit: ONGOING_LIMIT,
             page,
         });
         for (const raw of data.animes) {
@@ -543,7 +620,66 @@ export async function listCalendar(): Promise<CalendarItem[]> {
         // "Keep going while the page came back full", measured on the RAW page
         // length, before the filter: a page where one row was dropped would
         // otherwise cut paging short and lose titles (same rule as listRates).
-        if (data.animes.length < CALENDAR_LIMIT) {
+        if (data.animes.length < ONGOING_LIMIT) {
+            break;
+        }
+    }
+    return items;
+}
+
+// Pure mapper, exported for tests. Returns null for a row the poll cannot use,
+// so the caller can simply drop it — the same contract as the calendar mapper.
+// The only such row is one without a `userRate`: `mylist` never returns those by
+// contract, and without my progress there is no backlog to count. Treating a
+// missing rate as "watched nothing" would put a title I do not have in my lists
+// on the badge.
+//
+// No defensive status filter here, unlike the calendar: this query asks neither
+// for the title's status nor for mine (docs/03, «Опрос — эталонный запрос»), and
+// a leaked foreign row costs nothing anyway — its counter simply stops moving.
+export function mapAnimeToAiredPollItem(raw: RawPollAnime): AiredPollItem | null {
+    if (raw.userRate === null) {
+        return null;
+    }
+    return {
+        targetId: raw.id,
+        rateId: raw.userRate.id,
+        name: raw.name,
+        russian: raw.russian,
+        episodesAired: raw.episodesAired,
+        // Raw ISO through, exactly as with the calendar row: this layer never
+        // parses dates.
+        nextEpisodeAt: raw.nextEpisodeAt,
+        progress: raw.userRate.episodes,
+        // Passed through untouched, like every other url of this file: the https
+        // guard of the cards would not be enough here anyway — a click on a
+        // notification is opened by us, so the host is checked as well, right
+        // before the tab (src/lib/external-url.ts, shikimoriHref).
+        url: raw.url,
+    };
+}
+
+// Reads the whole "my ongoings" list in the narrow poll form. Paging, ceilings
+// and the "keep going while the page came back full" rule are the calendar's,
+// verbatim and on the same constants — it is the same server list (docs/03).
+// Sequential on purpose: a parallel fan-out over pages would burst the rate
+// limiter (CLAUDE.md rule 2); in practice page 2 is never even requested.
+export async function pollAiredAnimes(): Promise<AiredPollItem[]> {
+    const items: AiredPollItem[] = [];
+    for (let page = 1; page <= ONGOING_MAX_PAGES; page += 1) {
+        const data = await graphqlRequest<{ animes: RawPollAnime[] }>(POLL_AIRED_ANIMES_QUERY, {
+            limit: ONGOING_LIMIT,
+            page,
+        });
+        for (const raw of data.animes) {
+            const item = mapAnimeToAiredPollItem(raw);
+            if (item !== null) {
+                items.push(item);
+            }
+        }
+        // Measured on the RAW page length, before the filter: a page where one
+        // row was dropped would otherwise cut paging short and lose titles.
+        if (data.animes.length < ONGOING_LIMIT) {
             break;
         }
     }

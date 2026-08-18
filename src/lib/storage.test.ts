@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { fakeBrowser } from 'wxt/testing';
 import {
+    clearAiredSnapshot,
     clearSession,
     DEFAULT_SETTINGS,
     FALLBACK_OPTIONS_SECTION,
+    getAiredSnapshot,
     getLocal,
     getSession,
     getSettings,
@@ -11,6 +13,7 @@ import {
     OPTIONS_SECTIONS,
     removeLocal,
     removeSession,
+    setAiredSnapshot,
     setLocal,
     setSession,
     setSettings,
@@ -52,6 +55,12 @@ describe('storage', () => {
                 // off. The one default here that is not "behave as before the
                 // setting existed" — see docs/06.
                 analytics: true,
+                // Ф11-7, the same kind of default and for the same reason
+                // (owner's decision 5 of phase 11): switched on, or the badge
+                // would appear for nobody after an update. The notifications row
+                // is separate (decision 6) and subordinate to the first one.
+                episodeWatch: true,
+                episodeNotifications: true,
             });
         });
 
@@ -137,6 +146,8 @@ describe('storage', () => {
                 defaultSearchType: 'manga',
                 defaultListStatus: 'completed',
                 analytics: false,
+                episodeWatch: false,
+                episodeNotifications: false,
             };
             await setLocal('settings', stored);
             await expect(getSettings()).resolves.toEqual(stored);
@@ -401,6 +412,50 @@ describe('storage', () => {
 
             const local = await fakeBrowser.storage.local.get('pendingSearch');
             expect(local['pendingSearch']).toEqual({ query: 'берсерк' });
+        });
+    });
+
+    // Ф11-6: the airing snapshot lives in storage.local — it has to survive the
+    // death of the service worker, or every wake-up would re-seed and no episode
+    // would ever be noticed.
+    describe('aired snapshot', () => {
+        it('is empty on a profile that has never polled', async () => {
+            await expect(getAiredSnapshot()).resolves.toEqual({});
+        });
+
+        it('round-trips through storage.local', async () => {
+            await setAiredSnapshot({ '21': 1147, '61649': 3 });
+            await expect(getAiredSnapshot()).resolves.toEqual({ '21': 1147, '61649': 3 });
+            await expect(getLocal('airedSnapshot')).resolves.toEqual({ '21': 1147, '61649': 3 });
+        });
+
+        // Storage is untrusted input: a broken entry must not reach the diff as
+        // NaN and turn into a notification about an episode that never aired.
+        it('drops entries that are not whole counters on the way out', async () => {
+            await fakeBrowser.storage.local.set({
+                airedSnapshot: { '21': 1147, broken: 'twelve' },
+            });
+            await expect(getAiredSnapshot()).resolves.toEqual({ '21': 1147 });
+        });
+
+        it('reads a value of a wrong shape as an empty snapshot', async () => {
+            await fakeBrowser.storage.local.set({ airedSnapshot: 'nonsense' });
+            await expect(getAiredSnapshot()).resolves.toEqual({});
+        });
+
+        it('is removed by clearAiredSnapshot and leaves the rest of local alone', async () => {
+            await setAiredSnapshot({ '21': 1147 });
+            await setLocal('settings', DEFAULT_SETTINGS);
+
+            await clearAiredSnapshot();
+
+            await expect(getLocal('airedSnapshot')).resolves.toBeUndefined();
+            await expect(getAiredSnapshot()).resolves.toEqual({});
+            await expect(getLocal('settings')).resolves.toEqual(DEFAULT_SETTINGS);
+        });
+
+        it('resolves when there is nothing to clear (callers remove blindly)', async () => {
+            await expect(clearAiredSnapshot()).resolves.toBeUndefined();
         });
     });
 

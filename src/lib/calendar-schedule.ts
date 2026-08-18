@@ -1,8 +1,20 @@
 import { i18n } from './i18n';
 
-// Pure scheduling layer of the ongoings calendar (phase 7): grouping, ordering
-// and formatting, nothing else — no chrome.*, no Vue, no network. "Now" is an
-// argument rather than Date.now() so the output is deterministic and testable.
+// Pure scheduling and backlog layer of the ongoings calendar (phase 7) and of
+// the badge counter on top of it (phase 11): grouping, ordering, formatting and
+// the "how many aired episodes I have not taken" arithmetic — no chrome.*, no
+// Vue, no network. "Now" is an argument rather than Date.now() so the output is
+// deterministic and testable.
+
+// The two numbers the backlog arithmetic needs, and nothing else. Split out of
+// ScheduleItem so the background poll row (`AiredPollItem`, Ф11-8) — which knows
+// no air date and no episode total — satisfies it structurally: the badge then
+// counts literally the same `behind` the calendar row prints, and the two cannot
+// drift apart (docs/06, owner's decision 3 of phase 11).
+export interface BacklogItem {
+    episodesAired: number;
+    progress: number; // my watched episodes (userRate.episodes)
+}
 
 // Minimal shape the schedule needs. The full calendar row (`CalendarItem`,
 // Ф7-5) adds the presentation fields (name, poster, rate ids) and satisfies
@@ -11,11 +23,9 @@ import { i18n } from './i18n';
 // Field names follow the existing rows: `progress` is my watched episodes
 // (RateRow.progress), `episodes`/`episodesAired` come from the title itself
 // (docs/03 «Календарь — эталонный запрос»).
-export interface ScheduleItem {
+export interface ScheduleItem extends BacklogItem {
     nextEpisodeAt: string | null; // ISO8601 with offset; null for ~8% of ongoings
     episodes: number; // total, 0 = unknown (One Piece)
-    episodesAired: number;
-    progress: number;
 }
 
 export interface ScheduleEntry<T extends ScheduleItem> {
@@ -89,10 +99,36 @@ function parseAt(value: string | null): Date | null {
     return Number.isNaN(date.getTime()) ? null : date;
 }
 
+// Aired episodes I have not marked as watched, or null when there is no
+// backlog. Watching ahead of the airing (a rewatch, an off-by-one made on the
+// site) is silent: only a real backlog is worth a line in the row and a number
+// on the badge.
+export function episodesBehind(item: BacklogItem): number | null {
+    const behind = item.episodesAired - item.progress;
+    return behind > 0 ? behind : null;
+}
+
+// The badge number (US-12): how many TITLES have aired episodes I have not
+// taken. Deliberately not the sum of those episodes — on an account with a
+// backlog that would burn a three-digit number permanently and read as a
+// breakage (docs/06, owner's decision 3 of phase 11).
+//
+// Status-agnostic on purpose: the caller decides which rows it hands over, and
+// the poll row carries no list status to filter on anyway (docs/03, «Опрос —
+// эталонный запрос»).
+export function countTitlesBehind(items: readonly BacklogItem[]): number {
+    let count = 0;
+    for (const item of items) {
+        if (episodesBehind(item) !== null) {
+            count += 1;
+        }
+    }
+    return count;
+}
+
 function toEntry<T extends ScheduleItem>(item: T, at: Date | null): ScheduleEntry<T> {
     const episodesTotal = item.episodes > 0 ? item.episodes : null;
     const next = item.episodesAired + 1;
-    const behind = item.episodesAired - item.progress;
     return {
         item,
         time: at === null ? null : TIME_FORMAT.format(at),
@@ -101,9 +137,7 @@ function toEntry<T extends ScheduleItem>(item: T, at: Date | null): ScheduleEntr
         // always stands: there is nothing to contradict.
         episode: episodesTotal !== null && next > episodesTotal ? null : next,
         episodesTotal,
-        // Watching ahead of the airing (rewatch, off-by-one on the site) is
-        // silent — only a real backlog is worth a badge.
-        behind: behind > 0 ? behind : null,
+        behind: episodesBehind(item),
     };
 }
 
