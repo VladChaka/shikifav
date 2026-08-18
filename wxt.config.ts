@@ -44,7 +44,26 @@ export default defineConfig({
         // variant grants nothing beyond hosts we already have (CLAUDE.md rule 7).
         // contextMenus arrives exactly in phase 5 (US-8, CLAUDE.md rule 7);
         // tabs.create({ url }) needs no "tabs" permission.
-        permissions: ['identity', 'storage', 'declarativeNetRequestWithHostAccess', 'contextMenus'],
+        // `alarms` arrives in phase 11 (US-12) and is the only permission of that
+        // phase declared here: it carries NO permission warning, so an update
+        // adding it does not disable the extension for anyone already using it
+        // (docs/06, owner's decision 2). `notifications` does carry a warning and
+        // is therefore requested from a button instead — see optional_permissions
+        // below; it must never move into this list.
+        permissions: [
+            'identity',
+            'storage',
+            'declarativeNetRequestWithHostAccess',
+            'contextMenus',
+            'alarms',
+        ],
+        // Ф11-10, owner's decision 2. «Display notifications» is a permission
+        // WARNING, and Chrome disables an extension for everyone who already has
+        // it until the new warning is accepted
+        // (developer.chrome.com/docs/extensions/develop/concepts/permission-warnings).
+        // Declared optional, the same permission costs one button on the settings
+        // page and nothing at all to an installed base that never presses it.
+        optional_permissions: ['notifications'],
         // google-analytics.com arrives in фаза 10 and is the only host here that
         // is not Shikimori. It carries anonymous usage events and nothing else:
         // the token and the app User-Agent belong to http.ts, which never talks
