@@ -67,12 +67,21 @@ async function mountPage(
         // state the real one does not have — an empty list, a dead address,
         // both kinds of address at once.
         donations?: { methods?: readonly DonationMethod[]; actions?: readonly SupportAction[] };
+        // Whether Chrome already holds the optional `notifications` permission
+        // (Ф11-11). Left out entirely, the fake API throws «not implemented» —
+        // which the page reads as «нет», the same as a real refusal.
+        notificationsGranted?: boolean;
         // Replaces a handler with a failing (or otherwise special) one; the
         // defaults below are the happy path.
         overrides?: Partial<MessageHandlers>;
     } = {},
 ): Promise<Mounted> {
     vi.resetModules();
+    if (options.notificationsGranted !== undefined) {
+        vi.spyOn(fakeBrowser.permissions, 'contains').mockResolvedValue(
+            options.notificationsGranted as never,
+        );
+    }
     if (options.donations) {
         const { methods = [], actions = [] } = options.donations;
         // doMock, not mock: the page is imported dynamically below, after this
@@ -197,6 +206,21 @@ function panelHints(container: FakeElement): string[] {
     return findAll(container, 'opt__hint').map((el) => textOf(el).trim());
 }
 
+// The one line of «Новые серии» that changes with the state of the block; null
+// when the block says nothing at all (notifications off, or nothing known yet).
+const EPISODES_STATUS_ID = 'options-episodes-status';
+
+function episodesStatus(container: FakeElement): string | null {
+    const line = findAll(container, 'opt__hint').find((el) => el.props.id === EPISODES_STATUS_ID);
+    return line ? textOf(line).trim() : null;
+}
+
+function allowButton(container: FakeElement): FakeElement | undefined {
+    return findAll(container, 'opt__btn').find(
+        (el) => textOf(el).trim() === i18n.options.notifyAllow,
+    );
+}
+
 function keydownOn(el: FakeElement, key: string): { preventDefault: ReturnType<typeof vi.fn> } {
     const event = { key, preventDefault: vi.fn() };
     fire(el, 'keydown', event);
@@ -237,6 +261,9 @@ afterEach(() => {
     }
     cleanups = [];
     vi.unstubAllGlobals();
+    // The permissions surface is spied per test (fakeBrowser implements none of
+    // it), and a spy left behind would decide the state of a later mount.
+    vi.restoreAllMocks();
     // Any test, not just the one that looks for it: a throwing render leaves the
     // last good tree in place, so the assertions above it can all still hold.
     expect(renderErrors).toEqual([]);
@@ -346,6 +373,9 @@ describe('OptionsPage (Ф6-3)', () => {
             i18n.options.startTabLabel,
             i18n.options.quickStatusLabel,
             i18n.options.defaultsLabel,
+            // Ф11-11: «Новые серии» стоит последним — новый блок добавлен
+            // снизу, три знакомые настройки не двигаются.
+            i18n.options.episodesLabel,
         ]);
         expect(find(container, 'options__panel').props['aria-labelledby']).toBe(
             tabs(container)[1].props.id,
@@ -626,6 +656,30 @@ describe('OptionsPage (Ф6-3)', () => {
         );
     });
 
+    // Ф11 audit. The airing watch keeps two caches in storage.local — the
+    // snapshot «тайтл → сколько серий вышло» and the rows the badge counts — and
+    // both describe this account's lists. A button that says «Очистить кэш» must
+    // not leave list data behind just because it was not written to the session.
+    it('clears the airing caches of phase 11 too', async () => {
+        const { container } = await mountPage();
+        await fakeBrowser.storage.local.set({
+            airedSnapshot: { '1': 8 },
+            badgeBacklog: [{ rateId: '1', episodesAired: 8, progress: 3 }],
+        });
+        await openSection(container, 2);
+
+        const clear = findAll(container, 'opt__btn').find(
+            (el) => textOf(el).trim() === i18n.options.clearCache,
+        );
+        clickOn(clear!);
+
+        await vi.waitFor(async () =>
+            expect(await fakeBrowser.storage.local.get(['airedSnapshot', 'badgeBacklog'])).toEqual(
+                {},
+            ),
+        );
+    });
+
     it('ends the session from «Выйти»', async () => {
         const { container } = await mountPage();
         await openSection(container, 2);
@@ -652,6 +706,286 @@ describe('OptionsPage (Ф6-3)', () => {
         await openSection(container, 0);
         clickOn(chip(container, i18n.options.themeLabel, i18n.options.themeLight));
         await vi.waitFor(async () => expect((await getSettings()).theme).toBe('light'));
+    });
+
+    // --- «Новые серии» (Ф11-11, US-12) ----------------------------------------
+
+    describe('the «Новые серии» block', () => {
+        // The design card collapses 16 input combinations into five drawings;
+        // what is pinned below is exactly that collapse — which rows are alive,
+        // what the trailing line says, and when there is no line at all.
+
+        type ChangeListener = (permissions: { permissions?: string[] }) => void;
+
+        let addedListeners: ChangeListener[] = [];
+        let removedListeners: ChangeListener[] = [];
+
+        // fakeBrowser throws on the whole permissions surface, so the events are
+        // kept by hand — this is what makes «отозвали (или выдали) разрешение в
+        // chrome://extensions» testable at all.
+        function capturePermissionListeners(): void {
+            addedListeners = [];
+            removedListeners = [];
+            vi.spyOn(fakeBrowser.permissions.onAdded, 'addListener').mockImplementation(
+                (listener: unknown) => {
+                    addedListeners.push(listener as ChangeListener);
+                },
+            );
+            vi.spyOn(fakeBrowser.permissions.onAdded, 'removeListener').mockImplementation(
+                (listener: unknown) => {
+                    addedListeners = addedListeners.filter((entry) => entry !== listener);
+                },
+            );
+            vi.spyOn(fakeBrowser.permissions.onRemoved, 'addListener').mockImplementation(
+                (listener: unknown) => {
+                    removedListeners.push(listener as ChangeListener);
+                },
+            );
+            vi.spyOn(fakeBrowser.permissions.onRemoved, 'removeListener').mockImplementation(
+                (listener: unknown) => {
+                    removedListeners = removedListeners.filter((entry) => entry !== listener);
+                },
+            );
+        }
+
+        async function openBlock(
+            options: Parameters<typeof mountPage>[0] = {},
+        ): Promise<FakeElement> {
+            const { container } = await mountPage(options);
+            await openSection(container, 1);
+            return container;
+        }
+
+        function rowDisabled(container: FakeElement, ariaLabel: string): boolean[] {
+            return findAll(chipRow(container, ariaLabel), 'chip').map(
+                (el) => el.props.disabled === true,
+            );
+        }
+
+        // 2. Both settings on, no permission — what everyone sees right after
+        // the update: the feature ships enabled and the permission cannot have
+        // been granted yet.
+        it('offers the permission button when notifications are on without it', async () => {
+            const container = await openBlock();
+
+            expect(activeChip(container, i18n.options.badgeRowLabel)).toBe(i18n.options.badgeOn);
+            expect(activeChip(container, i18n.options.notifyRowLabel)).toBe(i18n.options.notifyOn);
+            expect(rowDisabled(container, i18n.options.badgeRowLabel)).toEqual([false, false]);
+            expect(rowDisabled(container, i18n.options.notifyRowLabel)).toEqual([false, false]);
+
+            await vi.waitFor(() =>
+                expect(episodesStatus(container)).toBe(i18n.options.notifyMissing),
+            );
+            expect(allowButton(container)).toBeDefined();
+        });
+
+        // 1. Permission held: the line states the fact and offers nothing.
+        it('confirms a granted permission and drops the button', async () => {
+            const container = await openBlock({ notificationsGranted: true });
+
+            await vi.waitFor(() =>
+                expect(episodesStatus(container)).toBe(i18n.options.notifyGranted),
+            );
+            expect(allowButton(container)).toBeUndefined();
+        });
+
+        // 3. The state the second row exists for: messages off, counter alive.
+        // No trailing line at all — the row has already said everything.
+        it('says nothing at all when notifications are switched off', async () => {
+            const container = await openBlock({
+                seed: { episodeNotifications: false },
+                notificationsGranted: true,
+            });
+
+            await vi.waitFor(() =>
+                expect(activeChip(container, i18n.options.notifyRowLabel)).toBe(
+                    i18n.options.notifyOff,
+                ),
+            );
+            for (let i = 0; i < 5; i += 1) {
+                await nextTick();
+            }
+            expect(episodesStatus(container)).toBeNull();
+            expect(allowButton(container)).toBeUndefined();
+            // The counter row is untouched by its subordinate.
+            expect(rowDisabled(container, i18n.options.badgeRowLabel)).toEqual([false, false]);
+        });
+
+        // 4. Counter off: the notification row goes dead, keeps its stored
+        // value, and the reason is both on screen and in the a11y tree.
+        it('locks the notification row while the counter is off, keeping its value', async () => {
+            const container = await openBlock({ seed: { episodeWatch: false } });
+
+            await vi.waitFor(() =>
+                expect(activeChip(container, i18n.options.badgeRowLabel)).toBe(
+                    i18n.options.badgeOff,
+                ),
+            );
+            expect(rowDisabled(container, i18n.options.notifyRowLabel)).toEqual([true, true]);
+            // Not swapped for «Выключены»: this is the value it returns to.
+            expect(activeChip(container, i18n.options.notifyRowLabel)).toBe(i18n.options.notifyOn);
+            expect(rowDisabled(container, i18n.options.badgeRowLabel)).toEqual([false, false]);
+            expect(episodesStatus(container)).toBe(i18n.options.notifyNeedsBadge);
+            expect(chipRow(container, i18n.options.notifyRowLabel).props['aria-describedby']).toBe(
+                EPISODES_STATUS_ID,
+            );
+            expect(allowButton(container)).toBeUndefined();
+        });
+
+        it('refuses to write through the locked notification row', async () => {
+            const { container, getSettings } = await mountPage({ seed: { episodeWatch: false } });
+            await openSection(container, 1);
+            await vi.waitFor(() =>
+                expect(activeChip(container, i18n.options.badgeRowLabel)).toBe(
+                    i18n.options.badgeOff,
+                ),
+            );
+
+            clickOn(chip(container, i18n.options.notifyRowLabel, i18n.options.notifyOff));
+
+            for (let i = 0; i < 5; i += 1) {
+                await nextTick();
+            }
+            expect((await getSettings()).episodeNotifications).toBe(true);
+        });
+
+        // 5. No session: both rows dead, both showing what is stored, and no
+        // button — asking for a permission under a feature that stays silent
+        // anyway is a promise with nothing behind it.
+        it('locks both rows without a session and points at the reason', async () => {
+            const container = await openBlock({ auth: { status: 'anonymous' } });
+
+            await vi.waitFor(() =>
+                expect(episodesStatus(container)).toBe(i18n.options.episodesNoAuth),
+            );
+            expect(rowDisabled(container, i18n.options.badgeRowLabel)).toEqual([true, true]);
+            expect(rowDisabled(container, i18n.options.notifyRowLabel)).toEqual([true, true]);
+            expect(activeChip(container, i18n.options.badgeRowLabel)).toBe(i18n.options.badgeOn);
+            expect(activeChip(container, i18n.options.notifyRowLabel)).toBe(i18n.options.notifyOn);
+            expect(chipRow(container, i18n.options.badgeRowLabel).props['aria-describedby']).toBe(
+                EPISODES_STATUS_ID,
+            );
+            expect(chipRow(container, i18n.options.notifyRowLabel).props['aria-describedby']).toBe(
+                EPISODES_STATUS_ID,
+            );
+            expect(allowButton(container)).toBeUndefined();
+        });
+
+        it('writes both settings, and the counter row never touches the other', async () => {
+            const { container, getSettings } = await mountPage();
+            await openSection(container, 1);
+
+            clickOn(chip(container, i18n.options.notifyRowLabel, i18n.options.notifyOff));
+            await vi.waitFor(async () =>
+                expect((await getSettings()).episodeNotifications).toBe(false),
+            );
+            expect((await getSettings()).episodeWatch).toBe(true);
+
+            clickOn(chip(container, i18n.options.badgeRowLabel, i18n.options.badgeOff));
+            await vi.waitFor(async () => expect((await getSettings()).episodeWatch).toBe(false));
+            // Subordination is a rendering rule, not a stored one.
+            expect((await getSettings()).episodeNotifications).toBe(false);
+        });
+
+        // Ф11-13, the direction the case above cannot see: there the messages
+        // were already off, so a counter row that wrote BOTH settings changed
+        // nothing visible (мутационная проверка — that mutation stayed green).
+        // With the messages ON it destroys the value the locked row is supposed
+        // to keep, and switching the counter back on would silently return a
+        // profile that had notifications to a profile that has none (Ф11-11,
+        // «показывает сохранённое значение, а не подменяется на Выключены»).
+        it('leaves the notification setting alone when the counter is switched off', async () => {
+            const { container, getSettings } = await mountPage();
+            await openSection(container, 1);
+
+            clickOn(chip(container, i18n.options.badgeRowLabel, i18n.options.badgeOff));
+
+            await vi.waitFor(async () => expect((await getSettings()).episodeWatch).toBe(false));
+            expect((await getSettings()).episodeNotifications).toBe(true);
+            // Locked, and still showing the value it returns to.
+            expect(rowDisabled(container, i18n.options.notifyRowLabel)).toEqual([true, true]);
+            expect(activeChip(container, i18n.options.notifyRowLabel)).toBe(i18n.options.notifyOn);
+
+            clickOn(chip(container, i18n.options.badgeRowLabel, i18n.options.badgeOn));
+
+            await vi.waitFor(async () => expect((await getSettings()).episodeWatch).toBe(true));
+            expect((await getSettings()).episodeNotifications).toBe(true);
+            expect(rowDisabled(container, i18n.options.notifyRowLabel)).toEqual([false, false]);
+        });
+
+        it('asks Chrome from the button and confirms a granted permission', async () => {
+            const request = vi
+                .spyOn(fakeBrowser.permissions, 'request')
+                .mockResolvedValue(true as never);
+            const container = await openBlock();
+            await vi.waitFor(() => expect(allowButton(container)).toBeDefined());
+
+            clickOn(allowButton(container)!);
+
+            await vi.waitFor(() =>
+                expect(episodesStatus(container)).toBe(i18n.options.notifyGranted),
+            );
+            expect(request).toHaveBeenCalledWith({ permissions: ['notifications'] });
+            expect(allowButton(container)).toBeUndefined();
+        });
+
+        // A refusal changes nothing on screen, so without the toast the click
+        // would look ignored — the whole reason the ask is a button of its own.
+        it('says so when Chrome refuses the permission', async () => {
+            vi.spyOn(fakeBrowser.permissions, 'request').mockResolvedValue(false as never);
+            const container = await openBlock();
+            await vi.waitFor(() => expect(allowButton(container)).toBeDefined());
+
+            clickOn(allowButton(container)!);
+
+            await vi.waitFor(() =>
+                expect(textOf(find(container, 'toast')).trim()).toBe(i18n.options.notifyDenied),
+            );
+            // The row stays on: the setting was never the thing that failed.
+            expect(activeChip(container, i18n.options.notifyRowLabel)).toBe(i18n.options.notifyOn);
+            expect(episodesStatus(container)).toBe(i18n.options.notifyMissing);
+            expect(allowButton(container)).toBeDefined();
+        });
+
+        // Revoked from chrome://extensions with the page open: without the
+        // subscription it would keep promising notifications forever.
+        it('takes back the confirmation when the permission is revoked', async () => {
+            capturePermissionListeners();
+            const container = await openBlock({ notificationsGranted: true });
+            await vi.waitFor(() =>
+                expect(episodesStatus(container)).toBe(i18n.options.notifyGranted),
+            );
+
+            for (const listener of [...removedListeners]) {
+                listener({ permissions: ['notifications'] });
+            }
+
+            await vi.waitFor(() =>
+                expect(episodesStatus(container)).toBe(i18n.options.notifyMissing),
+            );
+            expect(allowButton(container)).toBeDefined();
+        });
+
+        // The other direction, found by the review of Ф11-10: granted from
+        // chrome://extensions with this tab open. Without onAdded the block would
+        // go on claiming «разрешения нет» and offering a button that opens a
+        // dialog for a permission the profile already has.
+        it('confirms the permission granted outside the page', async () => {
+            capturePermissionListeners();
+            const container = await openBlock({ notificationsGranted: false });
+            await vi.waitFor(() =>
+                expect(episodesStatus(container)).toBe(i18n.options.notifyMissing),
+            );
+
+            for (const listener of [...addedListeners]) {
+                listener({ permissions: ['notifications'] });
+            }
+
+            await vi.waitFor(() =>
+                expect(episodesStatus(container)).toBe(i18n.options.notifyGranted),
+            );
+            expect(allowButton(container)).toBeUndefined();
+        });
     });
 
     // --- «Поддержать» and the handover from the popup header (Ф8-3) ------------

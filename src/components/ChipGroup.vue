@@ -3,6 +3,7 @@
         class="chips"
         role="radiogroup"
         :aria-label="ariaLabel"
+        :aria-disabled="disabled ? true : undefined"
     >
         <button
             v-for="opt in options"
@@ -15,6 +16,7 @@
             type="button"
             role="radio"
             :aria-checked="opt.value === modelValue"
+            :disabled="disabled"
             @click="pick(opt.value)"
         >
             <span
@@ -42,10 +44,18 @@ export interface ChipOption<V extends string> {
     label: string;
 }
 
+// `disabled` (Ф11-11) dims the whole row and keeps its stored value on screen:
+// a row that depends on another setting must show what it will go back to, not
+// be swapped for «Выключено» or disappear. It brings no CSS of its own — the
+// dimming and the cursor come from `button:disabled` in foundation.scss — and
+// no reason of its own either: the caller states the reason in a line of text
+// and links it to the group with aria-describedby (it falls through to the root
+// element here).
 const props = defineProps<{
     options: readonly ChipOption<T>[];
     modelValue: T;
     statusDots?: boolean;
+    disabled?: boolean;
     ariaLabel?: string;
 }>();
 
@@ -54,7 +64,10 @@ const emit = defineEmits<{
 }>();
 
 function pick(value: T): void {
-    if (value !== props.modelValue) {
+    // The guard is not a duplicate of :disabled — a click on a disabled button
+    // never reaches a real browser, but nothing stops a caller (or a test)
+    // from invoking the handler, and a disabled row must not write settings.
+    if (!props.disabled && value !== props.modelValue) {
         emit('update:modelValue', value);
     }
 }

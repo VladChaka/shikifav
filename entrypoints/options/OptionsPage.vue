@@ -156,6 +156,91 @@
                             </div>
                         </div>
                     </section>
+
+                    <!-- «Новые серии» (Ф11-11, US-12). Last block of the
+                         section: it is about what the extension does while
+                         nobody is looking, which is what «Поведение» is for.
+                         Two labelled chip rows in one block is the anatomy of
+                         «Фильтры по умолчанию» right above it — the rows are
+                         NOT equals though: without the poll there are no
+                         notifications, so the second row goes disabled while
+                         the first is off and keeps showing the value it will
+                         return to. -->
+                    <section class="opt">
+                        <div class="opt__label">{{ i18n.options.episodesLabel }}</div>
+                        <p class="opt__hint">{{ i18n.options.episodesHint }}</p>
+
+                        <div class="opt__sub">
+                            <div class="opt__sub-label">{{ i18n.options.badgeRowLabel }}</div>
+                            <div class="opt__chips">
+                                <ChipGroup
+                                    :options="BADGE_OPTIONS"
+                                    :model-value="settings.episodeWatch ? EPISODES_ON : 'off'"
+                                    :disabled="episodesLocked"
+                                    :aria-label="i18n.options.badgeRowLabel"
+                                    :aria-describedby="
+                                        episodesState === 'noAuth' ? EPISODES_STATUS_ID : undefined
+                                    "
+                                    @update:model-value="setEpisodeWatch"
+                                />
+                            </div>
+                        </div>
+
+                        <!-- Both reasons for a dimmed row are said out loud and
+                             both reach the a11y tree through aria-describedby:
+                             greyed chips with no stated reason are a dead
+                             control to a screen reader. -->
+                        <div class="opt__sub">
+                            <div class="opt__sub-label">{{ i18n.options.notifyRowLabel }}</div>
+                            <div class="opt__chips">
+                                <ChipGroup
+                                    :options="NOTIFY_OPTIONS"
+                                    :model-value="
+                                        settings.episodeNotifications ? EPISODES_ON : 'off'
+                                    "
+                                    :disabled="notifyLocked"
+                                    :aria-label="i18n.options.notifyRowLabel"
+                                    :aria-describedby="
+                                        notifyLocked ? EPISODES_STATUS_ID : undefined
+                                    "
+                                    @update:model-value="setEpisodeNotifications"
+                                />
+                            </div>
+                        </div>
+
+                        <!-- The trailing line exists only where something
+                             depends on it: with notifications off the row has
+                             already said everything, and «разрешение выдано»
+                             under a switched-off row would report a permission
+                             nothing uses. -->
+                        <div
+                            v-if="episodesStatus"
+                            class="opt__sub"
+                        >
+                            <p
+                                :id="EPISODES_STATUS_ID"
+                                class="opt__hint"
+                            >
+                                {{ episodesStatus }}
+                            </p>
+                            <!-- The only place the permission is asked for, and
+                                 a ghost button like «Очистить кэш»: nothing is
+                                 saved on this page, so a filled one would
+                                 shout. -->
+                            <div
+                                v-if="episodesState === 'missing'"
+                                class="opt__buttons"
+                            >
+                                <button
+                                    class="opt__btn"
+                                    type="button"
+                                    @click="allowNotifications"
+                                >
+                                    {{ i18n.options.notifyAllow }}
+                                </button>
+                            </div>
+                        </div>
+                    </section>
                 </template>
 
                 <!-- --- «Аккаунт и данные» --- -->
@@ -344,6 +429,13 @@ import type { SupportActionId } from '@/src/lib/donations';
 import { apiErrorMessage, i18n, statusLabel } from '@/src/lib/i18n';
 import { sendMessage } from '@/src/lib/messaging';
 import {
+    hasNotificationsPermission,
+    onNotificationsPermissionChanged,
+    requestNotificationsPermission,
+} from '@/src/lib/notifications-permission';
+import {
+    clearAiredSnapshot,
+    clearBadgeBacklog,
     clearSession,
     FALLBACK_OPTIONS_SECTION,
     forgetAnalyticsClientId,
@@ -568,6 +660,23 @@ const ANALYTICS_OPTIONS: readonly ChipOption<AnalyticsChoice>[] = [
     { value: 'off', label: i18n.options.analyticsOff },
 ];
 
+// «Новые серии» (Ф11-11): two booleans on two chip rows, mapped on the edge the
+// same way ANALYTICS_ON is — ChipGroup stays keyed by strings. Each row is
+// worded for itself («счётчик включён», «уведомления включены»), so the two
+// share the value vocabulary and nothing else.
+const EPISODES_ON = 'on';
+type EpisodesChoice = typeof EPISODES_ON | 'off';
+
+const BADGE_OPTIONS: readonly ChipOption<EpisodesChoice>[] = [
+    { value: EPISODES_ON, label: i18n.options.badgeOn },
+    { value: 'off', label: i18n.options.badgeOff },
+];
+
+const NOTIFY_OPTIONS: readonly ChipOption<EpisodesChoice>[] = [
+    { value: EPISODES_ON, label: i18n.options.notifyOn },
+    { value: 'off', label: i18n.options.notifyOff },
+];
+
 const ORIGIN_OPTIONS: readonly XSelectOption<Origin>[] = [
     DEFAULT_ORIGIN,
     ...ORIGINS.filter((origin) => origin !== DEFAULT_ORIGIN),
@@ -708,6 +817,105 @@ function setAnalytics(choice: AnalyticsChoice): void {
     }
 }
 
+// --- «Новые серии» (Ф11-11, US-12) ------------------------------------------
+
+// One id for one line: whichever reason is on screen, it is the one the dimmed
+// rows point at with aria-describedby.
+const EPISODES_STATUS_ID = 'options-episodes-status';
+
+// null = not asked yet. The answer arrives a microtask after mount, and until it
+// does the block must claim neither «разрешены» nor «разрешения нет» — either
+// would be a line of text flipping in front of the reader.
+const notificationsGranted = ref<boolean | null>(null);
+
+let stopWatchingPermission: (() => void) | null = null;
+
+onMounted(() => {
+    void hasNotificationsPermission().then((granted) => {
+        notificationsGranted.value = granted;
+    });
+    // Changed from chrome://extensions while this tab is open, either way:
+    // without this the page would keep promising «Уведомления разрешены» after a
+    // revoke, and would keep offering the button after a grant made elsewhere.
+    stopWatchingPermission = onNotificationsPermissionChanged((granted) => {
+        notificationsGranted.value = granted;
+    });
+});
+
+onUnmounted(() => {
+    stopWatchingPermission?.();
+    stopWatchingPermission = null;
+});
+
+// The five drawings of the block (design card), in the order they shadow each
+// other: sign-in first, then the badge row, then the notification row, and only
+// inside a working feature does the Chrome permission matter at all.
+// 'unknown' is not a sixth state — it renders exactly like 'notifyOff', with no
+// status line, and exists only between mount and the two answers.
+type EpisodesState = 'noAuth' | 'needsBadge' | 'notifyOff' | 'granted' | 'missing' | 'unknown';
+
+const episodesState = computed<EpisodesState>(() => {
+    if (status.value === 'anonymous') {
+        return 'noAuth';
+    }
+    if (!settings.value.episodeWatch) {
+        return 'needsBadge';
+    }
+    if (!settings.value.episodeNotifications) {
+        return 'notifyOff';
+    }
+    if (status.value === 'loading' || notificationsGranted.value === null) {
+        return 'unknown';
+    }
+    return notificationsGranted.value ? 'granted' : 'missing';
+});
+
+// A state that says nothing carries no line at all, rather than a muted line
+// with nothing in it: «разрешение выдано» under a switched-off row would report
+// a permission nothing uses.
+const EPISODES_STATUS_TEXT: Record<EpisodesState, string | null> = {
+    noAuth: i18n.options.episodesNoAuth,
+    needsBadge: i18n.options.notifyNeedsBadge,
+    notifyOff: null,
+    granted: i18n.options.notifyGranted,
+    missing: i18n.options.notifyMissing,
+    unknown: null,
+};
+
+const episodesStatus = computed<string | null>(() => EPISODES_STATUS_TEXT[episodesState.value]);
+
+// Without a session the counter has nothing to count, so both rows are dimmed —
+// and they keep their stored values: the settings did not change, they just do
+// not work.
+const episodesLocked = computed(() => status.value === 'anonymous');
+
+// The subordination is a rendering rule, not a stored one: episodeNotifications
+// is never rewritten by switching the badge off, so it comes back as it was.
+const notifyLocked = computed(() => episodesLocked.value || !settings.value.episodeWatch);
+
+function setEpisodeWatch(choice: EpisodesChoice): void {
+    write({ episodeWatch: choice === EPISODES_ON });
+}
+
+// Switching the row off does NOT revoke the Chrome permission (owner decision):
+// the row is the control, and revoking would buy a second system dialog on
+// every way back.
+function setEpisodeNotifications(choice: EpisodesChoice): void {
+    write({ episodeNotifications: choice === EPISODES_ON });
+}
+
+// Nothing is awaited before the request: Chrome only grants the ask inside a
+// user gesture, and an ask made after an await is refused for a reason nobody
+// can tell from «нет». A refusal changes nothing on screen — same line, same
+// button — so it is what the toast is for.
+async function allowNotifications(): Promise<void> {
+    const granted = await requestNotificationsPermission();
+    notificationsGranted.value = granted;
+    if (!granted) {
+        showToast(i18n.options.notifyDenied);
+    }
+}
+
 async function changeOrigin(origin: Origin): Promise<void> {
     // The one setting the UI must not write itself: background ends the session
     // first and stores the origin only after that (docs/04).
@@ -732,6 +940,14 @@ async function changeOrigin(origin: Origin): Promise<void> {
 
 async function clearCache(): Promise<void> {
     await clearSession();
+    // Ф11 audit: the two local caches of the airing watch go with the session
+    // one. Both describe the lists of this account — the snapshot is «тайтл →
+    // сколько серий вышло», the backlog is what the number on the icon counts —
+    // and a button that says «Очистить кэш» must not leave list data behind just
+    // because it was written to storage.local. The counter is rebuilt by the
+    // next tick; nothing here reaches browser.action, which is background-only.
+    await clearAiredSnapshot();
+    await clearBadgeBacklog();
     showToast(i18n.options.cacheCleared);
 }
 </script>
@@ -878,8 +1094,13 @@ async function clearCache(): Promise<void> {
     /* Floor = the height of the tallest section («Поведение»), so switching
        sections moves nothing at all; shorter ones get whitespace. Since the
        wrap stretches to the window, this only bites on a window shorter than
-       the tallest section. */
-    min-height: 460px;
+       the tallest section.
+       790, not 460, since Ф11-11: «Новые серии» took the tallest state of
+       «Поведение» to 786,63 px, and the floor covers all five states of the
+       block, so clicking its chips does not move the page either. The price is
+       stated in docs/05 — below ≈885 px of window height every section now
+       scrolls. */
+    min-height: 790px;
     padding-left: 28px;
     border-left: 1px solid var(--color-border);
 }
@@ -923,6 +1144,13 @@ async function clearCache(): Promise<void> {
     b {
         color: var(--color-fg);
         font-weight: 600;
+    }
+
+    /* A hint that ends its block (the status line of «Новые серии») carries no
+       gap of its own — the padding of .opt already ends the block. The only new
+       rule of Ф11-11; +7 B gzip, measured (2813 -> 2820 B, docs/05). */
+    &:last-child {
+        margin-bottom: 0;
     }
 }
 

@@ -24,7 +24,7 @@ interface Mounted {
 
 let cleanups: Array<() => void> = [];
 
-function mountGroup(modelValue: Fruit, statusDots = false): Mounted {
+function mountGroup(modelValue: Fruit, statusDots = false, disabled = false): Mounted {
     const emitted: Fruit[] = [];
     const container = createFakeElement('#container');
     const app = createApp({
@@ -36,6 +36,7 @@ function mountGroup(modelValue: Fruit, statusDots = false): Mounted {
                 options: OPTIONS,
                 modelValue,
                 statusDots,
+                disabled,
                 ariaLabel: 'Фрукт',
                 'onUpdate:modelValue': (value: Fruit) => {
                     emitted.push(value);
@@ -110,6 +111,34 @@ describe('ChipGroup', () => {
             chips(container).map((chip) => classesOf(chip).find((c) => c.startsWith('st-'))),
         ).toEqual(['st-apple', 'st-pear', 'st-plum']);
         expect(findAll(container, 'chip__dot')).toHaveLength(3);
+    });
+
+    // Ф11-11: a row subordinate to another setting. It keeps its value on
+    // screen and goes dead — no writes, and the group says so to a screen
+    // reader as well.
+    it('disables every chip of the row and marks the group aria-disabled', () => {
+        const { container, emitted } = mountGroup('pear', false, true);
+
+        expect(findAll(container, 'chips')[0]?.props['aria-disabled']).toBe(true);
+        expect(chips(container).map((chip) => chip.props.disabled)).toEqual([true, true, true]);
+        // The stored value is still the one shown: a dimmed row must not read
+        // as «выключено», it reads as «вернётся сюда».
+        expect(chips(container).map((chip) => classesOf(chip).includes('chip--active'))).toEqual([
+            false,
+            true,
+            false,
+        ]);
+
+        // Real Chrome swallows the click on a disabled button; the handler is
+        // guarded anyway, so nothing can write through a locked row.
+        clickOn(chips(container)[0]!);
+        expect(emitted).toEqual([]);
+    });
+
+    it('leaves the group free of aria-disabled while it is usable', () => {
+        const { container } = mountGroup('pear');
+        expect(findAll(container, 'chips')[0]?.props['aria-disabled']).toBeUndefined();
+        expect(chips(container).map((chip) => chip.props.disabled)).toEqual([false, false, false]);
     });
 
     it('renders neutral dotless chips without statusDots', () => {
