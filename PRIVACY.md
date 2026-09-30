@@ -1,6 +1,6 @@
 # Политика конфиденциальности ShikiFAV
 
-Дата последнего изменения: 2026-08-17
+Дата последнего изменения: 2026-09-30
 
 ShikiFAV — расширение для Chrome, которое даёт работать со списками аниме, манги и ранобэ на [Shikimori](https://shikimori.io) без открытия сайта.
 
@@ -14,12 +14,12 @@ ShikiFAV — расширение для Chrome, которое даёт раб�
 
 ## Что хранится в браузере
 
-В `chrome.storage.local` — до тех пор, пока вы не выйдете или не удалите расширение:
+В `chrome.storage.local`. Всё это удаляется вместе с расширением, но при выходе из аккаунта стирается не всё — срок каждой записи указан при ней:
 
-- **токены доступа Shikimori** (access и refresh), полученные при входе через официальную авторизацию сайта;
-- **профиль** — ник, идентификатор и адрес аватара, как их вернул Shikimori;
-- **настройки** — тема, домен API, язык названий, стартовая вкладка и фильтры по умолчанию;
-- **случайный идентификатор установки** — только пока включена анонимная статистика (см. её раздел ниже);
+- **токены доступа Shikimori** (access и refresh), полученные при входе через официальную авторизацию сайта, — до выхода из аккаунта;
+- **профиль** — ник, идентификатор и адрес аватара, как их вернул Shikimori, — стирается при выходе вместе с токенами;
+- **настройки** — тема, домен API, язык названий, стартовая вкладка и фильтры по умолчанию. **Выход из аккаунта их не трогает**: настройки относятся к расширению, а не к аккаунту, и уходят только вместе с ним;
+- **случайный идентификатор установки** — только пока включена анонимная статистика (см. её раздел ниже). **Выход из аккаунта его тоже не стирает**: он удаляется в тот момент, когда вы выключаете статистику, и при удалении расширения;
 - **снимок вышедших серий** — для каждого онгоинга из ваших списков идентификатор тайтла и число вышедших серий на момент последней проверки. По нему расширение отличает новую серию от уже виденной; названий тайтлов в снимке нет;
 - **строки счётчика на иконке** — те же тайтлы с вашим прогрессом (идентификатор записи в списке, сколько серий вышло и сколько отмечено), чтобы число на иконке восстанавливалось после перезапуска браузера без запроса к сети.
 
@@ -129,7 +129,7 @@ ShikiFAV — расширение для Chrome, которое даёт раб�
 
 # Privacy Policy (English summary)
 
-Last updated: 2026-08-17
+Last updated: 2026-09-30
 
 ShikiFAV is a Chrome extension for managing your [Shikimori](https://shikimori.io) anime, manga and light-novel lists without opening the site.
 
@@ -139,7 +139,7 @@ It does handle data about you, and this is not hidden: it stores your Shikimori 
 
 **Anonymous usage statistics.** The extension reports which features are used — which tab it opened on, that a search happened and over which catalogue, that a title was added, with what type (anime/manga) and status, which control was used to edit an entry, whether an episode was marked with the «+1» button or typed in, that an entry was removed, that the calendar or the context-menu item was used, that the related-titles screen was opened and from which type of title (anime/manga, never its name, id or number of links), which setting was changed (with the chosen value only for the theme and the API domain; toggling the statistics itself is never reported), and the kind (no network, no access, rate limit, server error) and HTTP status of a failed request — plus the extension version and a random per-install identifier. **Never sent:** search queries, title names or ids, your scores as numbers, your nickname, id or avatar, tokens, list contents, selected text. The recipient is Google (Google Analytics 4). It is **on by default and switched off** in Settings → «Аккаунт и данные» → «Анонимная статистика»; switching it off stops every request and deletes the random identifier.
 
-**Stored in your browser.** `chrome.storage.local` keeps your Shikimori access and refresh tokens, the profile Shikimori returns (nickname, id, avatar URL), your settings, the random per-install identifier — only while the statistics are on — and two records of the new-episode watch: the **aired-episode snapshot** (for every ongoing title in your lists, its id and the number of episodes aired as of the last check — that is how the extension tells a new episode from one it has already seen; no titles are stored) and the **badge rows** (the same titles with your progress — the id of the list entry, how many episodes aired and how many you marked — so the number on the icon can be restored after a browser restart without a network request). The last two exist only while you are signed in and the counter is on, and they are erased together: when you log out, when you press «Очистить кэш» in the settings, the moment you switch the counter off in Settings → «Поведение» → «Новые серии», and when the extension is uninstalled. `chrome.storage.session`, cleared when the browser closes, keeps — so that the popup opens instantly — the last search query with its results, the last viewed page of «Мои списки» and the last loaded ongoings calendar (both are rows of your own list, with their statuses, scores and progress), the last opened popup tab, the one-shot handovers between the extension's windows («open search with this query», «open settings on this section»), each deleted as soon as it is read, and one entry per new-episode notification currently in the system tray: the address of that title's page as Shikimori returned it, so a click knows where to go. Those entries are pruned against the tray on every write and dropped entirely on logout, when the counter is switched off and by «Очистить кэш».
+**Stored in your browser.** `chrome.storage.local` keeps your Shikimori access and refresh tokens, the profile Shikimori returns (nickname, id, avatar URL), your settings, the random per-install identifier — only while the statistics are on — and two records of the new-episode watch: the **aired-episode snapshot** (for every ongoing title in your lists, its id and the number of episodes aired as of the last check — that is how the extension tells a new episode from one it has already seen; no titles are stored) and the **badge rows** (the same titles with your progress — the id of the list entry, how many episodes aired and how many you marked — so the number on the icon can be restored after a browser restart without a network request). The last two exist only while you are signed in and the counter is on, and they are erased together: when you log out, when you press «Очистить кэш» in the settings, the moment you switch the counter off in Settings → «Поведение» → «Новые серии», and when the extension is uninstalled. Logging out does not touch the settings or the random identifier: the settings belong to the extension, not to the account, and go only with it, while the identifier is deleted when you switch the statistics off or uninstall. `chrome.storage.session`, cleared when the browser closes, keeps — so that the popup opens instantly — the last search query with its results, the last viewed page of «Мои списки» and the last loaded ongoings calendar (both are rows of your own list, with their statuses, scores and progress), the last opened popup tab, the one-shot handovers between the extension's windows («open search with this query», «open settings on this section»), each deleted as soon as it is read, and one entry per new-episode notification currently in the system tray: the address of that title's page as Shikimori returned it, so a click knows where to go. Those entries are pruned against the tray on every write and dropped entirely on logout, when the counter is switched off and by «Очистить кэш».
 
 **Network requests go to `shikimori.one` and `shikimori.io`** — searching, reading your lists and a title's related entries, and updating statuses, scores and progress. Requests carry your token; site cookies are deliberately not sent. While you are signed in and the new-episode counter is on, the extension makes some of these requests **by itself, with no window open**: once every 30 minutes it asks for the list of ongoing titles in your lists to see whether a new episode has aired. That is the extension's only background activity — it has no other reason to go online without your action — and it makes no background request at all if you are signed out or have switched the counter off. Posters and avatars are loaded by the browser directly from Shikimori. The only other host is `www.google-analytics.com`, and only while the statistics above are on; those requests never carry your token.
 
