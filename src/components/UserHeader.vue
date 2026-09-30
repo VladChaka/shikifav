@@ -13,9 +13,12 @@
             height="28"
             alt=""
         />
-        <span v-else class="header__avatar header__avatar--initial" aria-hidden="true">{{
-            initial
-        }}</span>
+        <span
+            v-else
+            class="header__avatar header__avatar--initial"
+            aria-hidden="true"
+            >{{ initial }}</span
+        >
         <span class="header__nickname">{{ user.nickname }}</span>
         <!-- Feather "heart": the same options page, opened on its «Поддержать»
              section (Ф8-3). Stands before ⚙ so the closing action of the bar

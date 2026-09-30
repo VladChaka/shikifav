@@ -80,10 +80,9 @@ export async function incrementRate(rateId: string): Promise<RateState> {
     // POST .../increment bumps progress (episodes for anime, docs/03). Like
     // every write it never auto-retries on 429 (http.ts non-GET default): a
     // duplicate increment silently corrupts progress.
-    const result = await authorizedRequest<RestUserRate>(
-        `${USER_RATES_PATH}/${rateId}/increment`,
-        { method: 'POST' },
-    );
+    const result = await authorizedRequest<RestUserRate>(`${USER_RATES_PATH}/${rateId}/increment`, {
+        method: 'POST',
+    });
     return toRateState(unwrap(result));
 }
 

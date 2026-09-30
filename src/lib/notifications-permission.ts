@@ -47,9 +47,7 @@ export async function requestNotificationsPermission(): Promise<boolean> {
 // onAdded it would keep offering the button for a permission the profile already
 // has. The listener is told which way it went, so one subscription covers the
 // whole line. Returns an unsubscribe for onUnmounted.
-export function onNotificationsPermissionChanged(
-    listener: (granted: boolean) => void,
-): () => void {
+export function onNotificationsPermissionChanged(listener: (granted: boolean) => void): () => void {
     // The event carries what CHANGED, and permissions are granted and revoked in
     // bulk; anything without ours in it leaves this block alone.
     const changed =

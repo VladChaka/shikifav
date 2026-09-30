@@ -75,9 +75,7 @@
                         :busy="busyIds.has(rateKey(item.card))"
                         :warning="warnings.get(rateKey(item.card)) ?? null"
                         :menu-open="openMenuKey === rateKey(item.card)"
-                        @update:menu-open="
-                            openMenuKey = $event ? rateKey(item.card) : null
-                        "
+                        @update:menu-open="openMenuKey = $event ? rateKey(item.card) : null"
                         @add="emit('add', item.card)"
                         @set-status="emit('set-status', item.card, $event)"
                         @remove="emit('remove', item.card)"

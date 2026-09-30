@@ -27,7 +27,10 @@ describe('displayTitle', () => {
     describe('romaji', () => {
         it('puts the romaji name first and the Russian one second', () => {
             expect(
-                displayTitle({ name: 'Fullmetal Alchemist', russian: 'Стальной алхимик' }, 'romaji'),
+                displayTitle(
+                    { name: 'Fullmetal Alchemist', russian: 'Стальной алхимик' },
+                    'romaji',
+                ),
             ).toEqual({ primary: 'Fullmetal Alchemist', secondary: 'Стальной алхимик' });
         });
 

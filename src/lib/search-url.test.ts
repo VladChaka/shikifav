@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { fakeBrowser } from 'wxt/testing';
-import { MAX_QUERY_LENGTH, buildSearchPageUrl, parseSearchQuery, sanitizeQuery } from './search-url';
+import {
+    MAX_QUERY_LENGTH,
+    buildSearchPageUrl,
+    parseSearchQuery,
+    sanitizeQuery,
+} from './search-url';
 
 // Ф5: the context menu writes search.html?q=… and the search page reads it back,
 // so build/parse must survive the same string (Cyrillic, URL metacharacters) and

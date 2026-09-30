@@ -3,12 +3,7 @@ import type { Ref } from 'vue';
 import { sendMessage } from '../lib/messaging';
 import { getSession, setSession } from '../lib/storage';
 import { apiErrorMessage, i18n } from '../lib/i18n';
-import type {
-    ApiError,
-    TitleCard,
-    UserRateRef,
-    UserRateStatus,
-} from '../lib/api/types';
+import type { ApiError, TitleCard, UserRateRef, UserRateStatus } from '../lib/api/types';
 
 // --- Pure optimistic-update reducer (unit-tested without Vue, docs/02) ---
 

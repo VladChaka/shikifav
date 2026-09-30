@@ -6,3 +6,8 @@ pnpm-lock.yaml
 docs/
 CLAUDE.md
 .claude/
+
+# Проза, которую ведут руками, — тем же правилом, что docs/ и CLAUDE.md выше.
+# Prettier переотбивает markdown-таблицы и создаёт посторонний шум в каждой правке текста.
+README.md
+PRIVACY.md

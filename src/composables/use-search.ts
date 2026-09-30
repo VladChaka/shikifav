@@ -209,10 +209,9 @@ function retry(): void {
 // the screen initialises, and a failed read only costs the instant first render
 // — the search opens on its defaults instead of dying on an unhandled rejection.
 async function restoreStartState(): Promise<void> {
-    const [settings, cached] = await Promise.all([
-        getSettings(),
-        getSession('lastSearch'),
-    ]).catch(() => [DEFAULT_SETTINGS, undefined] as const);
+    const [settings, cached] = await Promise.all([getSettings(), getSession('lastSearch')]).catch(
+        () => [DEFAULT_SETTINGS, undefined] as const,
+    );
     if (touched) {
         return;
     }

@@ -4,7 +4,15 @@ import type { Component } from 'vue';
 import RelatedRowView from './RelatedRow.vue';
 import type { RelatedItem, RelationKind, TitleCard, UserRateStatus } from '@/src/lib/api/types';
 import { i18n } from '@/src/lib/i18n';
-import { clickOn, createApp, createFakeElement, find, findAll, fire, textOf } from './fake-renderer';
+import {
+    clickOn,
+    createApp,
+    createFakeElement,
+    find,
+    findAll,
+    fire,
+    textOf,
+} from './fake-renderer';
 import type { FakeElement } from './fake-renderer';
 
 // Ф12-8: one row of the «Связанные» screen. What it owns and nothing else — the
@@ -189,7 +197,9 @@ describe('RelatedRow title page link (Ф12-8, Ф6-26)', () => {
 
 describe('RelatedRow poster (Ф12-8, Ф6-27)', () => {
     it('falls back to the local image in the same 42×58 box', () => {
-        const { container } = mountRow(item({ card: card({ posterUrl: null, posterUrl2x: null }) }));
+        const { container } = mountRow(
+            item({ card: card({ posterUrl: null, posterUrl2x: null }) }),
+        );
         const poster = find(container, 'related-row__poster');
         expect(String(poster.props.src)).toContain('poster-fallback');
         expect(poster.props.srcset).toBeUndefined();

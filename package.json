@@ -12,6 +12,7 @@
         "size": "node scripts/bundle-size.mjs",
         "lint": "eslint .",
         "format": "prettier --write .",
+        "format:check": "prettier --check .",
         "test": "vitest run",
         "postinstall": "wxt prepare"
     },

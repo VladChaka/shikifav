@@ -3,7 +3,15 @@ import { h, nextTick } from 'vue';
 import type { Component } from 'vue';
 import XSelect from './XSelect.vue';
 import type { XSelectOption } from './XSelect.vue';
-import { clickOn, createApp, createFakeElement, find, findAll, fire, textOf } from './fake-renderer';
+import {
+    clickOn,
+    createApp,
+    createFakeElement,
+    find,
+    findAll,
+    fire,
+    textOf,
+} from './fake-renderer';
 import type { FakeElement, FakeNode } from './fake-renderer';
 
 // XSelect is mounted through the shared in-memory harness (fake-renderer.ts):
@@ -375,8 +383,8 @@ describe('XSelect', () => {
         expect(typeof triggerDot.props.class).toBe('string');
         expect((triggerDot.props.class as string).split(/\s+/)).toContain('st-watching');
 
-        const optionClasses = findAll(container, 'xselect__opt').map(
-            (option) => (option.props.class as string).split(/\s+/),
+        const optionClasses = findAll(container, 'xselect__opt').map((option) =>
+            (option.props.class as string).split(/\s+/),
         );
         expect(optionClasses[0]).toContain('st-watching');
         expect(optionClasses[1]).toContain('st-completed');
