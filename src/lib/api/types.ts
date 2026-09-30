@@ -42,12 +42,7 @@ export interface AuthState {
 
 // GraphQL UserRateStatusEnum = REST v2 statuses 1:1 (docs/03, introspection 2026-07-23).
 export type UserRateStatus =
-    | 'planned'
-    | 'watching'
-    | 'rewatching'
-    | 'completed'
-    | 'on_hold'
-    | 'dropped';
+    'planned' | 'watching' | 'rewatching' | 'completed' | 'on_hold' | 'dropped';
 
 // UI-level title kind selector (docs/02 protocol); 'ranobe' maps to the GraphQL
 // mangas query with kind: "light_novel,novel" (docs/03).
@@ -122,8 +117,13 @@ export interface CalendarItem {
 // A row of the background airing poll (US-12, phase 11): the same "my ongoings"
 // list as the calendar, read through the narrow poll query — six fields instead
 // of ten, because it runs every 30 minutes and draws nothing (docs/03,
-// «Опрос — эталонный запрос»). Anime-only for the same reason as the calendar:
-// Manga has neither episodesAired nor nextEpisodeAt.
+// «Опрос — эталонный запрос»). Anime-only, like the calendar: Manga has no
+// episodesAired, so there is no counter to watch.
+//
+// Every field below is read by the badge or by the notification, which is the
+// admission rule of this row (the Ф12-5 precedent, spelled out over
+// POLL_AIRED_ANIMES_QUERY). `nextEpisodeAt` used to sit here and was read by
+// nobody — dropped in the audit before 1.2.0, query included.
 //
 // Structurally satisfies three consumers, all keyed on field names, so none of
 // them can be renamed here alone: BacklogItem (src/lib/calendar-schedule.ts), so
@@ -143,9 +143,6 @@ export interface AiredPollItem {
     name: string; // romaji, non-null; the notification title per `titleLang`
     russian: string | null;
     episodesAired: number;
-    // Raw ISO8601 with offset, as returned. Data for the message, never a
-    // schedule: a third of the ongoings carry no date at all (docs/03).
-    nextEpisodeAt: string | null;
     progress: number; // my watched episodes (userRate.episodes)
     // Ф11-16: where a click on the notification goes. Taken from the answer and
     // never assembled here (Ф6-26, CLAUDE.md rule 4) — the domain has changed

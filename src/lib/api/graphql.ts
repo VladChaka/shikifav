@@ -181,11 +181,16 @@ query CalendarAnimes($limit: PositiveInt, $page: PositiveInt) {
 // without a title name" path when that request fails. Carrying the pair every
 // tick is the cheaper failure mode.
 //
-// `nextEpisodeAt` is asked for despite planning NOT being based on it (a third
-// of the ongoings have no date at all, docs/03): it is data for the message, not
-// a schedule. `userRate { episodes }` is the progress the badge counts against.
-// The title's own `status` is not asked for — unlike the calendar this read has
-// no row to draw, so a leaked released title would only fail to move its counter.
+// `nextEpisodeAt` is deliberately NOT asked for, although the docs/03 reference
+// query lists it. It was asked for until the audit before 1.2.0, and nobody ever
+// read it: the notification text is built from episode numbers alone
+// (airedEpisodesMessage), and planning by date is ruled out anyway — a third of
+// the ongoings carry no date at all (docs/03). An ISO string per row, 48 ticks a
+// day on every installed profile, is exactly what the rule above forbids.
+//
+// `userRate { episodes }` is the progress the badge counts against. The title's
+// own `status` is not asked for — unlike the calendar this read has no row to
+// draw, so a leaked released title would only fail to move its counter.
 //
 // `userRate { id }` came back in Ф11-9 and is read, unlike in the redaction Ф11-8
 // dropped it from: the badge has to react to a write made from the popup (US-12,
@@ -206,7 +211,6 @@ query PollAiredAnimes($limit: PositiveInt, $page: PositiveInt) {
     name
     russian
     episodesAired
-    nextEpisodeAt
     url
     userRate { id episodes }
   }
@@ -352,13 +356,12 @@ export interface RawCalendarAnime {
 // data beyond the name pair the notification says out loud: the poll answers
 // "did the counter move" and "what to call the title", never "what to draw".
 // Nullability follows the same introspection as the calendar row — `russian`,
-// `nextEpisodeAt`, `url` and `userRate` are the nullable ones here.
+// `url` and `userRate` are the nullable ones here.
 export interface RawPollAnime {
     id: string;
     name: string;
     russian: string | null;
     episodesAired: number;
-    nextEpisodeAt: string | null;
     url: string | null; // see RawAnime.url — Ф11-16, where the click goes
     userRate: { id: string; episodes: number } | null;
 }
@@ -647,9 +650,6 @@ export function mapAnimeToAiredPollItem(raw: RawPollAnime): AiredPollItem | null
         name: raw.name,
         russian: raw.russian,
         episodesAired: raw.episodesAired,
-        // Raw ISO through, exactly as with the calendar row: this layer never
-        // parses dates.
-        nextEpisodeAt: raw.nextEpisodeAt,
         progress: raw.userRate.episodes,
         // Passed through untouched, like every other url of this file: the https
         // guard of the cards would not be enough here anyway — a click on a

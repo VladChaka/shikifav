@@ -149,9 +149,7 @@ describe('auth', () => {
 
         it('falls back to now (seconds) when created_at is absent', () => {
             const nowMs = 5_000_000_500; // not a whole second: must be floored
-            expect(computeExpiresAt(86400, undefined, nowMs)).toBe(
-                (5_000_000 + 86400 - 60) * 1000,
-            );
+            expect(computeExpiresAt(86400, undefined, nowMs)).toBe((5_000_000 + 86400 - 60) * 1000);
         });
     });
 
@@ -972,7 +970,6 @@ describe('auth', () => {
                             name: 'Ongoing',
                             russian: null,
                             episodesAired: 8,
-                            nextEpisodeAt: null,
                             userRate: { id: '1001', episodes: 3 },
                         },
                     ],
@@ -1103,7 +1100,6 @@ describe('auth', () => {
                                 name: 'Ongoing',
                                 russian: null,
                                 episodesAired: 12,
-                                nextEpisodeAt: null,
                                 userRate: { id: '1001', episodes: 3 },
                             },
                         ],

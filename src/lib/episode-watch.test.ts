@@ -75,7 +75,6 @@ function pollRow(id: number, episodesAired: number, progress: number): RawPollAn
         name: `Ongoing ${id}`,
         russian: null,
         episodesAired,
-        nextEpisodeAt: null,
         url: `https://shikimori.io/animes/${id}-ongoing-${id}`,
         userRate: { id: String(1000 + id), episodes: progress },
     };

@@ -275,7 +275,6 @@ const fullRawPollAnime: RawPollAnime = {
     name: 'One Piece',
     russian: 'Ван-Пис',
     episodesAired: 1147,
-    nextEpisodeAt: '2026-08-02T17:15:00+03:00',
     url: 'https://shikimori.io/animes/21-one-piece',
     userRate: { id: '2021', episodes: 1140 },
 };
@@ -286,7 +285,6 @@ const fullPollItem: AiredPollItem = {
     name: 'One Piece',
     russian: 'Ван-Пис',
     episodesAired: 1147,
-    nextEpisodeAt: '2026-08-02T17:15:00+03:00',
     progress: 1140,
     url: 'https://shikimori.io/animes/21-one-piece',
 };
@@ -951,21 +949,6 @@ describe('graphql', () => {
             expect(mapAnimeToAiredPollItem({ ...fullRawPollAnime, userRate: null })).toBeNull();
         });
 
-        // A third of the ongoings have no date at all (docs/03) — the null half
-        // of the row is the normal case here, not an edge one.
-        it('carries a null nextEpisodeAt through', () => {
-            expect(mapAnimeToAiredPollItem({ ...fullRawPollAnime, nextEpisodeAt: null })).toEqual({
-                ...fullPollItem,
-                nextEpisodeAt: null,
-            });
-        });
-
-        it('keeps the raw ISO date exactly as the server sent it', () => {
-            expect(mapAnimeToAiredPollItem(fullRawPollAnime)?.nextEpisodeAt).toBe(
-                '2026-08-02T17:15:00+03:00',
-            );
-        });
-
         // Ф11-16. The address a click on the notification opens is the one the
         // answer carried — never one built here from origin + id (Ф6-26), so a
         // profile switched to .one gets .one addresses without any code knowing.
@@ -1079,7 +1062,6 @@ describe('graphql', () => {
             expect(body.query).toMatch(/^\s+name$/m);
             expect(body.query).toMatch(/^\s+russian$/m);
             expect(body.query).toMatch(/^\s+episodesAired$/m);
-            expect(body.query).toMatch(/^\s+nextEpisodeAt$/m);
             // Ф11-16: where a click on the notification goes. Asked for and NOT
             // assembled from the origin setting plus the id — Ф6-26, the domain
             // has moved four times and the answer carries the current one.
@@ -1101,6 +1083,10 @@ describe('graphql', () => {
             for (const field of ['poster', 'malId', 'score']) {
                 expect(query).not.toContain(field);
             }
+            // Nor the air date: it was asked for until the audit before 1.2.0 and
+            // read by nobody — the notification text is built from episode
+            // numbers alone, and planning by date is ruled out anyway (docs/03).
+            expect(query).not.toContain('nextEpisodeAt');
             // The episode TOTAL: `episodesAired` and `userRate { episodes }` are
             // asked for, a field line of its own is not.
             expect(query).not.toMatch(/^\s+episodes$/m);
@@ -1232,11 +1218,7 @@ describe('graphql', () => {
     describe('SEARCH_TYPE_TO_KIND', () => {
         it('maps exactly: anime — no kind, manga excludes ranobe kinds, ranobe selects them', () => {
             // toEqual ignores undefined-valued keys, so the shape is pinned first.
-            expect(Object.keys(SEARCH_TYPE_TO_KIND).sort()).toEqual([
-                'anime',
-                'manga',
-                'ranobe',
-            ]);
+            expect(Object.keys(SEARCH_TYPE_TO_KIND).sort()).toEqual(['anime', 'manga', 'ranobe']);
             expect(SEARCH_TYPE_TO_KIND.anime).toBeUndefined();
             expect(SEARCH_TYPE_TO_KIND.manga).toBe('!light_novel,!novel');
             expect(SEARCH_TYPE_TO_KIND.ranobe).toBe('light_novel,novel');
