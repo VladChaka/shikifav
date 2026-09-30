@@ -27,13 +27,34 @@ function isConfigured(): boolean {
     return GA4_MEASUREMENT_ID !== '' && GA4_API_SECRET !== '';
 }
 
+// Consent, read fresh every time (Ф11 audit). Sending one event is a chain of
+// awaits, the setting lives in shared storage, and the user can switch
+// statistics off in another tab during any link of that chain. So the answer is
+// never carried across an await: it is asked again immediately before each of
+// the two steps that cannot be taken back — writing the identifier, and sending
+// the request. PRIVACY.md promises the identifier is deleted on opt-out, and an
+// event that started a moment earlier must not put it back.
+async function consented(): Promise<boolean> {
+    return (await getSettings()).analytics;
+}
+
 // Created on the first reported event, not on install: a profile that never
 // reports anything (analytics switched off before the first popup) never gets
 // an identifier at all.
-async function ensureClientId(): Promise<string> {
+//
+// undefined = there is no identifier and this call is not allowed to make one,
+// because consent is gone by the time it would be written.
+async function ensureClientId(): Promise<string | undefined> {
     const stored = await getLocal('analyticsClientId');
     if (stored) {
         return stored;
+    }
+    // The write is the reason for the second read: the options page stores the
+    // switch BEFORE deleting the identifier, so once the switch says "off" no
+    // event may create one — otherwise the delete would be undone by whatever
+    // was already in flight when the user clicked.
+    if (!(await consented())) {
+        return undefined;
     }
     const created = crypto.randomUUID();
     await setLocal('analyticsClientId', created);
@@ -45,12 +66,25 @@ export async function trackEvent(event: AnalyticsEvent): Promise<void> {
         return;
     }
     try {
-        const { analytics } = await getSettings();
-        if (!analytics) {
+        if (!(await consented())) {
             await forgetAnalyticsClientId();
             return;
         }
         const clientId = await ensureClientId();
+        if (clientId === undefined) {
+            return;
+        }
+        // The last gate before the wire, and the one that also cleans up. An
+        // identifier that already existed comes back from ensureClientId without
+        // any consent check, so without this an event that passed the check
+        // above and only got here after the opt-out would still POST — under the
+        // identifier of the timeline the user had just ended. The delete covers
+        // the narrow case of an opt-out landing while the identifier was being
+        // written.
+        if (!(await consented())) {
+            await forgetAnalyticsClientId();
+            return;
+        }
         const version = browser.runtime.getManifest().version;
         const url =
             `${GA4_ENDPOINT}?measurement_id=${encodeURIComponent(GA4_MEASUREMENT_ID)}` +

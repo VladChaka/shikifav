@@ -809,12 +809,28 @@ function reportSettingChange(patch: Partial<LocalState['settings']>): void {
 // (src/lib/api/analytics.ts). Storage-only, no message — rule 1 restricts
 // network, and waking the service worker for a local delete costs the popup
 // budget for nothing.
-function setAnalytics(choice: AnalyticsChoice): void {
-    const analytics = choice === ANALYTICS_ON;
-    write({ analytics });
+//
+// Both writes are awaited, and the order is load-bearing (Ф11 audit). The
+// setting goes first because it is the gate every event reads: once it says
+// "off", no event started after this point asks for an identifier at all. The
+// delete goes second so that it is the LAST write of the pair — an event that
+// slipped past the gate a moment before it closed cannot leave a new identifier
+// behind the delete, because the client re-reads consent right before writing
+// one. Fired the other way round the pair leaves the opposite window open: no
+// identifier, but a stored setting still reading `true`, so the very next event
+// creates one and sends.
+async function writeAnalytics(analytics: boolean): Promise<void> {
+    await setSettings({ analytics });
     if (!analytics) {
-        void forgetAnalyticsClientId();
+        await forgetAnalyticsClientId();
     }
+}
+
+// Not through write(): the sequence above has to be awaited, and the reporting
+// write() does is skipped for `analytics` anyway (see reportSettingChange — the
+// last thing an opt-out should do is report the opt-out).
+function setAnalytics(choice: AnalyticsChoice): void {
+    void writeAnalytics(choice === ANALYTICS_ON);
 }
 
 // --- «Новые серии» (Ф11-11, US-12) ------------------------------------------

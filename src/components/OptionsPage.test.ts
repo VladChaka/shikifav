@@ -511,6 +511,38 @@ describe('OptionsPage (Ф6-3)', () => {
         expect(events).toEqual([]);
     });
 
+    // Ф11 audit. The two writes of an opt-out used to be fired unawaited, so the
+    // order they landed in was nobody's decision. Landing the delete first opens a
+    // window where the profile has no identifier but the stored setting still
+    // reads `true` — and any event arriving in it creates a new identifier and
+    // sends under it, which is the deletion PRIVACY.md promises, undone.
+    it('stores the switch before deleting the identifier, never the other way round', async () => {
+        const storage = await import('@/src/lib/storage');
+        // What the gate said at the moment the delete landed. `true` here is the
+        // window; an empty array would mean the delete never happened at all.
+        const analyticsAtDelete: (boolean | undefined)[] = [];
+        const { container, getSettings } = await mountPage();
+        await storage.setLocal('analyticsClientId', 'to-be-forgotten');
+        const realRemove = fakeBrowser.storage.local.remove.bind(fakeBrowser.storage.local);
+        vi.spyOn(fakeBrowser.storage.local, 'remove').mockImplementation((async (
+            keys: string | string[],
+        ) => {
+            if ([keys].flat().includes('analyticsClientId')) {
+                analyticsAtDelete.push((await storage.getSettings()).analytics);
+            }
+            return realRemove(keys);
+        }) as never);
+        await openSection(container, 2);
+
+        clickOn(chip(container, i18n.options.analyticsLabel, i18n.options.analyticsOff));
+
+        await vi.waitFor(async () =>
+            expect(await storage.getLocal('analyticsClientId')).toBeUndefined(),
+        );
+        expect(analyticsAtDelete).toEqual([false]);
+        expect((await getSettings()).analytics).toBe(false);
+    });
+
     it('writes the start tab', async () => {
         const { container, getSettings } = await mountPage();
         await openSection(container, 1);
