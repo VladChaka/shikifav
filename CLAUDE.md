@@ -1,7 +1,7 @@
 # CLAUDE.md — Shikimori Quick (Chrome-расширение)
 
 ## О проекте
-Chrome-расширение (Manifest V3) для быстрой работы со списками Shikimori без открытия сайта: OAuth2-вход, поиск аниме/манги/ранобэ, добавление в списки, смена статусов, оценки, «+1 эпизод» и ввод номера серии, календарь онгоингов, контекстное меню, страница настроек с темой.
+Chrome-расширение (Manifest V3) для быстрой работы со списками Shikimori без открытия сайта: OAuth2-вход, поиск аниме/манги/ранобэ, добавление в списки, смена статусов, оценки, «+1 эпизод» и ввод номера серии, календарь онгоингов, экран связанных тайтлов (сиквелы, приквелы, первоисточник — фаза 12), счётчик вышедших серий на иконке и системные уведомления о новой серии (фаза 11), контекстное меню, страница настроек с темой.
 
 Начинался как личный проект одного пользователя. **С 2026-08-06 опубликован в Chrome Web Store** — ShikiFAV 1.0.0, издатель Chaka Labs, Item ID `bpjembchapdbgncmacpkbepfjghjdkan` ([карточка в магазине](https://chromewebstore.google.com/detail/shikifav/bpjembchapdbgncmacpkbepfjghjdkan)), фаза 9 закрыта. У расширения есть сторонние пользователи, до которых не дотянуться: непонятные состояния и молчаливые отказы стоят дороже, чем «владелец разберётся».
 
@@ -21,6 +21,7 @@ pnpm zip        # zip для установки/распространения
 pnpm compile    # проверка типов (vue-tsc --noEmit)
 pnpm test       # vitest
 pnpm lint       # eslint
+pnpm format:check # prettier --check (eslint формат НЕ проверяет: skip-formatting)
 ```
 Ловушка окружения одна (подробности — README, раздел 8): `pnpm test` без `.env` падает на `APP_NAME is not configured`. Вторая, `spawn-sync` в `allowBuilds`, закрыта — `spawn-sync: false` лежит в отслеживаемом `pnpm-workspace.yaml` (сверено 2026-08-10).
 
@@ -50,7 +51,7 @@ docs/               # проектная документация — ЧИТАТ
 4. **Origin только из `src/lib/config.ts`** (по умолчанию shikimori.io, переключается в настройках на shikimori.one). Домены сайта исторически менялись — никаких захардкоженных URL по коду.
 5. **Чтение — GraphQL, запись — REST v2** (`/api/v2/user_rates`). HTML сайта не парсить.
 6. **Секреты:** client_id/client_secret — только из `.env` (в .gitignore), токены — только в `chrome.storage.local`. Токены и secret никогда не попадают в логи и сообщения об ошибках.
-7. **Permissions по минимуму:** `identity`, `storage`, host_permissions на оба домена Shikimori **плюс `https://www.google-analytics.com/*`** (фаза 10, отправка анонимных событий; единственный не-Shikimori хост, обоснование для магазина — docs/07). Итого в собранном манифесте три host_permissions — сверено с `.output/chrome-mv3/manifest.json` 2026-08-10. `contextMenus` добавить только в фазе 5; `declarativeNetRequest` — только если понадобился fallback для User-Agent.
+7. **Permissions по минимуму:** `identity`, `storage`, host_permissions на оба домена Shikimori **плюс `https://www.google-analytics.com/*`** (фаза 10, отправка анонимных событий; единственный не-Shikimori хост, обоснование для магазина — docs/07). Итого в собранном манифесте три host_permissions — сверено с `.output/chrome-mv3/manifest.json` 2026-08-10. `contextMenus` добавлен в фазе 5; `declarativeNetRequest` — fallback для User-Agent (нужен, проверено). **Фаза 11 добавила `alarms`** (обязательный, фоновая проверка вышедших серий) и **`notifications` в `optional_permissions`** — необязательным намеренно: разрешение с предупреждением, добавленное в обновление, выключает расширение у всех, кто его уже поставил, до явного согласия. Итого в собранном манифесте пять `permissions`, одно `optional_permissions` и три хоста (сверено 2026-09-22). **Правило про минимум остаётся в силе:** новое разрешение берётся, только если без него функция невозможна, и каждое обосновывается перед магазином отдельно.
 
 ## Рабочий процесс
 1. Работа идёт по фазам из `docs/06-roadmap.md` строго по порядку. Фаза закрыта = все её чекбоксы + Definition of Done + ручной smoke-чеклист.
@@ -80,3 +81,7 @@ docs/               # проектная документация — ЧИТАТ
 | docs/07-store-listing.md | листинг Chrome Web Store: single purpose, обоснования permissions, раскрытие данных, скриншоты |
 | docs/08-submission-runbook.md | порядок подачи в магазин по шагам: что за чем, чем проверяется, что делать при отказе |
 | PRIVACY.md (в корне) | политика конфиденциальности, публикуется по внешнему адресу для магазина |
+
+## Communication style
+
+- Write concisely and to the point — no filler, no preamble, no restating the question. Lead with the answer; add detail only when it earns its place.

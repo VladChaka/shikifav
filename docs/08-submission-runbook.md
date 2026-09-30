@@ -28,7 +28,7 @@
 
 Решения (без них форму не заполнить):
 
-- [x] **Контактный адрес** — `support@chakalabs.com` (Cloudflare Email Routing на домене проекта, пересылка в личный ящик; отправки нет, только приём). Вписан в `PRIVACY.md` в обеих частях, он же идёт в листинг и закрывает Developer Agreement §3.4. В консоли остаётся подтвердить его по ссылке из письма.
+- [x] **Контактный адрес** — `support@chakalabs.com`, **ящик в Zoho Mail** (тариф Mail Free, дата-центр EU; приём и отправка, SPF/DKIM/DMARC проходят — проверено 2026-09-15). До 2026-09-15 адрес был пересылкой через Cloudflare Email Routing без отправки; почему переехали и какие записи стоят в DNS — docs/07, «Открытые вопросы», пункт 2. Вписан в `PRIVACY.md` в обеих частях, он же идёт в листинг и закрывает Developer Agreement §3.4. В консоли остаётся подтвердить его по ссылке из письма.
 - [x] **Публичный адрес политики** — `https://shikifav.chakalabs.com/`. Собирается из `PRIVACY.md` через `.github/workflows/pages.yml` (копии файла в репозитории нет) и отдаётся GitHub Pages; домен ведёт туда CNAME `shikifav` → `vladchaka.github.io`, обязательно **DNS only**: через прокси Cloudflare сертификат Pages не выпустит. Каждый пуш `PRIVACY.md` в `master` пересобирает страницу.
 - [x] **Категория листинга** — «Развлечения». «Продуктивности» в нынешней таксономии магазина нет вовсе (проверено формой 2026-08-05), разбор — docs/07.
 - [x] **`client_secret`** — принято 2026-08-06: публикуем на приложении №2175, публичность секрета принята осознанно. Разбор и альтернативы — docs/06, «`client_secret` в бандле — решение принято 2026-08-06». Запрос в Shikimori про public client (docs/04 §5) отправляется отдельно и подачу **не задерживает**.
@@ -50,10 +50,10 @@ pnpm zip
 Проверка, что собралось именно то:
 
 ```bash
-node -e "const m=require('./.output/chrome-mv3/manifest.json'); console.log(m.version, m.permissions, m.host_permissions, 'key:', 'key' in m)"
+node -e "const m=require('./.output/chrome-mv3/manifest.json'); console.log(m.version, m.permissions, m.optional_permissions, m.host_permissions, 'key:', 'key' in m)"
 ```
 
-Разрешения должны совпасть с теми, что обоснованы в docs/07: `identity`, `storage`, `declarativeNetRequestWithHostAccess`, `contextMenus`. Хостов **три**: два домена Shikimori и `https://www.google-analytics.com/*` (фаза 10). Лишнее в этом списке — лишний вопрос от ревьюера.
+Разрешения должны совпасть с теми, что обоснованы в docs/07: `identity`, `storage`, `declarativeNetRequestWithHostAccess`, `contextMenus`, **`alarms`** (фаза 11, фоновая проверка серий). Отдельно проверить `optional_permissions` — там обязан быть **`notifications`** и больше ничего; поэтому команда выше его и печатает. **Список разрешений — не белый список навсегда:** он расширился в фазе 11 и расширится снова, так что сверять надо не с этой строкой, а с обоснованиями в docs/07. Хостов **три**: два домена Shikimori и `https://www.google-analytics.com/*` (фаза 10). Лишнее в этом списке — лишний вопрос от ревьюера.
 
 Отдельно про третий хост: он тянет за собой не только своё обоснование, но и ответ во вкладке Privacy practices — с фазы 10 сбор данных там **«да»** (docs/07). Обоснование и сертификация обязаны сойтись; расхождение ревьюер видит сразу.
 
