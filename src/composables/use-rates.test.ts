@@ -6,7 +6,7 @@ import { onMessage } from '../lib/messaging';
 import type { MessageHandlers } from '../lib/messaging';
 import { getSession, setSession } from '../lib/storage';
 import { i18n } from '../lib/i18n';
-import type { ApiError, TitleCard, UserRateRef } from '../lib/api/types';
+import type { ApiError, RateState, TitleCard, UserRateRef } from '../lib/api/types';
 import {
     OPTIMISTIC_RATE_ID,
     applyRateAction,
@@ -358,6 +358,71 @@ describe('use-rates', () => {
         expect(items.value[0].userRate).toEqual({ id: '7', status: 'planned' });
     });
 
+    // The busy lock is the only thing between a double click and a duplicate
+    // user_rates row: 'create' passes the OPTIMISTIC_RATE_ID guard by design,
+    // and a repeated click hands in the very same card the UI is showing.
+    it('a second create on a busy card never reaches the server', async () => {
+        const server = deferred<{ rate: UserRateRef }>();
+        const payloads: unknown[] = [];
+        const { items, rates } = setup([card('1')], {
+            'rates.create': async (payload) => {
+                payloads.push(payload);
+                // Only the first write is held open: a leaked second one answers
+                // at once, so a missing lock shows up as a failed assertion
+                // instead of a test that hangs on the deferred.
+                return payloads.length === 1
+                    ? server.promise
+                    : { rate: { id: '99', status: 'planned' as const } };
+            },
+        });
+
+        const first = rates.performAction(items.value[0], { type: 'create', status: 'planned' });
+        await rates.performAction(items.value[0], { type: 'create', status: 'planned' });
+        expect(payloads).toHaveLength(1);
+
+        server.resolve({ rate: { id: '55', status: 'planned' } });
+        await first;
+        expect(payloads).toEqual([{ targetId: '1', targetType: 'Anime', status: 'planned' }]);
+        expect(items.value[0].userRate).toEqual({ id: '55', status: 'planned' });
+    });
+
+    // The same double click on a card that already carries a server id, where
+    // the OPTIMISTIC_RATE_ID guard cannot stand in for the lock: the id the
+    // second write would address is real, so only the lock can stop it.
+    it('a second update on a busy card never reaches the server', async () => {
+        const server = deferred<{ rate: RateState }>();
+        const patches: unknown[] = [];
+        const { items, rates } = setup([card('1', { id: '9', status: 'planned' })], {
+            'rates.update': async (payload) => {
+                patches.push(payload);
+                return patches.length === 1
+                    ? server.promise
+                    : {
+                          rate: {
+                              id: '9',
+                              status: 'completed' as const,
+                              score: 0,
+                              episodes: 0,
+                              chapters: 0,
+                              volumes: 0,
+                          },
+                      };
+            },
+        });
+
+        const first = rates.performAction(items.value[0], { type: 'update', status: 'watching' });
+        await rates.performAction(items.value[0], { type: 'update', status: 'completed' });
+        expect(patches).toEqual([{ rateId: '9', patch: { status: 'watching' } }]);
+
+        server.resolve({
+            rate: { id: '9', status: 'watching', score: 0, episodes: 0, chapters: 0, volumes: 0 },
+        });
+        await first;
+        expect(patches).toHaveLength(1);
+        // The update answer is a full RateState, which lands on the card as is.
+        expect(items.value[0].userRate).toMatchObject({ id: '9', status: 'watching' });
+    });
+
     it('a successful action refreshes session.lastSearch', async () => {
         const initial = card('1');
         await setSession('lastSearch', { query: 'frieren', type: 'anime', items: [initial] });
@@ -436,6 +501,79 @@ describe('use-rates', () => {
         await rates.performAction(items.value[1], { type: 'create', status: 'watching' });
         expect(items.value[1].userRate).toEqual({ id: '55', status: 'watching' });
         expect(items.value[0].userRate).toBeNull(); // the anime twin stays untouched
+    });
+
+    // busyIds/warnings are keyed by (targetType, id) for the same reason
+    // (Ф4-5b): a bare-id key made the twins share one lock, so a write on the
+    // anime twin left the manga twin dead until it finished.
+    it('a write on the anime twin leaves the manga twin actionable', async () => {
+        const animeWrite = deferred<{ rate: UserRateRef }>();
+        const targetTypes: string[] = [];
+        const { items, rates } = setup([card('1'), mangaCard('1')], {
+            'rates.create': async ({ targetType }) => {
+                targetTypes.push(targetType);
+                return targetType === 'Anime'
+                    ? animeWrite.promise
+                    : { rate: { id: '66', status: 'watching' as const } };
+            },
+        });
+
+        const animeAction = rates.performAction(items.value[0], {
+            type: 'create',
+            status: 'planned',
+        });
+        await rates.performAction(items.value[1], { type: 'create', status: 'watching' });
+
+        expect(targetTypes).toEqual(['Anime', 'Manga']);
+        expect(items.value[1].userRate).toEqual({ id: '66', status: 'watching' });
+
+        animeWrite.resolve({ rate: { id: '55', status: 'planned' } });
+        await animeAction;
+    });
+
+    // Ф4-5b itself: the finally of the in-flight anime write used to delete the
+    // bare-id key and release the lock of the manga twin taken after a type
+    // switch, which let a second manga write go out in parallel with the first.
+    it('a finished anime write does not release the lock of its manga twin', async () => {
+        const animeWrite = deferred<{ rate: UserRateRef }>();
+        const mangaWrite = deferred<{ rate: UserRateRef }>();
+        const mangaStatuses: string[] = [];
+        const { items, rates } = setup([card('1')], {
+            'rates.create': async ({ targetType, status }) => {
+                if (targetType === 'Anime') {
+                    return animeWrite.promise;
+                }
+                mangaStatuses.push(status);
+                return mangaStatuses.length === 1
+                    ? mangaWrite.promise
+                    : { rate: { id: '77', status } };
+            },
+        });
+
+        const animeAction = rates.performAction(items.value[0], {
+            type: 'create',
+            status: 'planned',
+        });
+        items.value = [mangaCard('1')]; // type switch mid-flight: the watch clears the locks
+        await nextTick();
+        const mangaAction = rates.performAction(items.value[0], {
+            type: 'create',
+            status: 'watching',
+        });
+        expect(mangaStatuses).toEqual(['watching']);
+
+        animeWrite.resolve({ rate: { id: '55', status: 'planned' } });
+        await animeAction;
+
+        // The manga write is still in flight, so its lock must have survived
+        // the anime one being released.
+        expect(rates.busyIds.value.has(rateKey(items.value[0]))).toBe(true);
+        await rates.performAction(items.value[0], { type: 'create', status: 'completed' });
+        expect(mangaStatuses).toEqual(['watching']);
+
+        mangaWrite.resolve({ rate: { id: '66', status: 'watching' } });
+        await mangaAction;
+        expect(items.value[0].userRate).toEqual({ id: '66', status: 'watching' });
     });
 
     it('syncs only the matching (id, targetType) entry in session.lastSearch', async () => {

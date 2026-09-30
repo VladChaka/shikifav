@@ -28,6 +28,20 @@ function lastRequest(): { url: string; init: RequestInit & { headers: Record<str
     return { url: String(input), init: init as RequestInit & { headers: Record<string, string> } };
 }
 
+// Captures console.debug so tests can assert WHAT a failure logs: http.ts is
+// allowed the error kind and the status of an api error, nothing else
+// (CLAUDE.md rule 6, docs/02 error model).
+function spyDebug(): { errorCalls: () => unknown[][]; output: () => string; restore: () => void } {
+    const spy = vi.spyOn(console, 'debug').mockImplementation(() => {});
+    const format = (arg: unknown): string =>
+        typeof arg === 'string' ? arg : (JSON.stringify(arg) ?? String(arg));
+    return {
+        errorCalls: () => spy.mock.calls.filter((call) => call[0] === '[http] error:'),
+        output: () => spy.mock.calls.flat().map(format).join('\n'),
+        restore: () => spy.mockRestore(),
+    };
+}
+
 describe('http', () => {
     beforeEach(() => {
         fakeBrowser.reset();
@@ -235,6 +249,105 @@ describe('http', () => {
                 kind: 'internal',
                 message: 'Invalid JSON in response body',
             });
+        });
+    });
+
+    // The ApiError that reaches the log carries the untrusted response body in
+    // `message` and, on a 429, the Retry-After the server sent. Logging the
+    // object instead of its kind would print both into the console of a release
+    // build — docs/02 promises the kind alone, and CLAUDE.md rule 6 puts tokens
+    // and bodies out of bounds for good.
+    describe('error logging', () => {
+        let debug: ReturnType<typeof spyDebug>;
+
+        beforeEach(() => {
+            debug = spyDebug();
+        });
+
+        afterEach(() => {
+            debug.restore();
+        });
+
+        it.each<[string, () => void]>([
+            [
+                'network',
+                () => {
+                    fetchMock.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+                },
+            ],
+            [
+                'unauthorized',
+                () => {
+                    fetchMock.mockResolvedValueOnce(
+                        new Response('token is expired', { status: 401 }),
+                    );
+                },
+            ],
+            [
+                'rate_limited',
+                () => {
+                    fetchMock.mockResolvedValueOnce(
+                        new Response('too many requests', { status: 429 }),
+                    );
+                },
+            ],
+            [
+                'internal',
+                () => {
+                    fetchMock.mockResolvedValueOnce(new Response('not json', { status: 200 }));
+                },
+            ],
+        ])('logs a %s failure as the bare kind', async (kind, arrange) => {
+            arrange();
+
+            await apiRequest('/api/graphql', { retryOn429: false });
+
+            expect(debug.errorCalls()).toEqual([['[http] error:', kind]]);
+        });
+
+        it('logs the status of an api error and nothing from its body', async () => {
+            fetchMock.mockResolvedValueOnce(jsonResponse(422, ['Target must exist']));
+
+            const result = await apiRequest('/api/v2/user_rates', {
+                method: 'POST',
+                body: { user_rate: { target_id: 1 } },
+            });
+
+            expect(expectFail(result)).toEqual({
+                kind: 'api',
+                status: 422,
+                message: 'Target must exist',
+            });
+            expect(debug.errorCalls()).toEqual([['[http] error:', 'api', 422]]);
+            expect(debug.output()).not.toContain('Target must exist');
+        });
+
+        it('logs a rate_limited failure without the Retry-After it carries', async () => {
+            fetchMock.mockResolvedValueOnce(
+                new Response('slow down', { status: 429, headers: { 'Retry-After': '17' } }),
+            );
+
+            const result = await apiRequest('/api/graphql', { retryOn429: false });
+
+            expect(expectFail(result)).toEqual({ kind: 'rate_limited', retryAfterMs: 17_000 });
+            expect(debug.errorCalls()).toEqual([['[http] error:', 'rate_limited']]);
+            expect(debug.output()).not.toContain('retryAfterMs');
+            expect(debug.output()).not.toContain('17000');
+            expect(debug.output()).not.toContain('slow down');
+        });
+
+        it('keeps the token, the request headers and the body out of the log', async () => {
+            setTokenProvider(async () => 'secret-access-token');
+            fetchMock
+                .mockResolvedValueOnce(jsonResponse(200, { id: 1 }))
+                .mockResolvedValueOnce(new Response('<html>Server error</html>', { status: 500 }));
+
+            await apiRequest('/api/users/whoami'); // success path logs a status
+            await apiRequest('/api/users/whoami'); // failure path logs a kind
+
+            expect(debug.output()).not.toContain('secret-access-token');
+            expect(debug.output()).not.toContain('Authorization');
+            expect(debug.output()).not.toContain('Server error');
         });
     });
 
