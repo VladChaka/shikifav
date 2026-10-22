@@ -8,3 +8,17 @@ allowBuilds:
     # script in a fresh clone and appends its own placeholder line here.
     spawn-sync: false
     esbuild: true
+
+# Security fixes for transitive dev-only dependencies (pnpm audit, 2026-10-22).
+# web-ext-run pins its dependencies to exact vulnerable versions, so a plain
+# update cannot lift adm-zip, shell-quote, tmp and uuid; the bumps match what
+# upstream moved to (firefox-profile 4.7.1 uses adm-zip ~0.6.x, fx-runner 1.7.0
+# uses shell-quote 1.11) or stay within the major. brace-expansion is not
+# pinned upstream — the entry is a floor guard against resolving back to a
+# vulnerable 5.x. Drop an entry once its parent ships the fix.
+overrides:
+    adm-zip: ^0.6.1
+    shell-quote: ^1.9.0
+    tmp: ^0.2.6
+    uuid@<11.1.1: ^11.1.1
+    brace-expansion@>=4.0.0 <5.0.12: ^5.0.12
